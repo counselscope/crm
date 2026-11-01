@@ -13,7 +13,7 @@
         "status": "New Lead",
         "score": 80,
         "notes": "Enquiry received with document saved to GitHub.",
-        "is_deleted": false,
+        "is_deleted": true,
         "created_at": "01 Nov 2026, 05:07 PM"
     }
 ]
