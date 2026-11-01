@@ -18,7 +18,7 @@ COLLEGES_FILE = "colleges.json"
 
 # GitHub API Configuration from Environment Variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # e.g. "yourusername/your-repo-name"
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # e.g. "username/repository-name"
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 
 def load_data(filename):
@@ -33,17 +33,55 @@ def load_data(filename):
 def save_data(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
+    
+    # Automatically commit leads.json to GitHub so data never gets lost on Render restart
+    if filename == DATA_FILE and GITHUB_TOKEN and GITHUB_REPO:
+        commit_json_to_github(filename)
 
-# Helper function to upload file directly to GitHub Repository via API
+# Helper function to commit JSON files to GitHub
+def commit_json_to_github(filepath):
+    try:
+        with open(filepath, "rb") as f:
+            file_content = f.read()
+        encoded_content = base64.b64encode(file_content).decode('utf-8')
+        
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filepath}"
+        headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
+        
+        # Get current file SHA if it exists
+        get_res = requests.get(url, headers=headers)
+        sha = get_res.json().get('sha') if get_res.status_code == 200 else None
+
+        payload = {
+            "message": f"Auto-update {filepath} data",
+            "content": encoded_content,
+            "branch": GITHUB_BRANCH
+        }
+        if sha:
+            payload["sha"] = sha
+
+        requests.put(url, headers=headers, json=payload)
+    except Exception as e:
+        print("GitHub JSON Commit Error:", e)
+
+# Helper function to upload document renamed as aadhar.jpg directly to GitHub
 def upload_file_to_github(file_storage, student_name, original_filename):
     if not GITHUB_TOKEN or not GITHUB_REPO:
-        return None  # Fallback if GitHub credentials aren't set yet
+        return None
     
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        timestamp_prefix = datetime.now().strftime("%Y%m%d_%H%M%S_")
-        secure_fname = secure_filename(original_filename)
-        file_path_in_repo = f"student_documents/{safe_student_name}/{timestamp_prefix}{secure_fname}"
+        
+        # Extract file extension (e.g., .jpg, .png, .pdf) and name it aadhar.[ext]
+        ext = os.path.splitext(original_filename)[1].lower()
+        if not ext:
+            ext = ".jpg"
+        target_filename = f"aadhar{ext}"
+        
+        file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
         
         file_content = file_storage.read()
         encoded_content = base64.b64encode(file_content).decode('utf-8')
@@ -53,17 +91,24 @@ def upload_file_to_github(file_storage, student_name, original_filename):
             "Authorization": f"Bearer {GITHUB_TOKEN}",
             "Accept": "application/vnd.github+json"
         }
+        
+        # Check if aadhar file already exists in repo for this student to get SHA
+        get_res = requests.get(url, headers=headers)
+        sha = get_res.json().get('sha') if get_res.status_code == 200 else None
+
         payload = {
-            "message": f"Auto-upload document for student: {student_name}",
+            "message": f"Upload document for student: {student_name}",
             "content": encoded_content,
             "branch": GITHUB_BRANCH
         }
-        
+        if sha:
+            payload["sha"] = sha
+
         response = requests.put(url, headers=headers, json=payload)
         if response.status_code in [201, 200]:
             return file_path_in_repo
     except Exception as e:
-        print("GitHub API Upload Error:", e)
+        print("GitHub API Document Upload Error:", e)
     
     return None
 
@@ -88,7 +133,7 @@ def submit_lead():
         if not student_name or not contact_number or not student_email:
             return jsonify({"status": "error", "message": "Required fields missing"}), 400
 
-        # Handle file upload directly to GitHub
+        # Handle file upload renamed to aadhar.jpg/pdf in student folder
         document_filename = None
         if 'id_document' in request.files:
             file = request.files['id_document']
@@ -111,12 +156,12 @@ def submit_lead():
             "id_document": document_filename,
             "status": "New Lead",
             "score": score,
-            "notes": "Enquiry received via Web Portal with document stored in GitHub.",
+            "notes": "Enquiry received with document saved to GitHub.",
             "is_deleted": False,
             "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }
         leads.append(new_lead)
-        save_data(DATA_FILE, leads)
+        save_data(DATA_FILE, leads)  # This will now auto-save leads.json to GitHub too!
 
         return jsonify({"status": "success", "message": "Lead captured and document securely stored!"}), 200
     except Exception as e:
@@ -135,7 +180,6 @@ def download_document(filename):
     if not session.get('logged_in'):
         return redirect(url_for('login'))
     
-    # Redirect directly to GitHub raw file URL for instant download/viewing
     if GITHUB_REPO:
         raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
         return redirect(raw_github_url)
@@ -611,7 +655,7 @@ MAIN_DASHBOARD_HTML = """
             const downloadBtn = document.getElementById('modalDownloadBtn');
             const fullUrl = `/download-doc/${docPath}`;
             downloadBtn.href = fullUrl;
-            if(docPath.match(/\.(jpeg|jpg|png|gif)$/i)) {
+            if(docPath.match(/\\.(jpeg|jpg|png|gif)$/i)) {
                 container.innerHTML = `<img src="${fullUrl}" style="max-width:100%; border-radius:8px;" alt="Document">`;
             } else {
                 container.innerHTML = `<p style="padding:20px; color:#475569;">Document ready for download.</p>`;
