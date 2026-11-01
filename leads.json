@@ -1,0 +1,19 @@
+[
+    {
+        "id": 1,
+        "student_name": "suresh",
+        "father_name": "koii",
+        "contact_number": "9874561230",
+        "alternate_number": "9784561230",
+        "student_email": "counselscope@gmail.com",
+        "state": "Maharashtra",
+        "city": "mumbai",
+        "course_interest": "General",
+        "id_document": "student_documents/suresh/aadhar.png",
+        "status": "New Lead",
+        "score": 80,
+        "notes": "Enquiry received with document saved to GitHub.",
+        "is_deleted": false,
+        "created_at": "01 Nov 2026, 05:17 PM"
+    }
+]
