@@ -161,6 +161,57 @@ def submit_lead():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/update-lead', methods=['POST'])
+def update_lead():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        lead_id = int(request.form.get('lead_id'))
+        student_name = request.form.get('student_name')
+        father_name = request.form.get('father_name', 'N/A')
+        contact_number = request.form.get('contact_number')
+        alternate_number = request.form.get('alternate_number', 'N/A')
+        student_email = request.form.get('student_email')
+        state = request.form.get('state', 'N/A')
+        city = request.form.get('city', 'N/A')
+        course_interest = request.form.get('course_interest', 'General')
+        delete_doc = request.form.get('delete_doc') == 'true'
+
+        leads = load_data(DATA_FILE)
+        target_lead = None
+        for lead in leads:
+            if lead['id'] == lead_id:
+                target_lead = lead
+                break
+        
+        if not target_lead:
+            return jsonify({"status": "error", "message": "Lead not found"}), 404
+
+        target_lead['student_name'] = student_name
+        target_lead['father_name'] = father_name
+        target_lead['contact_number'] = contact_number
+        target_lead['alternate_number'] = alternate_number
+        target_lead['student_email'] = student_email
+        target_lead['state'] = state
+        target_lead['city'] = city
+        target_lead['course_interest'] = course_interest
+
+        if delete_doc:
+            target_lead['id_document'] = None
+
+        if 'id_document' in request.files:
+            file = request.files['id_document']
+            if file and file.filename != '':
+                doc_path = upload_file_to_github(file, student_name, file.filename)
+                if doc_path:
+                    target_lead['id_document'] = doc_path
+
+        save_data(DATA_FILE, leads)
+        return jsonify({"status": "success", "message": "Lead updated successfully!"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/get-leads', methods=['GET'])
 def get_leads_api():
     if not session.get('logged_in'):
@@ -359,7 +410,9 @@ MAIN_DASHBOARD_HTML = """
         }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-dark); display: flex; height: 100vh; overflow: hidden; }
-        .sidebar { width: 255px; background-color: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; padding: 20px 15px; flex-shrink: 0; justify-content: space-between; }
+        
+        /* Sidebar styling & responsiveness */
+        .sidebar { width: 255px; background-color: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; padding: 20px 15px; flex-shrink: 0; justify-content: space-between; transition: 0.3s; }
         .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 10px 10px 25px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
         .sidebar-brand img { width: 38px; height: 38px; border-radius: 8px; }
         .sidebar-brand-text h3 { font-size: 16px; font-weight: 700; color: #fff; }
@@ -367,14 +420,17 @@ MAIN_DASHBOARD_HTML = """
         .nav-menu { margin-top: 20px; display: flex; flex-direction: column; gap: 6px; list-style: none; }
         .nav-item button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 15px; border-radius: 10px; color: #94a3b8; background: none; border: none; font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.2s; text-align: left; }
         .nav-item button:hover, .nav-item.active button { background-color: var(--primary); color: #fff; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+
         .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
         .top-header { background: var(--card-bg); height: 70px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100; }
         .search-bar { display: flex; align-items: center; background: #f1f5f9; padding: 10px 16px; border-radius: 20px; width: 350px; gap: 10px; }
         .search-bar input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; }
+        
         .content-area { padding: 30px; display: flex; flex-direction: column; gap: 25px; }
         .hero-banner { background: linear-gradient(135deg, #0b1329 0%, #1d3557 100%); border-radius: 20px; padding: 35px 40px; color: white; box-shadow: 0 10px 25px rgba(11, 19, 41, 0.15); }
         .hero-text h1 { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
         .hero-text p { font-size: 13.5px; color: #94a3b8; max-width: 500px; line-height: 1.5; }
+        
         .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 18px; }
         .metric-card { background: var(--card-bg); padding: 20px; border-radius: 16px; border: 1px solid var(--border-color); display: flex; align-items: center; gap: 15px; }
         .m-icon { width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -384,37 +440,60 @@ MAIN_DASHBOARD_HTML = """
         .m-icon.purple { background: #faf5ff; color: #9333ea; }
         .m-info h3 { font-size: 22px; font-weight: 800; color: var(--text-dark); }
         .m-info p { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+        
         .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; }
         .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border-color); padding: 22px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
         .card-header h3 { font-size: 15px; font-weight: 700; color: var(--text-dark); }
+        
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th { font-size: 11.5px; font-weight: 600; color: var(--text-muted); padding: 12px 14px; border-bottom: 1px solid var(--border-color); background: #f8fafc; }
         td { font-size: 13px; padding: 13px 14px; border-bottom: 1px solid var(--border-color); color: var(--text-dark); vertical-align: middle; }
         tr:hover td { background-color: #f8fafc; }
+        
         .badge-status { padding: 5px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-block; }
         .badge-new { background: #e0f2fe; color: #0369a1; }
         .badge-contacted { background: #fef3c7; color: #b45309; }
         .badge-followup { background: #e0e7ff; color: #4338ca; }
         .badge-closed { background: #dcfce7; color: #15803d; }
         .badge-rejected { background: #fee2e2; color: #b91c1c; }
+        
         select.status-select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12px; font-weight: 600; cursor: pointer; }
         .action-icon-btn { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; transition: 0.2s; margin-right: 4px; }
         .call-btn { background: #dcfce7; color: #16a34a; }
         .mail-btn { background: #e0f2fe; color: #0284c7; }
         .doc-btn { background: #e0f2fe; color: #0284c7; }
         .doc-btn:hover { background: #0284c7; color: white; }
+        .edit-btn { background: #fef3c7; color: #d97706; }
+        .edit-btn:hover { background: #d97706; color: white; }
         .trash-btn { background: #fee2e2; color: #dc2626; border: none; cursor: pointer; }
+        
         .chart-container { position: relative; height: 210px; display: flex; justify-content: center; }
         .tab-section { display: none; }
         .tab-section.active { display: block; }
         
-        /* Animated Modal Styles */
-        #docModal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-        .modal-content { background: white; padding: 30px; border-radius: 16px; max-width: 520px; width: 90%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 90vh; overflow-y: auto; }
+        /* Responsive Animated Modals */
+        .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
+        .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
         @keyframes modalPopup { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .close-modal { position: absolute; top: 15px; right: 20px; font-size: 22px; cursor: pointer; color: #64748b; transition: 0.2s; }
         .close-modal:hover { color: #0f172a; }
+
+        .form-control { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; }
+        .form-control:focus { outline: none; border-color: #2563eb; }
+
+        /* Media Queries for Maximum Responsiveness */
+        @media (max-width: 900px) {
+            body { flex-direction: column; height: auto; overflow: auto; }
+            .sidebar { width: 100%; height: auto; flex-direction: row; align-items: center; padding: 12px 15px; flex-wrap: wrap; }
+            .sidebar-brand { border: none; padding: 0; }
+            .nav-menu { flex-direction: row; flex-wrap: wrap; margin-top: 10px; gap: 4px; }
+            .nav-item button { padding: 8px 12px; font-size: 12px; width: auto; }
+            .main-wrapper { height: auto; overflow: visible; }
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .top-header { padding: 0 15px; }
+            .search-bar { width: 220px; }
+        }
     </style>
 </head>
 <body>
@@ -435,14 +514,14 @@ MAIN_DASHBOARD_HTML = """
             </ul>
         </div>
         <div style="padding: 10px;">
-            <a href="/logout" style="background:#ef4444; color:white; padding:10px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:600; font-size:13px;">Logout Admin</a>
+            <a href="/logout" style="background:#ef4444; color:white; padding:8px 12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:600; font-size:12.5px;">Logout</a>
         </div>
     </aside>
     <div class="main-wrapper">
         <header class="top-header">
             <div class="search-bar">
                 <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="globalSearch" onkeyup="filterLeadsTable()" placeholder="Search leads by name, email, phone...">
+                <input type="text" id="globalSearch" onkeyup="filterLeadsTable()" placeholder="Search leads...">
             </div>
         </header>
         <div class="content-area">
@@ -467,8 +546,8 @@ MAIN_DASHBOARD_HTML = """
                                 <thead>
                                     <tr>
                                         <th>Student</th>
-                                        <th>Contact / Call</th>
-                                        <th>Email / Mailer</th>
+                                        <th>Contact</th>
+                                        <th>Email</th>
                                         <th>ID Doc</th>
                                         <th>Status</th>
                                         <th>Action</th>
@@ -484,6 +563,7 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
             </div>
+            
             <div id="leads-tab" class="tab-section">
                 <div class="card">
                     <div class="card-header"><h3>All Registered Leads</h3></div>
@@ -506,39 +586,45 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
             </div>
+
             <div id="colleges-tab" class="tab-section">
                 <div class="card" style="margin-bottom: 20px;">
                     <h3>Add New College / Tie-up</h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 15px;">
-                        <input type="text" id="colName" placeholder="College Name" style="padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
-                        <input type="text" id="colLoc" placeholder="Location" style="padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
-                        <input type="text" id="colCourses" placeholder="Courses" style="padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
-                        <input type="text" id="colPackage" placeholder="Avg Package" style="padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
-                        <button onclick="addNewCollege()" style="background:#2563eb; color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer;">Save College</button>
+                        <input type="text" id="colName" placeholder="College Name" class="form-control" style="margin:0;">
+                        <input type="text" id="colLoc" placeholder="Location" class="form-control" style="margin:0;">
+                        <input type="text" id="colCourses" placeholder="Courses" class="form-control" style="margin:0;">
+                        <input type="text" id="colPackage" placeholder="Avg Package" class="form-control" style="margin:0;">
+                        <button onclick="addNewCollege()" style="background:#2563eb; color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer; padding:10px;">Save College</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header"><h3>Partner Colleges List</h3></div>
-                    <table>
-                        <thead><tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr></thead>
-                        <tbody id="collegesTbody"></tbody>
-                    </table>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr></thead>
+                            <tbody id="collegesTbody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
+
             <div id="trash-tab" class="tab-section">
                 <div class="card">
                     <div class="card-header"><h3 style="color: #ef4444;"><i class="fa-solid fa-trash-can"></i> Trash Bin</h3></div>
-                    <table>
-                        <thead><tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Actions</th></tr></thead>
-                        <tbody id="trashTbody"></tbody>
-                    </table>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Actions</th></tr></thead>
+                            <tbody id="trashTbody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- RESPONSIVE ANIMATED MODAL FOR STUDENT DETAILS & DOCUMENT -->
-    <div id="docModal">
+    <!-- VIEW DOCUMENT MODAL -->
+    <div id="docModal" class="modal-overlay">
         <div class="modal-content">
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
             <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Details & Document</h3>
@@ -549,10 +635,56 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
+    <!-- EDIT LEAD MODAL -->
+    <div id="editModal" class="modal-overlay">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeEditModal()">&times;</span>
+            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-pen-to-square" style="color:#d97706; margin-right:8px;"></i> Edit Lead Details</h3>
+            <form id="editLeadForm" onsubmit="submitEditLead(event)">
+                <input type="hidden" id="edit_lead_id">
+                <label style="font-size:12px; font-weight:600; color:#475569;">Student Name</label>
+                <input type="text" id="edit_student_name" class="form-control" required>
+                <label style="font-size:12px; font-weight:600; color:#475569;">Father's Name</label>
+                <input type="text" id="edit_father_name" class="form-control">
+                <label style="font-size:12px; font-weight:600; color:#475569;">Contact Number</label>
+                <input type="tel" id="edit_contact_number" class="form-control" required>
+                <label style="font-size:12px; font-weight:600; color:#475569;">Alternate Number</label>
+                <input type="tel" id="edit_alternate_number" class="form-control">
+                <label style="font-size:12px; font-weight:600; color:#475569;">Email ID</label>
+                <input type="email" id="edit_student_email" class="form-control" required>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:#475569;">State</label>
+                        <input type="text" id="edit_state" class="form-control">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:#475569;">City</label>
+                        <input type="text" id="edit_city" class="form-control">
+                    </div>
+                </div>
+                <label style="font-size:12px; font-weight:600; color:#475569;">Course Interest</label>
+                <input type="text" id="edit_course_interest" class="form-control">
+                
+                <label style="font-size:12px; font-weight:600; color:#475569;">Update / Replace Document</label>
+                <input type="file" id="edit_id_document" class="form-control" accept="image/*,.pdf">
+                
+                <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="edit_delete_doc" style="width:16px; height:16px;">
+                    <label for="edit_delete_doc" style="font-size:13px; color:#ef4444; font-weight:600; cursor:pointer;">Delete existing document</label>
+                </div>
+
+                <div style="margin-top: 20px; text-align: right;">
+                    <button type="submit" id="saveEditBtn" style="background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:600; cursor:pointer;">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         let rawLeadsData = [];
         let collegesData = [];
         let pieChartInstance = null;
+
         function switchTab(tabId, navElement) {
             document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -560,6 +692,7 @@ MAIN_DASHBOARD_HTML = """
             if(navElement) navElement.classList.add('active');
             if(tabId === 'colleges-tab') fetchColleges();
         }
+
         async function fetchLeadsData() {
             try {
                 const res = await fetch('/api/get-leads');
@@ -569,6 +702,7 @@ MAIN_DASHBOARD_HTML = """
                 }
             } catch(e) { console.error(e); }
         }
+
         async function fetchColleges() {
             const res = await fetch('/api/get-colleges');
             if(res.ok) {
@@ -580,6 +714,7 @@ MAIN_DASHBOARD_HTML = """
                 });
             }
         }
+
         async function addNewCollege() {
             const data = {
                 college_name: document.getElementById('colName').value,
@@ -595,6 +730,7 @@ MAIN_DASHBOARD_HTML = """
             fetchColleges();
             alert('College added successfully!');
         }
+
         function renderUI(dataList) {
             const activeLeads = dataList.filter(l => !l.is_deleted);
             const trashLeads = dataList.filter(l => l.is_deleted);
@@ -602,10 +738,11 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('statClosed').innerText = activeLeads.filter(l => l.status === 'Closed').length;
             document.getElementById('statContacted').innerText = activeLeads.filter(l => l.status === 'Contacted').length;
             document.getElementById('statNew').innerText = activeLeads.filter(l => l.status === 'New Lead').length;
+            
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
-                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Student & Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
+                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
@@ -618,6 +755,7 @@ MAIN_DASHBOARD_HTML = """
                 `;
             });
             populateAllLeadsTable(activeLeads);
+
             const trashTbody = document.getElementById('trashTbody');
             trashTbody.innerHTML = '';
             trashLeads.forEach(lead => {
@@ -625,15 +763,16 @@ MAIN_DASHBOARD_HTML = """
             });
             updatePieChart(activeLeads);
         }
+
         function populateAllLeadsTable(leads) {
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
-                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Student & Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
+                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
                 allTbody.innerHTML += `
                     <tr>
                         <td>#${lead.id}</td>
-                        <td><strong>${lead.student_name}</strong></td>
+                        <td><strong>${lead.student_name}</strong><br><small style="color:#64748b;">${lead.father_name || ''}</small></td>
                         <td>${lead.contact_number}</td>
                         <td>${lead.student_email}</td>
                         <td>${docAction}</td>
@@ -647,11 +786,15 @@ MAIN_DASHBOARD_HTML = """
                                 <option value="Rejected" ${lead.status==='Rejected'?'selected':''}>Rejected</option>
                             </select>
                         </td>
-                        <td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>
+                        <td>
+                            <button class="action-icon-btn edit-btn" onclick='openEditModal(${JSON.stringify(lead)})' title="Edit Lead"><i class="fa-solid fa-pen"></i></button>
+                            <button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})" title="Delete Lead"><i class="fa-solid fa-trash-can"></i></button>
+                        </td>
                     </tr>
                 `;
             });
         }
+
         function openDocModal(lead) {
             const modal = document.getElementById('docModal');
             const container = document.getElementById('modalBodyContainer');
@@ -664,7 +807,7 @@ MAIN_DASHBOARD_HTML = """
                 downloadBtn.style.display = 'inline-flex';
                 
                 if(lead.id_document.match(/\.(jpeg|jpg|png|gif)$/i)) {
-                    docPreviewHtml = `<div style="margin-top: 15px; text-align: center;"><img src="${fullUrl}" style="max-width:100%; max-height:220px; border-radius:8px; border:1px solid #cbd5e1;" alt="Document Preview"></div>`;
+                    docPreviewHtml = `<div style="margin-top: 15px; text-align: center;"><img src="${fullUrl}" style="max-width:100%; max-height:220px; border-radius:8px; border:1px solid #cbd5e1;" alt="Document"></div>`;
                 } else {
                     docPreviewHtml = `<div style="margin-top: 15px;"><p style="color:#475569; font-size:13px;"><i class="fa-solid fa-file-pdf" style="color:#ef4444; margin-right:5px;"></i> Document attached. Click download to view.</p></div>`;
                 }
@@ -677,7 +820,7 @@ MAIN_DASHBOARD_HTML = """
                 <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13.5px; color: #334155; line-height: 1.6;">
                     <p style="margin-bottom:6px;"><strong>Student Name:</strong> ${lead.student_name}</p>
                     <p style="margin-bottom:6px;"><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
-                    <p style="margin-bottom:6px;"><strong>Contact:</strong> ${lead.contact_number} ${lead.alternate_number && lead.alternate_number !== 'N/A' ? '/ ' + lead.alternate_number : ''}</p>
+                    <p style="margin-bottom:6px;"><strong>Contact:</strong> ${lead.contact_number}</p>
                     <p style="margin-bottom:6px;"><strong>Email:</strong> ${lead.student_email}</p>
                     <p style="margin-bottom:6px;"><strong>Location:</strong> ${lead.city}, ${lead.state}</p>
                     <p style="margin-bottom:0;"><strong>Course Interest:</strong> ${lead.course_interest}</p>
@@ -687,6 +830,69 @@ MAIN_DASHBOARD_HTML = """
             modal.style.display = 'flex';
         }
         function closeDocModal() { document.getElementById('docModal').style.display = 'none'; }
+
+        function openEditModal(lead) {
+            document.getElementById('edit_lead_id').value = lead.id;
+            document.getElementById('edit_student_name').value = lead.student_name || '';
+            document.getElementById('edit_father_name').value = lead.father_name || '';
+            document.getElementById('edit_contact_number').value = lead.contact_number || '';
+            document.getElementById('edit_alternate_number').value = lead.alternate_number || '';
+            document.getElementById('edit_student_email').value = lead.student_email || '';
+            document.getElementById('edit_state').value = lead.state || '';
+            document.getElementById('edit_city').value = lead.city || '';
+            document.getElementById('edit_course_interest').value = lead.course_interest || '';
+            document.getElementById('edit_delete_doc').checked = false;
+            document.getElementById('edit_id_document').value = '';
+            
+            document.getElementById('editModal').style.display = 'flex';
+        }
+        function closeEditModal() { document.getElementById('editModal').style.display = 'none'; }
+
+        async function submitEditLead(e) {
+            e.preventDefault();
+            const btn = document.getElementById('saveEditBtn');
+            btn.innerText = "Saving...";
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('lead_id', document.getElementById('edit_lead_id').value);
+            formData.append('student_name', document.getElementById('edit_student_name').value);
+            formData.append('father_name', document.getElementById('edit_father_name').value);
+            formData.append('contact_number', document.getElementById('edit_contact_number').value);
+            formData.append('alternate_number', document.getElementById('edit_alternate_number').value);
+            formData.append('student_email', document.getElementById('edit_student_email').value);
+            formData.append('state', document.getElementById('edit_state').value);
+            formData.append('city', document.getElementById('edit_city').value);
+            formData.append('course_interest', document.getElementById('edit_course_interest').value);
+            formData.append('delete_doc', document.getElementById('edit_delete_doc').checked);
+
+            const fileField = document.getElementById('edit_id_document');
+            if (fileField.files.length > 0) {
+                formData.append('id_document', fileField.files[0]);
+            }
+
+            try {
+                const res = await fetch('/api/update-lead', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await res.json();
+                if (res.ok) {
+                    alert('Lead updated successfully!');
+                    closeEditModal();
+                    fetchLeadsData();
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            } catch(err) {
+                console.error(err);
+                alert('Something went wrong.');
+            } finally {
+                btn.innerText = "Save Changes";
+                btn.disabled = false;
+            }
+        }
+
         function getBadgeClass(status) {
             if(status === 'New Lead') return 'badge-new';
             if(status === 'Contacted') return 'badge-contacted';
