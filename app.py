@@ -78,17 +78,16 @@ def commit_json_to_github(filepath):
     except Exception as e:
         print("GitHub JSON Commit Error:", e)
 
-def upload_file_to_github(file_storage, student_name, original_filename):
-    if not GITHUB_TOKEN or not GITHUB_REPO:
+def upload_file_to_github(file_storage, student_name, doc_type_name):
+    if not GITHUB_TOKEN or not GITHUB_REPO or not file_storage or file_storage.filename == '':
         return None
     
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        
-        ext = os.path.splitext(original_filename)[1].lower()
+        ext = os.path.splitext(file_storage.filename)[1].lower()
         if not ext:
             ext = ".jpg"
-        target_filename = f"aadhar{ext}"
+        target_filename = f"{doc_type_name}{ext}"
         
         file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
         
@@ -105,7 +104,7 @@ def upload_file_to_github(file_storage, student_name, original_filename):
         sha = get_res.json().get('sha') if get_res.status_code == 200 else None
 
         payload = {
-            "message": f"Upload document for student: {student_name}",
+            "message": f"Upload {doc_type_name} for student: {student_name}",
             "content": encoded_content,
             "branch": GITHUB_BRANCH
         }
@@ -136,16 +135,61 @@ def submit_lead():
         student_email = data.get('student_email')
         state = data.get('state', 'N/A')
         city = data.get('city', 'N/A')
+        
         course_interest = data.get('course_interest', 'General')
+        if course_interest == 'Other' and data.get('other_course'):
+            course_interest = f"Other ({data.get('other_course')})"
+
+        hear_about = data.get('hear_about', 'N/A')
+        if hear_about == 'Other' and data.get('other_source'):
+            hear_about = f"Other ({data.get('other_source')})"
+
+        preferred_time = data.get('preferred_time', 'N/A')
+        current_education_level = data.get('current_education_level', 'N/A')
+        edu_percentage = data.get('edu_percentage', 'N/A')
+        class_10_percentage = data.get('class_10_percentage', 'N/A')
+        class_12_percentage = data.get('class_12_percentage', 'N/A')
+
+        annual_budget = data.get('annual_budget', 'N/A')
+        fee_payment_option = data.get('fee_payment_option', 'N/A')
+        loan_assistance = data.get('loan_assistance', 'N/A')
+        hostel_required = data.get('hostel_required', 'N/A')
+        contacted_college = data.get('contacted_college', 'N/A')
+
+        help_with_list = []
+        if data.get('help_with_list'):
+            try:
+                help_with_list = json.loads(data.get('help_with_list'))
+            except:
+                pass
+
+        colleges_pref = []
+        for i in range(1, 4):
+            c_name = data.get(f'col_name_{i}')
+            c_st = data.get(f'col_state_{i}')
+            if c_name:
+                colleges_pref.append({"name": c_name, "state": c_st or 'N/A'})
 
         if not student_name or not contact_number or not student_email:
             return jsonify({"status": "error", "message": "Required fields missing"}), 400
 
-        document_filename = None
+        # Document Uploads Handling
+        uploaded_docs = {}
         if 'id_document' in request.files:
-            file = request.files['id_document']
-            if file and file.filename != '':
-                document_filename = upload_file_to_github(file, student_name, file.filename)
+            p = upload_file_to_github(request.files['id_document'], student_name, 'aadhar_doc')
+            if p: uploaded_docs['id_document'] = p
+        if 'aadhar_doc' in request.files:
+            p = upload_file_to_github(request.files['aadhar_doc'], student_name, 'aadhar_doc')
+            if p: uploaded_docs['id_document'] = p
+        if 'class_10_doc' in request.files:
+            p = upload_file_to_github(request.files['class_10_doc'], student_name, 'class_10_doc')
+            if p: uploaded_docs['class_10_doc'] = p
+        if 'class_12_doc' in request.files:
+            p = upload_file_to_github(request.files['class_12_doc'], student_name, 'class_12_doc')
+            if p: uploaded_docs['class_12_doc'] = p
+        if 'edu_scorecard' in request.files:
+            p = upload_file_to_github(request.files['edu_scorecard'], student_name, 'edu_scorecard')
+            if p: uploaded_docs['edu_scorecard'] = p
 
         leads = load_data(DATA_FILE)
         score = 80 if alternate_number != 'N/A' else 50
@@ -160,18 +204,34 @@ def submit_lead():
             "state": state,
             "city": city,
             "course_interest": course_interest,
-            "id_document": document_filename,
+            "hear_about": hear_about,
+            "preferred_time": preferred_time,
+            "current_education_level": current_education_level,
+            "edu_percentage": edu_percentage,
+            "class_10_percentage": class_10_percentage,
+            "class_12_percentage": class_12_percentage,
+            "annual_budget": annual_budget,
+            "fee_payment_option": fee_payment_option,
+            "loan_assistance": loan_assistance,
+            "hostel_required": hostel_required,
+            "contacted_college": contacted_college,
+            "help_with_list": help_with_list,
+            "colleges_pref": colleges_pref,
+            "id_document": uploaded_docs.get('id_document'),
+            "class_10_doc": uploaded_docs.get('class_10_doc'),
+            "class_12_doc": uploaded_docs.get('class_12_doc'),
+            "edu_scorecard": uploaded_docs.get('edu_scorecard'),
             "status": "New Lead",
             "score": score,
-            "notes": "Enquiry received with document saved.",
+            "notes": "Full Enquiry Form Submitted.",
             "is_deleted": False,
             "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
-        log_activity("New Lead Form", f"New enquiry received for {student_name} ({contact_number})")
+        log_activity("New Form Enquiry", f"Enquiry submitted by {student_name} ({contact_number})")
 
-        return jsonify({"status": "success", "message": "Lead captured and document securely stored!"}), 200
+        return jsonify({"status": "success", "message": "Lead captured and documents securely stored!"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -190,6 +250,8 @@ def update_lead():
         state = request.form.get('state', 'N/A')
         city = request.form.get('city', 'N/A')
         course_interest = request.form.get('course_interest', 'General')
+        annual_budget = request.form.get('annual_budget', 'N/A')
+        loan_assistance = request.form.get('loan_assistance', 'N/A')
         delete_doc = request.form.get('delete_doc') == 'true'
 
         leads = load_data(DATA_FILE)
@@ -210,16 +272,18 @@ def update_lead():
         target_lead['state'] = state
         target_lead['city'] = city
         target_lead['course_interest'] = course_interest
+        target_lead['annual_budget'] = annual_budget
+        target_lead['loan_assistance'] = loan_assistance
 
         if delete_doc:
             target_lead['id_document'] = None
+            target_lead['class_10_doc'] = None
+            target_lead['class_12_doc'] = None
+            target_lead['edu_scorecard'] = None
 
         if 'id_document' in request.files:
-            file = request.files['id_document']
-            if file and file.filename != '':
-                doc_path = upload_file_to_github(file, student_name, file.filename)
-                if doc_path:
-                    target_lead['id_document'] = doc_path
+            doc_path = upload_file_to_github(request.files['id_document'], student_name, 'aadhar_doc')
+            if doc_path: target_lead['id_document'] = doc_path
 
         save_data(DATA_FILE, leads)
         log_activity("Lead Updated", f"Updated lead information for {student_name}")
@@ -525,7 +589,7 @@ MAIN_DASHBOARD_HTML = """
 
         /* Responsive Animated Modals */
         .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
-        .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
+        .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 600px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
         @keyframes modalPopup { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .close-modal { position: absolute; top: 15px; right: 20px; font-size: 22px; cursor: pointer; color: #64748b; transition: 0.2s; }
         .close-modal:hover { color: #0f172a; }
@@ -601,7 +665,7 @@ MAIN_DASHBOARD_HTML = """
 
                 <div class="metrics-grid" style="margin-bottom: 25px;">
                     <div class="metric-card"><div class="m-icon blue"><i class="fa-solid fa-users"></i></div><div class="m-info"><h3 id="statTotal">0</h3><p>Total Leads</p></div></div>
-                    <div class="metric-card"><div class="m-icon green"><div class="m-icon green"><i class="fa-solid fa-graduation-cap"></i></div></div><div class="m-info"><h3 id="statClosed">0</h3><p>Admissions Closed</p></div></div>
+                    <div class="metric-card"><div class="m-icon green"><i class="fa-solid fa-graduation-cap"></i></div><div class="m-info"><h3 id="statClosed">0</h3><p>Admissions Closed</p></div></div>
                     <div class="metric-card"><div class="m-icon orange"><i class="fa-solid fa-phone-volume"></i></div><div class="m-info"><h3 id="statContacted">0</h3><p>Contacted</p></div></div>
                     <div class="metric-card"><div class="m-icon purple"><i class="fa-solid fa-spinner"></i></div><div class="m-info"><h3 id="statNew">0</h3><p>New Leads</p></div></div>
                 </div>
@@ -617,6 +681,8 @@ MAIN_DASHBOARD_HTML = """
                                 <tr>
                                     <th>Student</th>
                                     <th>Contact</th>
+                                    <th>Course</th>
+                                    <th>Budget</th>
                                     <th>Status</th>
                                     <th>Action</th>
                                 </tr>
@@ -636,7 +702,7 @@ MAIN_DASHBOARD_HTML = """
                                         <th>Student</th>
                                         <th>Contact</th>
                                         <th>Email</th>
-                                        <th>ID Doc</th>
+                                        <th>Docs</th>
                                         <th>Status</th>
                                         <th>Action</th>
                                     </tr>
@@ -662,10 +728,10 @@ MAIN_DASHBOARD_HTML = """
                                 <tr>
                                     <th>#ID</th>
                                     <th>Student Name</th>
-                                    <th>Contact</th>
-                                    <th>Email ID</th>
-                                    <th>ID Doc</th>
-                                    <th>Score</th>
+                                    <th>Course</th>
+                                    <th>Budget</th>
+                                    <th>Loan Assist</th>
+                                    <th>Docs</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -739,15 +805,12 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
-    <!-- VIEW DOCUMENT MODAL -->
+    <!-- FULL DETAILS & DOCUMENTS VIEW MODAL -->
     <div id="docModal" class="modal-overlay">
         <div class="modal-content">
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
-            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Details & Document</h3>
+            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Details & All Documents</h3>
             <div id="modalBodyContainer"></div>
-            <div style="margin-top: 20px; text-align: right;">
-                <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 18px; text-decoration: none; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; width: auto; height: auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
-            </div>
         </div>
     </div>
 
@@ -781,12 +844,23 @@ MAIN_DASHBOARD_HTML = """
                 <label style="font-size:12px; font-weight:600; color:#475569;">Course Interest</label>
                 <input type="text" id="edit_course_interest" class="form-control">
                 
-                <label style="font-size:12px; font-weight:600; color:#475569;">Update / Replace Document</label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:#475569;">Annual Budget</label>
+                        <input type="text" id="edit_annual_budget" class="form-control">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:#475569;">Loan Assistance</label>
+                        <input type="text" id="edit_loan_assistance" class="form-control">
+                    </div>
+                </div>
+
+                <label style="font-size:12px; font-weight:600; color:#475569;">Update Aadhar / Primary Doc</label>
                 <input type="file" id="edit_id_document" class="form-control" accept="image/*,.pdf">
                 
                 <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" id="edit_delete_doc" style="width:16px; height:16px;">
-                    <label for="edit_delete_doc" style="font-size:13px; color:#ef4444; font-weight:600; cursor:pointer;">Delete existing document</label>
+                    <label for="edit_delete_doc" style="font-size:13px; color:#ef4444; font-weight:600; cursor:pointer;">Delete all uploaded documents</label>
                 </div>
 
                 <div style="margin-top: 20px; text-align: right;">
@@ -805,7 +879,6 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('sidebarNav').classList.toggle('show');
         }
 
-        // Live Smartwatch & Time-based Greeting
         function updateClockAndGreeting() {
             const now = new Date();
             let hours = now.getHours();
@@ -813,7 +886,6 @@ MAIN_DASHBOARD_HTML = """
             const seconds = String(now.getSeconds()).padStart(2, '0');
             const ampm = hours >= 12 ? 'PM' : 'AM';
             
-            // Dynamic Greeting Logic
             let greeting = "Good Morning Shivam Sir";
             if (hours >= 12 && hours < 17) {
                 greeting = "Good Afternoon Shivam Sir";
@@ -823,7 +895,7 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('timeGreeting').innerText = greeting;
 
             hours = hours % 12;
-            hours = hours ? hours : 12; // 12-hour format
+            hours = hours ? hours : 12;
             const timeString = `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
             document.getElementById('liveWatch').innerText = timeString;
         }
@@ -928,13 +1000,15 @@ MAIN_DASHBOARD_HTML = """
             followupRecallTbody.innerHTML = '';
             const recallLeads = activeLeads.filter(l => l.status === 'Follow Up' || l.status === 'Contacted');
             if(recallLeads.length === 0) {
-                followupRecallTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No pending follow-ups for today.</td></tr>`;
+                followupRecallTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No pending follow-ups for today.</td></tr>`;
             } else {
                 recallLeads.forEach(lead => {
                     followupRecallTbody.innerHTML += `
                         <tr>
                             <td><strong>${lead.student_name}</strong></td>
                             <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
+                            <td>${lead.course_interest || 'N/A'}</td>
+                            <td>${lead.annual_budget || 'N/A'}</td>
                             <td><span class="badge-status ${getBadgeClass(lead.status)}">${lead.status}</span></td>
                             <td>
                                 <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
@@ -953,7 +1027,8 @@ MAIN_DASHBOARD_HTML = """
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
-                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
+                const hasAnyDoc = lead.id_document || lead.class_10_doc || lead.class_12_doc || lead.edu_scorecard;
+                const docAction = hasAnyDoc ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View All Details & Docs"><i class="fa-solid fa-eye"></i></button>` : `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Info"><i class="fa-solid fa-eye"></i></button>`;
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
@@ -979,15 +1054,16 @@ MAIN_DASHBOARD_HTML = """
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
-                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
+                const hasAnyDoc = lead.id_document || lead.class_10_doc || lead.class_12_doc || lead.edu_scorecard;
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Details"><i class="fa-solid fa-eye"></i></button>`;
                 allTbody.innerHTML += `
                     <tr>
                         <td>#${lead.id}</td>
                         <td><strong>${lead.student_name}</strong><br><small style="color:#64748b;">${lead.father_name || ''}</small></td>
-                        <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
-                        <td><a href="mailto:${lead.student_email}" onclick="logAction('Email Sent', 'Emailed student ${lead.student_name}')" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
+                        <td>${lead.course_interest || 'N/A'}</td>
+                        <td>${lead.annual_budget || 'N/A'}</td>
+                        <td><strong>${lead.loan_assistance || 'No'}</strong></td>
                         <td>${docAction}</td>
-                        <td><strong>${lead.score || 50} pts</strong></td>
                         <td>
                             <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
                                 <option value="New Lead" ${lead.status==='New Lead'?'selected':''}>New Lead</option>
@@ -1009,34 +1085,80 @@ MAIN_DASHBOARD_HTML = """
         function openDocModal(lead) {
             const modal = document.getElementById('docModal');
             const container = document.getElementById('modalBodyContainer');
-            const downloadBtn = document.getElementById('modalDownloadBtn');
             
-            let docPreviewHtml = '';
-            if (lead.id_document) {
-                const fullUrl = `/download-doc/${lead.id_document}`;
-                downloadBtn.href = fullUrl;
-                downloadBtn.style.display = 'inline-flex';
-                
-                if(lead.id_document.match(/\.(jpeg|jpg|png|gif)$/i)) {
-                    docPreviewHtml = `<div style="margin-top: 15px; text-align: center;"><img src="${fullUrl}" style="max-width:100%; max-height:220px; border-radius:8px; border:1px solid #cbd5e1;" alt="Document"></div>`;
-                } else {
-                    docPreviewHtml = `<div style="margin-top: 15px;"><p style="color:#475569; font-size:13px;"><i class="fa-solid fa-file-pdf" style="color:#ef4444; margin-right:5px;"></i> Document attached. Click download to view.</p></div>`;
-                }
+            let helpListHtml = '';
+            if (lead.help_with_list && lead.help_with_list.length > 0) {
+                helpListHtml = lead.help_with_list.map(h => `<li style="margin-bottom:3px;">${h}</li>`).join('');
             } else {
-                downloadBtn.style.display = 'none';
-                docPreviewHtml = `<p style="color:#94a3b8; font-size:13px; margin-top:15px;">No document uploaded.</p>`;
+                helpListHtml = '<li>General Counselling</li>';
+            }
+
+            let prefCollegesHtml = '';
+            if (lead.colleges_pref && lead.colleges_pref.length > 0) {
+                prefCollegesHtml = lead.colleges_pref.map(c => `<li><strong>${c.name}</strong> (${c.state})</li>`).join('');
+            } else {
+                prefCollegesHtml = '<li>None Specified</li>';
+            }
+
+            let docsHtml = '';
+            const docList = [
+                { title: 'Aadhar Attachment', path: lead.id_document },
+                { title: 'Class 10th Document', path: lead.class_10_doc },
+                { title: 'Class 12th Document', path: lead.class_12_doc },
+                { title: 'Scorecard / Marksheet', path: lead.edu_scorecard }
+            ];
+
+            docList.forEach(doc => {
+                if (doc.path) {
+                    const fullUrl = `/download-doc/${doc.path}`;
+                    let preview = '';
+                    if (doc.path.match(/\.(jpeg|jpg|png|gif)$/i)) {
+                        preview = `<div style="margin-top:6px;"><img src="${fullUrl}" style="max-width:100%; max-height:160px; border-radius:6px; border:1px solid #cbd5e1;"></div>`;
+                    }
+                    docsHtml += `
+                        <div style="background:#fff; border:1px solid #cbd5e1; padding:10px; border-radius:8px; margin-top:10px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <strong style="font-size:12.5px; color:#1e293b;"><i class="fa-solid fa-file-arrow-down" style="color:#2563eb; margin-right:5px;"></i> ${doc.title}</strong>
+                                <a href="${fullUrl}" target="_blank" class="action-icon-btn doc-btn" style="width:auto; padding:4px 10px; height:auto; font-size:12px;"><i class="fa-solid fa-download"></i> Download</a>
+                            </div>
+                            ${preview}
+                        </div>
+                    `;
+                }
+            });
+
+            if (!docsHtml) {
+                docsHtml = `<p style="color:#94a3b8; font-size:12.5px; margin-top:10px;">No documents attached by student.</p>`;
             }
 
             container.innerHTML = `
-                <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13.5px; color: #334155; line-height: 1.6;">
-                    <p style="margin-bottom:6px;"><strong>Student Name:</strong> ${lead.student_name}</p>
-                    <p style="margin-bottom:6px;"><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
-                    <p style="margin-bottom:6px;"><strong>Contact:</strong> ${lead.contact_number}</p>
-                    <p style="margin-bottom:6px;"><strong>Email:</strong> ${lead.student_email}</p>
-                    <p style="margin-bottom:6px;"><strong>Location:</strong> ${lead.city}, ${lead.state}</p>
-                    <p style="margin-bottom:0;"><strong>Course Interest:</strong> ${lead.course_interest}</p>
+                <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155; line-height: 1.6;">
+                    <h4 style="color:#0f172a; margin-bottom:8px; border-bottom:1px dashed #cbd5e1; padding-bottom:4px;">👤 Personal & Academic Details</h4>
+                    <p><strong>Student Name:</strong> ${lead.student_name}</p>
+                    <p><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
+                    <p><strong>Contact:</strong> ${lead.contact_number} (Alt: ${lead.alternate_number || 'N/A'})</p>
+                    <p><strong>Email:</strong> ${lead.student_email}</p>
+                    <p><strong>Location:</strong> ${lead.city}, ${lead.state}</p>
+                    <p><strong>Education Level:</strong> ${lead.current_education_level || 'N/A'} (Score: ${lead.edu_percentage || 'N/A'})</p>
+                    <p><strong>10th / 12th Marks:</strong> 10th: ${lead.class_10_percentage || 'N/A'} | 12th: ${lead.class_12_percentage || 'N/A'}</p>
+
+                    <h4 style="color:#0f172a; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed #cbd5e1; padding-bottom:4px;">📋 Counselling & Financial Requirements</h4>
+                    <p><strong>Course Interest:</strong> ${lead.course_interest || 'N/A'}</p>
+                    <p><strong>Annual Budget:</strong> ${lead.annual_budget || 'N/A'}</p>
+                    <p><strong>Fee Payment:</strong> ${lead.fee_payment_option || 'N/A'}</p>
+                    <p><strong>Loan Assistance:</strong> ${lead.loan_assistance || 'N/A'} | <strong>Hostel:</strong> ${lead.hostel_required || 'N/A'}</p>
+                    <p><strong>Contacted Other College:</strong> ${lead.contacted_college || 'N/A'}</p>
+                    <p><strong>Hear About Us:</strong> ${lead.hear_about || 'N/A'} | <strong>Time Slot:</strong> ${lead.preferred_time || 'N/A'}</p>
+
+                    <h4 style="color:#0f172a; margin-top:12px; margin-bottom:4px;">🎯 Wants Help With:</h4>
+                    <ul style="padding-left:20px; color:#475569;">${helpListHtml}</ul>
+
+                    <h4 style="color:#0f172a; margin-top:12px; margin-bottom:4px;">🏛️ Preferred Colleges:</h4>
+                    <ul style="padding-left:20px; color:#475569;">${prefCollegesHtml}</ul>
                 </div>
-                ${docPreviewHtml}
+
+                <h4 style="color:#0f172a; margin-top:15px; font-size:14px;"><i class="fa-solid fa-folder-open" style="color:#2563eb; margin-right:5px;"></i> Uploaded Document Attachments</h4>
+                ${docsHtml}
             `;
             modal.style.display = 'flex';
         }
@@ -1052,6 +1174,8 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('edit_state').value = lead.state || '';
             document.getElementById('edit_city').value = lead.city || '';
             document.getElementById('edit_course_interest').value = lead.course_interest || '';
+            document.getElementById('edit_annual_budget').value = lead.annual_budget || '';
+            document.getElementById('edit_loan_assistance').value = lead.loan_assistance || '';
             document.getElementById('edit_delete_doc').checked = false;
             document.getElementById('edit_id_document').value = '';
             
@@ -1075,6 +1199,8 @@ MAIN_DASHBOARD_HTML = """
             formData.append('state', document.getElementById('edit_state').value);
             formData.append('city', document.getElementById('edit_city').value);
             formData.append('course_interest', document.getElementById('edit_course_interest').value);
+            formData.append('annual_budget', document.getElementById('edit_annual_budget').value);
+            formData.append('loan_assistance', document.getElementById('edit_loan_assistance').value);
             formData.append('delete_doc', document.getElementById('edit_delete_doc').checked);
 
             const fileField = document.getElementById('edit_id_document');
