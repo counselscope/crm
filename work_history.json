@@ -19,5 +19,12 @@
         "time": "06:23:56 PM",
         "action_type": "New Form Enquiry",
         "details": "Enquiry submitted by mukesh (9874561230)"
+    },
+    {
+        "id": 4,
+        "date": "2026-11-01",
+        "time": "06:29:18 PM",
+        "action_type": "Lead Updated",
+        "details": "Updated lead information for mukesh"
     }
 ]
