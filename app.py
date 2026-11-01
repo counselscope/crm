@@ -15,6 +15,7 @@ CORS(app)
 
 DATA_FILE = "leads.json"
 COLLEGES_FILE = "colleges.json"
+HISTORY_FILE = "work_history.json"
 
 # GitHub API Configuration from Environment Variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -34,8 +35,21 @@ def save_data(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
     
-    if filename == DATA_FILE and GITHUB_TOKEN and GITHUB_REPO:
+    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE]:
         commit_json_to_github(filename)
+
+def log_activity(action_type, details):
+    history = load_data(HISTORY_FILE)
+    now = datetime.now()
+    log_item = {
+        "id": len(history) + 1,
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%I:%M:%S %p"),
+        "action_type": action_type,
+        "details": details
+    }
+    history.append(log_item)
+    save_data(HISTORY_FILE, history)
 
 def commit_json_to_github(filepath):
     try:
@@ -149,12 +163,13 @@ def submit_lead():
             "id_document": document_filename,
             "status": "New Lead",
             "score": score,
-            "notes": "Enquiry received with document saved to GitHub.",
+            "notes": "Enquiry received with document saved.",
             "is_deleted": False,
             "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
+        log_activity("New Lead Form", f"New enquiry received for {student_name} ({contact_number})")
 
         return jsonify({"status": "success", "message": "Lead captured and document securely stored!"}), 200
     except Exception as e:
@@ -207,6 +222,7 @@ def update_lead():
                     target_lead['id_document'] = doc_path
 
         save_data(DATA_FILE, leads)
+        log_activity("Lead Updated", f"Updated lead information for {student_name}")
         return jsonify({"status": "success", "message": "Lead updated successfully!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -240,11 +256,14 @@ def update_status():
     new_status = data.get('status')
     
     leads = load_data(DATA_FILE)
+    student_name = ""
     for lead in leads:
         if lead['id'] == lead_id:
             lead['status'] = new_status
+            student_name = lead['student_name']
             break
     save_data(DATA_FILE, leads)
+    log_activity("Status Change", f"Status changed to '{new_status}' for student {student_name}")
     return jsonify({"status": "success"})
 
 
@@ -259,6 +278,7 @@ def delete_lead():
     for lead in leads:
         if lead['id'] == lead_id:
             lead['is_deleted'] = True
+            log_activity("Moved to Trash", f"Moved lead #{lead_id} ({lead['student_name']}) to trash")
             break
     save_data(DATA_FILE, leads)
     return jsonify({"status": "success"})
@@ -275,6 +295,7 @@ def restore_lead():
     for lead in leads:
         if lead['id'] == lead_id:
             lead['is_deleted'] = False
+            log_activity("Restored Lead", f"Restored lead #{lead_id} ({lead['student_name']}) from trash")
             break
     save_data(DATA_FILE, leads)
     return jsonify({"status": "success"})
@@ -290,6 +311,27 @@ def permanent_delete():
     leads = load_data(DATA_FILE)
     leads = [l for l in leads if l['id'] != lead_id]
     save_data(DATA_FILE, leads)
+    log_activity("Permanent Delete", f"Permanently deleted lead #{lead_id}")
+    return jsonify({"status": "success"})
+
+
+@app.route('/api/get-history', methods=['GET'])
+def get_history_api():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+    date_filter = request.args.get('date')
+    history = load_data(HISTORY_FILE)
+    if date_filter:
+        history = [h for h in history if h.get('date') == date_filter]
+    return jsonify(history)
+
+
+@app.route('/api/log-action', methods=['POST'])
+def log_action_route():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.json
+    log_activity(data.get('action_type', 'Action'), data.get('details', ''))
     return jsonify({"status": "success"})
 
 
@@ -315,6 +357,7 @@ def add_college():
     }
     colleges.append(new_c)
     save_data(COLLEGES_FILE, colleges)
+    log_activity("College Added", f"Added new college tie-up: {data.get('college_name')}")
     return jsonify({"status": "success"})
 
 
@@ -347,19 +390,20 @@ def home():
     return redirect(url_for('login'))
 
 
-# --- LOGIN & DASHBOARD HTML TEMPLATES ---
+# --- FRONTEND HTML TEMPLATES ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CounselScope CRM - Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { font-family: 'Plus Jakarta Sans', sans-serif; box-sizing: border-box; }
-        body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-card { background: #1e293b; padding: 40px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 380px; border: 1px solid #334155; text-align: center; }
-        .logo-img { max-width: 140px; margin-bottom: 20px; border-radius: 8px; }
+        body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 15px; }
+        .login-card { background: #1e293b; padding: 40px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); width: 100%; max-width: 380px; border: 1px solid #334155; text-align: center; }
+        .logo-img { max-width: 130px; margin-bottom: 20px; border-radius: 8px; }
         h2 { margin-bottom: 8px; color: #38bdf8; font-size: 22px; }
         p.subtitle { color: #94a3b8; font-size: 13px; margin-bottom: 24px; }
         label { text-align: left; display: block; margin-bottom: 6px; font-size: 13px; color: #cbd5e1; font-weight: 500; }
@@ -410,9 +454,8 @@ MAIN_DASHBOARD_HTML = """
         }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-dark); display: flex; height: 100vh; overflow: hidden; }
-        
-        /* Sidebar styling & responsiveness */
-        .sidebar { width: 255px; background-color: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; padding: 20px 15px; flex-shrink: 0; justify-content: space-between; transition: 0.3s; }
+
+        .sidebar { width: 255px; background-color: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; padding: 20px 15px; flex-shrink: 0; justify-content: space-between; transition: 0.3s; z-index: 200; }
         .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 10px 10px 25px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
         .sidebar-brand img { width: 38px; height: 38px; border-radius: 8px; }
         .sidebar-brand-text h3 { font-size: 16px; font-weight: 700; color: #fff; }
@@ -421,17 +464,25 @@ MAIN_DASHBOARD_HTML = """
         .nav-item button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 15px; border-radius: 10px; color: #94a3b8; background: none; border: none; font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.2s; text-align: left; }
         .nav-item button:hover, .nav-item.active button { background-color: var(--primary); color: #fff; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
 
-        .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
-        .top-header { background: var(--card-bg); height: 70px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100; }
-        .search-bar { display: flex; align-items: center; background: #f1f5f9; padding: 10px 16px; border-radius: 20px; width: 350px; gap: 10px; }
+        .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow-y: auto; width: 100%; }
+        .top-header { background: var(--card-bg); height: 75px; display: flex; align-items: center; justify-content: space-between; padding: 0 25px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100; gap: 15px; }
+        
+        .header-left { display: flex; align-items: center; gap: 15px; }
+        .menu-toggle-btn { display: none; background: none; border: none; font-size: 20px; color: var(--text-dark); cursor: pointer; }
+
+        .smart-watch { background: #0f172a; color: #38bdf8; padding: 8px 16px; border-radius: 12px; font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; border: 1px solid #1e293b; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+        .smart-watch i { color: #f59e0b; animation: tick 1s infinite alternate; }
+        @keyframes tick { from { opacity: 0.4; } to { opacity: 1; } }
+
+        .search-bar { display: flex; align-items: center; background: #f1f5f9; padding: 10px 16px; border-radius: 20px; width: 300px; gap: 10px; }
         .search-bar input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; }
-        
-        .content-area { padding: 30px; display: flex; flex-direction: column; gap: 25px; }
-        .hero-banner { background: linear-gradient(135deg, #0b1329 0%, #1d3557 100%); border-radius: 20px; padding: 35px 40px; color: white; box-shadow: 0 10px 25px rgba(11, 19, 41, 0.15); }
-        .hero-text h1 { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+
+        .content-area { padding: 25px; display: flex; flex-direction: column; gap: 25px; }
+        .hero-banner { background: linear-gradient(135deg, #0b1329 0%, #1d3557 100%); border-radius: 20px; padding: 30px 35px; color: white; box-shadow: 0 10px 25px rgba(11, 19, 41, 0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
+        .hero-text h1 { font-size: 24px; font-weight: 800; margin-bottom: 6px; color: #f8fafc; }
         .hero-text p { font-size: 13.5px; color: #94a3b8; max-width: 500px; line-height: 1.5; }
-        
-        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 18px; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; }
         .metric-card { background: var(--card-bg); padding: 20px; border-radius: 16px; border: 1px solid var(--border-color); display: flex; align-items: center; gap: 15px; }
         .m-icon { width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
         .m-icon.blue { background: #eff6ff; color: #2563eb; }
@@ -440,24 +491,24 @@ MAIN_DASHBOARD_HTML = """
         .m-icon.purple { background: #faf5ff; color: #9333ea; }
         .m-info h3 { font-size: 22px; font-weight: 800; color: var(--text-dark); }
         .m-info p { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
-        
+
         .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; }
         .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border-color); padding: 22px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
-        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
         .card-header h3 { font-size: 15px; font-weight: 700; color: var(--text-dark); }
-        
+
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th { font-size: 11.5px; font-weight: 600; color: var(--text-muted); padding: 12px 14px; border-bottom: 1px solid var(--border-color); background: #f8fafc; }
         td { font-size: 13px; padding: 13px 14px; border-bottom: 1px solid var(--border-color); color: var(--text-dark); vertical-align: middle; }
         tr:hover td { background-color: #f8fafc; }
-        
+
         .badge-status { padding: 5px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-block; }
         .badge-new { background: #e0f2fe; color: #0369a1; }
         .badge-contacted { background: #fef3c7; color: #b45309; }
         .badge-followup { background: #e0e7ff; color: #4338ca; }
         .badge-closed { background: #dcfce7; color: #15803d; }
         .badge-rejected { background: #fee2e2; color: #b91c1c; }
-        
+
         select.status-select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12px; font-weight: 600; cursor: pointer; }
         .action-icon-btn { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; transition: 0.2s; margin-right: 4px; }
         .call-btn { background: #dcfce7; color: #16a34a; }
@@ -467,11 +518,11 @@ MAIN_DASHBOARD_HTML = """
         .edit-btn { background: #fef3c7; color: #d97706; }
         .edit-btn:hover { background: #d97706; color: white; }
         .trash-btn { background: #fee2e2; color: #dc2626; border: none; cursor: pointer; }
-        
+
         .chart-container { position: relative; height: 210px; display: flex; justify-content: center; }
         .tab-section { display: none; }
         .tab-section.active { display: block; }
-        
+
         /* Responsive Animated Modals */
         .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
         .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
@@ -485,19 +536,22 @@ MAIN_DASHBOARD_HTML = """
         /* Media Queries for Maximum Responsiveness */
         @media (max-width: 900px) {
             body { flex-direction: column; height: auto; overflow: auto; }
-            .sidebar { width: 100%; height: auto; flex-direction: row; align-items: center; padding: 12px 15px; flex-wrap: wrap; }
-            .sidebar-brand { border: none; padding: 0; }
-            .nav-menu { flex-direction: row; flex-wrap: wrap; margin-top: 10px; gap: 4px; }
-            .nav-item button { padding: 8px 12px; font-size: 12px; width: auto; }
+            .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100vh; flex-direction: column; padding: 20px 15px; }
+            .sidebar.show { left: 0; }
+            .menu-toggle-btn { display: block; }
             .main-wrapper { height: auto; overflow: visible; }
             .dashboard-grid { grid-template-columns: 1fr; }
-            .top-header { padding: 0 15px; }
-            .search-bar { width: 220px; }
+            .top-header { padding: 0 15px; flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
+            .search-bar { width: 100%; order: 3; }
+            .content-area { padding: 15px; }
+            .hero-banner { padding: 20px; }
+            .smart-watch { font-size: 12px; padding: 6px 12px; }
         }
     </style>
 </head>
 <body>
-    <aside class="sidebar">
+
+    <aside class="sidebar" id="sidebarNav">
         <div>
             <div class="sidebar-brand">
                 <img src="https://i.ibb.co/6R6t2Y0/unnamed.jpg" alt="Logo">
@@ -510,34 +564,68 @@ MAIN_DASHBOARD_HTML = """
                 <li class="nav-item active" onclick="switchTab('dashboard-tab', this)"><button><i class="fa-solid fa-chart-pie"></i> Dashboard</button></li>
                 <li class="nav-item" onclick="switchTab('leads-tab', this)"><button><i class="fa-solid fa-users"></i> All Leads</button></li>
                 <li class="nav-item" onclick="switchTab('colleges-tab', this)"><button><i class="fa-solid fa-building-columns"></i> Colleges Manager</button></li>
+                <li class="nav-item" onclick="switchTab('history-tab', this)"><button><i class="fa-solid fa-clock-rotate-left"></i> Work History</button></li>
                 <li class="nav-item" onclick="switchTab('trash-tab', this)"><button><i class="fa-solid fa-trash-can"></i> Trash Bin</button></li>
             </ul>
         </div>
         <div style="padding: 10px;">
-            <a href="/logout" style="background:#ef4444; color:white; padding:8px 12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:600; font-size:12.5px;">Logout</a>
+            <a href="/logout" style="background:#ef4444; color:white; padding:10px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:600; font-size:13px;">Logout</a>
         </div>
     </aside>
+
     <div class="main-wrapper">
         <header class="top-header">
+            <div class="header-left">
+                <button class="menu-toggle-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+                <div class="smart-watch">
+                    <i class="fa-solid fa-clock"></i>
+                    <span id="liveWatch">00:00:00 AM</span>
+                </div>
+            </div>
+
             <div class="search-bar">
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <input type="text" id="globalSearch" onkeyup="filterLeadsTable()" placeholder="Search leads...">
             </div>
         </header>
+
         <div class="content-area">
+            <!-- DASHBOARD TAB -->
             <div id="dashboard-tab" class="tab-section active">
                 <div class="hero-banner" style="margin-bottom: 25px;">
                     <div class="hero-text">
-                        <h1>Build Relationships. Grow Admissions.</h1>
-                        <p>Complete AI-enabled college CRM with instant calling, direct mailer dispatch, live status charts, and document management.</p>
+                        <h1 id="timeGreeting">Good Morning Shivam Sir</h1>
+                        <p>Welcome to your CounselScope CRM. Track work history, follow-up recalls, and student admissions in real-time.</p>
                     </div>
                 </div>
+
                 <div class="metrics-grid" style="margin-bottom: 25px;">
                     <div class="metric-card"><div class="m-icon blue"><i class="fa-solid fa-users"></i></div><div class="m-info"><h3 id="statTotal">0</h3><p>Total Leads</p></div></div>
-                    <div class="metric-card"><div class="m-icon green"><i class="fa-solid fa-graduation-cap"></i></div><div class="m-info"><h3 id="statClosed">0</h3><p>Admissions Closed</p></div></div>
+                    <div class="metric-card"><div class="m-icon green"><div class="m-icon green"><i class="fa-solid fa-graduation-cap"></i></div></div><div class="m-info"><h3 id="statClosed">0</h3><p>Admissions Closed</p></div></div>
                     <div class="metric-card"><div class="m-icon orange"><i class="fa-solid fa-phone-volume"></i></div><div class="m-info"><h3 id="statContacted">0</h3><p>Contacted</p></div></div>
                     <div class="metric-card"><div class="m-icon purple"><i class="fa-solid fa-spinner"></i></div><div class="m-info"><h3 id="statNew">0</h3><p>New Leads</p></div></div>
                 </div>
+
+                <!-- FOLLOW UP RECALL NOTIFICATION CARD -->
+                <div class="card" style="margin-bottom: 25px; border-left: 5px solid #6366f1;">
+                    <div class="card-header">
+                        <h3 style="color: #4338ca;"><i class="fa-solid fa-bell" style="margin-right: 8px;"></i> Immediate Follow-up & Recalls</h3>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Student</th>
+                                    <th>Contact</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="followupRecallTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div class="dashboard-grid">
                     <div class="card">
                         <div class="card-header"><h3>Recent Lead Enquiries</h3></div>
@@ -563,7 +651,8 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
             </div>
-            
+
+            <!-- ALL LEADS TAB -->
             <div id="leads-tab" class="tab-section">
                 <div class="card">
                     <div class="card-header"><h3>All Registered Leads</h3></div>
@@ -587,6 +676,32 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
+            <!-- WORK HISTORY TAB -->
+            <div id="history-tab" class="tab-section">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Work Activity History Log</h3>
+                        <div>
+                            <label style="font-size:12px; font-weight:600; margin-right:8px;">Select Date:</label>
+                            <input type="date" id="historyDateSelect" class="form-control" style="width:auto; display:inline-block; margin:0;" onchange="fetchWorkHistory()">
+                        </div>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Activity / Task</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COLLEGES TAB -->
             <div id="colleges-tab" class="tab-section">
                 <div class="card" style="margin-bottom: 20px;">
                     <h3>Add New College / Tie-up</h3>
@@ -609,6 +724,7 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
+            <!-- TRASH TAB -->
             <div id="trash-tab" class="tab-section">
                 <div class="card">
                     <div class="card-header"><h3 style="color: #ef4444;"><i class="fa-solid fa-trash-can"></i> Trash Bin</h3></div>
@@ -685,12 +801,49 @@ MAIN_DASHBOARD_HTML = """
         let collegesData = [];
         let pieChartInstance = null;
 
+        function toggleSidebar() {
+            document.getElementById('sidebarNav').classList.toggle('show');
+        }
+
+        // Live Smartwatch & Time-based Greeting
+        function updateClockAndGreeting() {
+            const now = new Date();
+            let hours = now.getHours();
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            
+            // Dynamic Greeting Logic
+            let greeting = "Good Morning Shivam Sir";
+            if (hours >= 12 && hours < 17) {
+                greeting = "Good Afternoon Shivam Sir";
+            } else if (hours >= 17) {
+                greeting = "Good Evening Shivam Sir";
+            }
+            document.getElementById('timeGreeting').innerText = greeting;
+
+            hours = hours % 12;
+            hours = hours ? hours : 12; // 12-hour format
+            const timeString = `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+            document.getElementById('liveWatch').innerText = timeString;
+        }
+        setInterval(updateClockAndGreeting, 1000);
+        updateClockAndGreeting();
+
         function switchTab(tabId, navElement) {
             document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             if(navElement) navElement.classList.add('active');
             if(tabId === 'colleges-tab') fetchColleges();
+            if(tabId === 'history-tab') {
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('historyDateSelect').value = today;
+                fetchWorkHistory();
+            }
+            if(window.innerWidth <= 900) {
+                document.getElementById('sidebarNav').classList.remove('show');
+            }
         }
 
         async function fetchLeadsData() {
@@ -701,6 +854,37 @@ MAIN_DASHBOARD_HTML = """
                     renderUI(rawLeadsData);
                 }
             } catch(e) { console.error(e); }
+        }
+
+        async function fetchWorkHistory() {
+            const selectedDate = document.getElementById('historyDateSelect').value;
+            const res = await fetch(`/api/get-history?date=${selectedDate}`);
+            if(res.ok) {
+                const history = await res.json();
+                const tbody = document.getElementById('historyTbody');
+                tbody.innerHTML = '';
+                if(history.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">No activity logged for this date.</td></tr>`;
+                    return;
+                }
+                history.reverse().forEach(item => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong style="color:#2563eb;">${item.time}</strong></td>
+                            <td><span class="badge-status badge-followup">${item.action_type}</span></td>
+                            <td>${item.details}</td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+
+        async function logAction(action_type, details) {
+            await fetch('/api/log-action', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action_type, details})
+            });
         }
 
         async function fetchColleges() {
@@ -739,6 +923,33 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('statContacted').innerText = activeLeads.filter(l => l.status === 'Contacted').length;
             document.getElementById('statNew').innerText = activeLeads.filter(l => l.status === 'New Lead').length;
             
+            // Populate Followup / Recall section
+            const followupRecallTbody = document.getElementById('followupRecallTbody');
+            followupRecallTbody.innerHTML = '';
+            const recallLeads = activeLeads.filter(l => l.status === 'Follow Up' || l.status === 'Contacted');
+            if(recallLeads.length === 0) {
+                followupRecallTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No pending follow-ups for today.</td></tr>`;
+            } else {
+                recallLeads.forEach(lead => {
+                    followupRecallTbody.innerHTML += `
+                        <tr>
+                            <td><strong>${lead.student_name}</strong></td>
+                            <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
+                            <td><span class="badge-status ${getBadgeClass(lead.status)}">${lead.status}</span></td>
+                            <td>
+                                <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
+                                    <option value="New Lead" ${lead.status==='New Lead'?'selected':''}>New Lead</option>
+                                    <option value="Contacted" ${lead.status==='Contacted'?'selected':''}>Contacted</option>
+                                    <option value="Follow Up" ${lead.status==='Follow Up'?'selected':''}>Follow Up</option>
+                                    <option value="Closed" ${lead.status==='Closed'?'selected':''}>Closed</option>
+                                    <option value="Rejected" ${lead.status==='Rejected'?'selected':''}>Rejected</option>
+                                </select>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
@@ -746,8 +957,8 @@ MAIN_DASHBOARD_HTML = """
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
-                        <td><a href="tel:${lead.contact_number}" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
-                        <td><a href="mailto:${lead.student_email}" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
+                        <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
+                        <td><a href="mailto:${lead.student_email}" onclick="logAction('Email Sent', 'Emailed student ${lead.student_name}')" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
                         <td>${docAction}</td>
                         <td><span class="badge-status ${getBadgeClass(lead.status)}">${lead.status}</span></td>
                         <td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>
@@ -773,8 +984,8 @@ MAIN_DASHBOARD_HTML = """
                     <tr>
                         <td>#${lead.id}</td>
                         <td><strong>${lead.student_name}</strong><br><small style="color:#64748b;">${lead.father_name || ''}</small></td>
-                        <td>${lead.contact_number}</td>
-                        <td>${lead.student_email}</td>
+                        <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
+                        <td><a href="mailto:${lead.student_email}" onclick="logAction('Email Sent', 'Emailed student ${lead.student_name}')" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
                         <td>${docAction}</td>
                         <td><strong>${lead.score || 50} pts</strong></td>
                         <td>
