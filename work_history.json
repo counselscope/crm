@@ -12,5 +12,12 @@
         "time": "06:01:46 PM",
         "action_type": "Moved to Trash",
         "details": "Moved lead #1 (suresh) to trash"
+    },
+    {
+        "id": 3,
+        "date": "2026-11-01",
+        "time": "06:23:56 PM",
+        "action_type": "New Form Enquiry",
+        "details": "Enquiry submitted by mukesh (9874561230)"
     }
 ]
