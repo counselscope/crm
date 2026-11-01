@@ -38,7 +38,6 @@ def save_data(filename, data):
     if filename == DATA_FILE and GITHUB_TOKEN and GITHUB_REPO:
         commit_json_to_github(filename)
 
-# Helper function to commit JSON files to GitHub
 def commit_json_to_github(filepath):
     try:
         with open(filepath, "rb") as f:
@@ -51,7 +50,6 @@ def commit_json_to_github(filepath):
             "Accept": "application/vnd.github+json"
         }
         
-        # Get current file SHA if it exists
         get_res = requests.get(url, headers=headers)
         sha = get_res.json().get('sha') if get_res.status_code == 200 else None
 
@@ -67,7 +65,7 @@ def commit_json_to_github(filepath):
     except Exception as e:
         print("GitHub JSON Commit Error:", e)
 
-# Helper function to upload document renamed as aadhar.jpg directly to GitHub
+# Helper function to upload document renamed as aadhar.[ext] directly inside student's folder in GitHub
 def upload_file_to_github(file_storage, student_name, original_filename):
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return None
@@ -75,7 +73,7 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         
-        # Extract file extension (e.g., .jpg, .png, .pdf) and name it aadhar.[ext]
+        # Extract file extension and name it aadhar.[ext]
         ext = os.path.splitext(original_filename)[1].lower()
         if not ext:
             ext = ".jpg"
@@ -92,7 +90,6 @@ def upload_file_to_github(file_storage, student_name, original_filename):
             "Accept": "application/vnd.github+json"
         }
         
-        # Check if aadhar file already exists in repo for this student to get SHA
         get_res = requests.get(url, headers=headers)
         sha = get_res.json().get('sha') if get_res.status_code == 200 else None
 
@@ -133,7 +130,6 @@ def submit_lead():
         if not student_name or not contact_number or not student_email:
             return jsonify({"status": "error", "message": "Required fields missing"}), 400
 
-        # Handle file upload renamed to aadhar.jpg/pdf in student folder
         document_filename = None
         if 'id_document' in request.files:
             file = request.files['id_document']
@@ -161,7 +157,7 @@ def submit_lead():
             "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }
         leads.append(new_lead)
-        save_data(DATA_FILE, leads)  # This will now auto-save leads.json to GitHub too!
+        save_data(DATA_FILE, leads)
 
         return jsonify({"status": "success", "message": "Lead captured and document securely stored!"}), 200
     except Exception as e:
