@@ -188,8 +188,6 @@ def submit_lead():
             return target_lead.get(file_key, "N/A") if target_lead else "N/A"
 
         browser_token = target_lead.get('browser_token') if target_lead else secrets.token_hex(32)
-
-        # Collect help topics from checkbox list if sent as JSON string
         help_topics_val = request.form.get('help_with_list') or request.form.get('help_topics', 'N/A')
 
         if target_lead:
@@ -547,13 +545,10 @@ def logout():
 
 @app.route('/')
 def home():
-    if os.path.exists("index.html"):
-        with open("index.html", "r", encoding="utf-8") as f:
-            return f.read()
-    return "index.html not found", 404
+    return jsonify({"status": "success", "message": "CounselScope CRM Backend API is running successfully!"})
 
-LOGIN_HTML = """...""" # (Admins HTML Template)
-MAIN_DASHBOARD_HTML = """...""" # (Dashboard HTML Template)
+LOGIN_HTML = """...""" # (Admin Login HTML template)
+MAIN_DASHBOARD_HTML = """...""" # (Admin Dashboard HTML template)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
