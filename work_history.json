@@ -5,5 +5,12 @@
         "time": "05:47:03 PM",
         "action_type": "Status Change",
         "details": "Status changed to 'New Lead' for student suresh"
+    },
+    {
+        "id": 2,
+        "date": "2026-11-01",
+        "time": "06:01:46 PM",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #1 (suresh) to trash"
     }
 ]
