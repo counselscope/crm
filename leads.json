@@ -10,7 +10,7 @@
         "city": "mumbai",
         "course_interest": "General",
         "id_document": "student_documents/suresh/aadhar.pdf",
-        "status": "Contacted",
+        "status": "New Lead",
         "score": 80,
         "notes": "Enquiry received with document saved to GitHub.",
         "is_deleted": false,
