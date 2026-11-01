@@ -34,7 +34,6 @@ def save_data(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
     
-    # Automatically commit leads.json to GitHub so data never gets lost on Render restart
     if filename == DATA_FILE and GITHUB_TOKEN and GITHUB_REPO:
         commit_json_to_github(filename)
 
@@ -65,7 +64,6 @@ def commit_json_to_github(filepath):
     except Exception as e:
         print("GitHub JSON Commit Error:", e)
 
-# Helper function to upload document renamed as aadhar.[ext] directly inside student's folder in GitHub
 def upload_file_to_github(file_storage, student_name, original_filename):
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return None
@@ -73,7 +71,6 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         
-        # Extract file extension and name it aadhar.[ext]
         ext = os.path.splitext(original_filename)[1].lower()
         if not ext:
             ext = ".jpg"
@@ -405,14 +402,19 @@ MAIN_DASHBOARD_HTML = """
         .action-icon-btn { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; transition: 0.2s; margin-right: 4px; }
         .call-btn { background: #dcfce7; color: #16a34a; }
         .mail-btn { background: #e0f2fe; color: #0284c7; }
-        .doc-btn { background: #fef3c7; color: #d97706; }
+        .doc-btn { background: #e0f2fe; color: #0284c7; }
+        .doc-btn:hover { background: #0284c7; color: white; }
         .trash-btn { background: #fee2e2; color: #dc2626; border: none; cursor: pointer; }
         .chart-container { position: relative; height: 210px; display: flex; justify-content: center; }
         .tab-section { display: none; }
         .tab-section.active { display: block; }
-        #docModal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
-        .modal-content { background: white; padding: 25px; border-radius: 12px; max-width: 500px; width: 90%; text-align: center; position: relative; }
-        .close-modal { position: absolute; top: 12px; right: 15px; font-size: 20px; cursor: pointer; color: #64748b; }
+        
+        /* Animated Modal Styles */
+        #docModal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .modal-content { background: white; padding: 30px; border-radius: 16px; max-width: 520px; width: 90%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 90vh; overflow-y: auto; }
+        @keyframes modalPopup { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .close-modal { position: absolute; top: 15px; right: 20px; font-size: 22px; cursor: pointer; color: #64748b; transition: 0.2s; }
+        .close-modal:hover { color: #0f172a; }
     </style>
 </head>
 <body>
@@ -534,14 +536,19 @@ MAIN_DASHBOARD_HTML = """
             </div>
         </div>
     </div>
+
+    <!-- RESPONSIVE ANIMATED MODAL FOR STUDENT DETAILS & DOCUMENT -->
     <div id="docModal">
         <div class="modal-content">
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
-            <h3 style="margin-bottom: 15px; color: #1e293b;">Document Viewer</h3>
-            <div id="modalBodyContainer" style="margin-bottom: 20px; max-height: 350px; overflow: auto;"></div>
-            <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 20px; text-decoration: none; border-radius: 8px; display: inline-block;" target="_blank"><i class="fa-solid fa-download"></i> Download / View Document</a>
+            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Details & Document</h3>
+            <div id="modalBodyContainer"></div>
+            <div style="margin-top: 20px; text-align: right;">
+                <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 18px; text-decoration: none; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; width: auto; height: auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
+            </div>
         </div>
     </div>
+
     <script>
         let rawLeadsData = [];
         let collegesData = [];
@@ -598,7 +605,7 @@ MAIN_DASHBOARD_HTML = """
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
-                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick="openDocModal('${lead.id_document}')"><i class="fa-solid fa-id-card"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
+                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Student & Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
@@ -622,7 +629,7 @@ MAIN_DASHBOARD_HTML = """
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
-                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick="openDocModal('${lead.id_document}')"><i class="fa-solid fa-id-card"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
+                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Student & Document"><i class="fa-solid fa-eye"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
                 allTbody.innerHTML += `
                     <tr>
                         <td>#${lead.id}</td>
@@ -645,17 +652,38 @@ MAIN_DASHBOARD_HTML = """
                 `;
             });
         }
-        function openDocModal(docPath) {
+        function openDocModal(lead) {
             const modal = document.getElementById('docModal');
             const container = document.getElementById('modalBodyContainer');
             const downloadBtn = document.getElementById('modalDownloadBtn');
-            const fullUrl = `/download-doc/${docPath}`;
-            downloadBtn.href = fullUrl;
-            if(docPath.match(/\\.(jpeg|jpg|png|gif)$/i)) {
-                container.innerHTML = `<img src="${fullUrl}" style="max-width:100%; border-radius:8px;" alt="Document">`;
+            
+            let docPreviewHtml = '';
+            if (lead.id_document) {
+                const fullUrl = `/download-doc/${lead.id_document}`;
+                downloadBtn.href = fullUrl;
+                downloadBtn.style.display = 'inline-flex';
+                
+                if(lead.id_document.match(/\.(jpeg|jpg|png|gif)$/i)) {
+                    docPreviewHtml = `<div style="margin-top: 15px; text-align: center;"><img src="${fullUrl}" style="max-width:100%; max-height:220px; border-radius:8px; border:1px solid #cbd5e1;" alt="Document Preview"></div>`;
+                } else {
+                    docPreviewHtml = `<div style="margin-top: 15px;"><p style="color:#475569; font-size:13px;"><i class="fa-solid fa-file-pdf" style="color:#ef4444; margin-right:5px;"></i> Document attached. Click download to view.</p></div>`;
+                }
             } else {
-                container.innerHTML = `<p style="padding:20px; color:#475569;">Document ready for download.</p>`;
+                downloadBtn.style.display = 'none';
+                docPreviewHtml = `<p style="color:#94a3b8; font-size:13px; margin-top:15px;">No document uploaded.</p>`;
             }
+
+            container.innerHTML = `
+                <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13.5px; color: #334155; line-height: 1.6;">
+                    <p style="margin-bottom:6px;"><strong>Student Name:</strong> ${lead.student_name}</p>
+                    <p style="margin-bottom:6px;"><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
+                    <p style="margin-bottom:6px;"><strong>Contact:</strong> ${lead.contact_number} ${lead.alternate_number && lead.alternate_number !== 'N/A' ? '/ ' + lead.alternate_number : ''}</p>
+                    <p style="margin-bottom:6px;"><strong>Email:</strong> ${lead.student_email}</p>
+                    <p style="margin-bottom:6px;"><strong>Location:</strong> ${lead.city}, ${lead.state}</p>
+                    <p style="margin-bottom:0;"><strong>Course Interest:</strong> ${lead.course_interest}</p>
+                </div>
+                ${docPreviewHtml}
+            `;
             modal.style.display = 'flex';
         }
         function closeDocModal() { document.getElementById('docModal').style.display = 'none'; }
