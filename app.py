@@ -2,8 +2,10 @@ import os
 import json
 import csv
 import io
+import base64
+import requests
 from datetime import datetime
-from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response, send_from_directory
+from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -14,12 +16,10 @@ CORS(app)
 DATA_FILE = "leads.json"
 COLLEGES_FILE = "colleges.json"
 
-# Persistent storage path setup
-UPLOAD_FOLDER = os.path.join(os.getcwd(), "student_documents")
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# Ensure upload directory exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# GitHub API Configuration from Environment Variables
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # e.g. "yourusername/your-repo-name"
+GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 
 def load_data(filename):
     if not os.path.exists(filename):
@@ -33,6 +33,39 @@ def load_data(filename):
 def save_data(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
+
+# Helper function to upload file directly to GitHub Repository via API
+def upload_file_to_github(file_storage, student_name, original_filename):
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return None  # Fallback if GitHub credentials aren't set yet
+    
+    try:
+        safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        timestamp_prefix = datetime.now().strftime("%Y%m%d_%H%M%S_")
+        secure_fname = secure_filename(original_filename)
+        file_path_in_repo = f"student_documents/{safe_student_name}/{timestamp_prefix}{secure_fname}"
+        
+        file_content = file_storage.read()
+        encoded_content = base64.b64encode(file_content).decode('utf-8')
+        
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{file_path_in_repo}"
+        headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
+        payload = {
+            "message": f"Auto-upload document for student: {student_name}",
+            "content": encoded_content,
+            "branch": GITHUB_BRANCH
+        }
+        
+        response = requests.put(url, headers=headers, json=payload)
+        if response.status_code in [201, 200]:
+            return file_path_in_repo
+    except Exception as e:
+        print("GitHub API Upload Error:", e)
+    
+    return None
 
 # --- API ENDPOINTS: LEADS ---
 
@@ -55,25 +88,14 @@ def submit_lead():
         if not student_name or not contact_number or not student_email:
             return jsonify({"status": "error", "message": "Required fields missing"}), 400
 
-        # Handle file upload ([Redacted ID] Document)
+        # Handle file upload directly to GitHub
         document_filename = None
         if 'id_document' in request.files:
             file = request.files['id_document']
             if file and file.filename != '':
-                safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-                student_folder = os.path.join(app.config['UPLOAD_FOLDER'], safe_student_name)
-                os.makedirs(student_folder, exist_ok=True)
-                
-                filename = secure_filename(file.filename)
-                timestamp_prefix = datetime.now().strftime("%Y%m%d_%H%M%S_")
-                document_filename = f"{timestamp_prefix}{filename}"
-                file_path = os.path.join(student_folder, document_filename)
-                file.save(file_path)
-                
-                document_filename = f"{safe_student_name}/{document_filename}"
+                document_filename = upload_file_to_github(file, student_name, file.filename)
 
         leads = load_data(DATA_FILE)
-        
         score = 80 if alternate_number != 'N/A' else 50
 
         new_lead = {
@@ -89,14 +111,14 @@ def submit_lead():
             "id_document": document_filename,
             "status": "New Lead",
             "score": score,
-            "notes": "Enquiry received via Web Portal with document.",
+            "notes": "Enquiry received via Web Portal with document stored in GitHub.",
             "is_deleted": False,
             "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
 
-        return jsonify({"status": "success", "message": "Lead captured successfully!"}), 200
+        return jsonify({"status": "success", "message": "Lead captured and document securely stored!"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -112,7 +134,13 @@ def get_leads_api():
 def download_document(filename):
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
+    
+    # Redirect directly to GitHub raw file URL for instant download/viewing
+    if GITHUB_REPO:
+        raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
+        return redirect(raw_github_url)
+    
+    return "GitHub repository configuration missing.", 400
 
 
 @app.route('/api/update-status', methods=['POST'])
@@ -135,7 +163,7 @@ def update_status():
 @app.route('/api/delete-lead', methods=['POST'])
 def delete_lead():
     if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401  # Fixed syntax error here
+        return jsonify({"error": "Unauthorized"}), 401
     data = request.json
     lead_id = data.get('lead_id')
     
@@ -471,7 +499,7 @@ MAIN_DASHBOARD_HTML = """
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
             <h3 style="margin-bottom: 15px; color: #1e293b;">Document Viewer</h3>
             <div id="modalBodyContainer" style="margin-bottom: 20px; max-height: 350px; overflow: auto;"></div>
-            <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 20px; text-decoration: none; border-radius: 8px; display: inline-block;"><i class="fa-solid fa-download"></i> Download Document</a>
+            <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 20px; text-decoration: none; border-radius: 8px; display: inline-block;" target="_blank"><i class="fa-solid fa-download"></i> Download / View Document</a>
         </div>
     </div>
     <script>
