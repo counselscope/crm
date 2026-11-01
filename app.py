@@ -3,8 +3,9 @@ import json
 import csv
 import io
 from datetime import datetime
-from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response
+from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response, send_from_directory
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = "counselscope_world_class_crm_2026_secret"
@@ -12,6 +13,11 @@ CORS(app)
 
 DATA_FILE = "leads.json"
 COLLEGES_FILE = "colleges.json"
+UPLOAD_FOLDER = "student_documents"
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Ensure upload directory exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def load_data(filename):
     if not os.path.exists(filename):
@@ -31,7 +37,7 @@ def save_data(filename, data):
 @app.route('/api/submit-lead', methods=['POST'])
 def submit_lead():
     try:
-        data = request.form or request.json
+        data = request.form
         if not data:
             return jsonify({"status": "error", "message": "No data provided"}), 400
         
@@ -46,6 +52,25 @@ def submit_lead():
 
         if not student_name or not contact_number or not student_email:
             return jsonify({"status": "error", "message": "Required fields missing"}), 400
+
+        # Handle file upload ([Redacted ID] Document)
+        document_filename = None
+        if 'id_document' in request.files:
+            file = request.files['id_document']
+            if file and file.filename != '':
+                # Create a secure folder structure for the student name
+                safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+                student_folder = os.path.join(app.config['UPLOAD_FOLDER'], safe_student_name)
+                os.makedirs(student_folder, exist_ok=True)
+                
+                filename = secure_filename(file.filename)
+                timestamp_prefix = datetime.now().strftime("%Y%m%d_%H%M%S_")
+                document_filename = f"{timestamp_prefix}{filename}"
+                file_path = os.path.join(student_folder, document_filename)
+                file.save(file_path)
+                
+                # Relative path to store in JSON
+                document_filename = f"{safe_student_name}/{document_filename}"
 
         leads = load_data(DATA_FILE)
         
@@ -62,9 +87,10 @@ def submit_lead():
             "state": state,
             "city": city,
             "course_interest": course_interest,
+            "id_document": document_filename,
             "status": "New Lead",
             "score": score,
-            "notes": "Enquiry received via Web Portal.",
+            "notes": "Enquiry received via Web Portal with document.",
             "is_deleted": False,
             "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }
@@ -81,6 +107,13 @@ def get_leads_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
     return jsonify(load_data(DATA_FILE))
+
+
+@app.route('/download-doc/<path:filename>', methods=['GET'])
+def download_document(filename):
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
 
 
 @app.route('/api/update-status', methods=['POST'])
@@ -209,6 +242,7 @@ def import_csv():
                 "state": row.get('State', 'N/A'),
                 "city": row.get('City', 'N/A'),
                 "course_interest": row.get('Course', 'General'),
+                "id_document": None,
                 "status": row.get('Status', 'New Lead'),
                 "score": 60,
                 "notes": "Imported via CSV",
@@ -375,7 +409,6 @@ MAIN_DASHBOARD_HTML = """
         .m-icon.green { background: #f0fdf4; color: #16a34a; }
         .m-icon.orange { background: #fff7ed; color: #ea580c; }
         .m-icon.purple { background: #faf5ff; color: #9333ea; }
-        .m-icon.red { background: #fef2f2; color: #dc2626; }
         .m-info h3 { font-size: 22px; font-weight: 800; color: var(--text-dark); }
         .m-info p { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
 
@@ -384,7 +417,6 @@ MAIN_DASHBOARD_HTML = """
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
         .card-header h3 { font-size: 15px; font-weight: 700; color: var(--text-dark); }
 
-        /* ADVANCED FILTERS BAR */
         .filter-bar { display: flex; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
         .filter-bar select, .filter-bar input { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 12.5px; background: #fff; }
 
@@ -402,18 +434,24 @@ MAIN_DASHBOARD_HTML = """
 
         select.status-select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12px; font-weight: 600; cursor: pointer; }
         
-        /* DIRECT COMMUNICATION ACTION BUTTONS */
         .action-icon-btn { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; transition: 0.2s; margin-right: 4px; }
         .call-btn { background: #dcfce7; color: #16a34a; }
         .call-btn:hover { background: #16a34a; color: white; }
         .mail-btn { background: #e0f2fe; color: #0284c7; }
         .mail-btn:hover { background: #0284c7; color: white; }
+        .doc-btn { background: #fef3c7; color: #d97706; }
+        .doc-btn:hover { background: #d97706; color: white; }
         .trash-btn { background: #fee2e2; color: #dc2626; border: none; cursor: pointer; }
         .trash-btn:hover { background: #dc2626; color: white; }
 
         .chart-container { position: relative; height: 210px; display: flex; justify-content: center; }
         .tab-section { display: none; }
         .tab-section.active { display: block; }
+
+        /* Modal for viewing documents */
+        #docModal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; max-width: 500px; width: 90%; text-align: center; position: relative; }
+        .close-modal { position: absolute; top: 12px; right: 15px; font-size: 20px; cursor: pointer; color: #64748b; }
     </style>
 </head>
 <body>
@@ -470,7 +508,7 @@ MAIN_DASHBOARD_HTML = """
                 <div class="hero-banner" style="margin-bottom: 25px;">
                     <div class="hero-text">
                         <h1>Build Relationships. Grow Admissions.</h1>
-                        <p>Complete AI-enabled college CRM with instant calling, direct mailer dispatch, live status charts, and advanced filters.</p>
+                        <p>Complete AI-enabled college CRM with instant calling, direct mailer dispatch, live status charts, and document management.</p>
                     </div>
                 </div>
 
@@ -505,7 +543,7 @@ MAIN_DASHBOARD_HTML = """
                                         <th>Student</th>
                                         <th>Contact / Call</th>
                                         <th>Email / Mailer</th>
-                                        <th>State / City</th>
+                                        <th>[Redacted ID] Doc</th>
                                         <th>Status</th>
                                         <th>Action</th>
                                     </tr>
@@ -526,14 +564,13 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- TAB 2: ALL LEADS WITH ADVANCED FILTER -->
+            <!-- TAB 2: ALL LEADS -->
             <div id="leads-tab" class="tab-section">
                 <div class="card">
                     <div class="card-header">
                         <h3>All Registered Leads & Advanced Filters</h3>
                     </div>
                     
-                    <!-- Advanced Filter Bar -->
                     <div class="filter-bar">
                         <select id="filterStatus" onchange="applyAdvancedFilters()">
                             <option value="">All Statuses</option>
@@ -561,7 +598,7 @@ MAIN_DASHBOARD_HTML = """
                                     <th>Student Name</th>
                                     <th>Contact</th>
                                     <th>Email ID</th>
-                                    <th>Location</th>
+                                    <th>[Redacted ID] Doc</th>
                                     <th>Score</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -627,6 +664,16 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
+    <!-- DOCUMENT VIEW MODAL -->
+    <div id="docModal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeDocModal()">&times;</span>
+            <h3 style="margin-bottom: 15px; color: #1e293b;">[Redacted ID] Document Viewer</h3>
+            <div id="modalBodyContainer" style="margin-bottom: 20px; max-height: 350px; overflow: auto;"></div>
+            <a id="modalDownloadBtn" href="#" class="btn-export" style="display: inline-block; text-align: center;"><i class="fa-solid fa-download"></i> Download Document</a>
+        </div>
+    </div>
+
     <script>
         let rawLeadsData = [];
         let collegesData = [];
@@ -687,10 +734,10 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('statContacted').innerText = activeLeads.filter(l => l.status === 'Contacted').length;
             document.getElementById('statNew').innerText = activeLeads.filter(l => l.status === 'New Lead').length;
 
-            // Recent Table with Direct Call & Mail Buttons
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
+                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick="openDocModal('${lead.id_document}')" title="View Document"><i class="fa-solid fa-id-card"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
@@ -702,7 +749,7 @@ MAIN_DASHBOARD_HTML = """
                             <a href="mailto:${lead.student_email}?subject=Admission Enquiry CounselScope&body=Dear ${lead.student_name}, regarding your college admission enquiry..." class="action-icon-btn mail-btn" title="Send Email"><i class="fa-solid fa-envelope"></i></a>
                             ${lead.student_email}
                         </td>
-                        <td>${lead.city}, ${lead.state}</td>
+                        <td>${docAction}</td>
                         <td><span class="badge-status ${getBadgeClass(lead.status)}">${lead.status}</span></td>
                         <td>
                             <button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
@@ -711,10 +758,8 @@ MAIN_DASHBOARD_HTML = """
                 `;
             });
 
-            // All Leads Table
             populateAllLeadsTable(activeLeads);
 
-            // Trash Table
             const trashTbody = document.getElementById('trashTbody');
             trashTbody.innerHTML = '';
             trashLeads.forEach(lead => {
@@ -739,13 +784,14 @@ MAIN_DASHBOARD_HTML = """
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
+                const docAction = lead.id_document ? `<button class="action-icon-btn doc-btn" onclick="openDocModal('${lead.id_document}')"><i class="fa-solid fa-id-card"></i></button>` : `<span style="color:#94a3b8; font-size:11px;">No Doc</span>`;
                 allTbody.innerHTML += `
                     <tr>
                         <td>#${lead.id}</td>
                         <td><strong>${lead.student_name}</strong><br><small>${lead.father_name}</small></td>
                         <td><a href="tel:${lead.contact_number}" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
                         <td><a href="mailto:${lead.student_email}?subject=Admission CounselScope" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
-                        <td>${lead.city}, ${lead.state}</td>
+                        <td>${docAction}</td>
                         <td><span style="font-weight:700; color:#2563eb;">${lead.score || 50} pts</span></td>
                         <td>
                             <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
@@ -762,6 +808,26 @@ MAIN_DASHBOARD_HTML = """
                     </tr>
                 `;
             });
+        }
+
+        function openDocModal(docPath) {
+            const modal = document.getElementById('docModal');
+            const container = document.getElementById('modalBodyContainer');
+            const downloadBtn = document.getElementById('modalDownloadBtn');
+            
+            const fullUrl = `/download-doc/${docPath}`;
+            downloadBtn.href = fullUrl;
+
+            if(docPath.match(/\.(jpeg|jpg|png|gif)$/i)) {
+                container.innerHTML = `<img src="${fullUrl}" style="max-width:100%; border-radius:8px;" alt="[Redacted ID] Card">`;
+            } else {
+                container.innerHTML = `<p style="padding:20px; color:#475569;">Document format ready for download.</p>`;
+            }
+            modal.style.display = 'flex';
+        }
+
+        function closeDocModal() {
+            document.getElementById('docModal').style.display = 'none';
         }
 
         function applyAdvancedFilters() {
