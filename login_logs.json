@@ -1,1 +1,13 @@
-[]
+[
+    {
+        "id": 1,
+        "username": "admin",
+        "ip_address": "127.0.0.1",
+        "browser": "Chrome",
+        "os": "Windows",
+        "login_time": "02 Nov 2026, 05:22:57 PM",
+        "logout_time": "N/A",
+        "status": "Active",
+        "session_id": "1793640177.417041"
+    }
+]
