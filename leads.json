@@ -48,5 +48,22 @@
         "notes": "Full Enquiry Form Submitted.",
         "is_deleted": false,
         "created_at": "01 Nov 2026, 06:23 PM"
+    },
+    {
+        "id": 3,
+        "student_name": "Raj ",
+        "father_name": "Rajendra",
+        "contact_number": "9874563232",
+        "alternate_number": "9786432521",
+        "student_email": "singhyorocky321@gmail.com",
+        "state": "Gujarat",
+        "city": "Hh",
+        "course_interest": "General",
+        "id_document": "student_documents/Raj/aadhar.jpg",
+        "status": "New Lead",
+        "score": 80,
+        "notes": "Enquiry received with document saved.",
+        "is_deleted": false,
+        "created_at": "02 Nov 2026, 05:18 AM"
     }
 ]
