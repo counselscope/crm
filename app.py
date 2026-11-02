@@ -9,33 +9,56 @@ from flask import Flask, render_template_string, request, jsonify, redirect, url
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-# Optional libraries for Excel & PDF Export
+# Excel export support via openpyxl
 try:
     import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
 except ImportError:
     openpyxl = None
-
-try:
-    from reportlab.lib.pagesizes import letter, A4
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-except ImportError:
-    SimpleDocTemplate = None
 
 app = Flask(__name__)
 app.secret_key = "counselscope_world_class_crm_2026_secret"
 CORS(app)
 
+LOGIN_LOGS_FILE = "login_logs.json"
 DATA_FILE = "leads.json"
 COLLEGES_FILE = "colleges.json"
 HISTORY_FILE = "work_history.json"
-LOGS_FILE = "login_logs.json"
 
 # GitHub API Configuration from Environment Variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # e.g. "username/repository-name"
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+
+def parse_user_agent(ua_string):
+    ua = (ua_string or "").lower()
+    browser = "Unknown Browser"
+    if "chrome" in ua and "edge" not in ua and "opr" not in ua:
+        browser = "Google Chrome"
+    elif "firefox" in ua:
+        browser = "Mozilla Firefox"
+    elif "safari" in ua and "chrome" not in ua:
+        browser = "Apple Safari"
+    elif "edge" in ua:
+        browser = "Microsoft Edge"
+    elif "opr" in ua or "opera" in ua:
+        browser = "Opera"
+        
+    os_name = "Unknown OS"
+    if "windows" in ua:
+        os_name = "Windows"
+    elif "macintosh" in ua or "mac os" in ua:
+        os_name = "macOS"
+    elif "iphone" in ua or "ipad" in ua:
+        os_info = "iOS"
+        os_name = os_info
+    elif "android" in ua:
+        os_name = "Android"
+    elif "linux" in ua:
+        os_name = "Linux"
+        
+    return browser, os_name
 
 def load_data(filename):
     if not os.path.exists(filename):
@@ -50,7 +73,7 @@ def save_data(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
     
-    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGS_FILE]:
+    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGIN_LOGS_FILE]:
         commit_json_to_github(filename)
 
 def log_activity(action_type, details):
@@ -66,46 +89,39 @@ def log_activity(action_type, details):
     history.append(log_item)
     save_data(HISTORY_FILE, history)
 
-def record_login_log(username, action="login"):
-    logs = load_data(LOGS_FILE)
+def log_login_activity(username, req):
+    logs = load_data(LOGIN_LOGS_FILE)
     now = datetime.now()
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.remote_addr or '127.0.0.1'
+    ip = req.remote_addr or "127.0.0.1"
+    browser, os_name = parse_user_agent(req.headers.get('User-Agent', ''))
     
-    # Parse basic OS and Browser info
-    os_info = "Windows" if "Windows" in user_agent else ("Mac" if "Macintosh" in user_agent else ("Android" if "Android" in user_agent else ("iPhone" if "iPhone" in user_agent else "Linux")))
-    browser_info = "Chrome" if "Chrome" in user_agent else ("Safari" if "Safari" in user_agent else ("Firefox" if "Firefox" in user_agent else "Edge"))
+    for l in logs:
+        if l.get('username') == username and l.get('status') == 'Active':
+            l['status'] = 'Logged Out'
+            l['logout_time'] = now.strftime("%d %b %Y, %I:%M %p")
+            
+    log_entry = {
+        "id": len(logs) + 1,
+        "username": username,
+        "ip_address": ip,
+        "browser": browser,
+        "os": os_name,
+        "login_time": now.strftime("%d %b %Y, %I:%M %p"),
+        "login_timestamp": now.timestamp(),
+        "logout_time": "N/A",
+        "status": "Active"
+    }
+    logs.append(log_entry)
+    save_data(LOGIN_LOGS_FILE, logs)
 
-    if action == "login":
-        log_entry = {
-            "id": len(logs) + 1,
-            "username": username,
-            "ip_address": ip_address,
-            "browser": browser_info,
-            "os": os_info,
-            "login_time": now.strftime("%d %b %Y, %I:%M:%S %p"),
-            "logout_time": "N/A",
-            "status": "Active",
-            "session_id": session.get('_id', str(now.timestamp()))
-        }
-        logs.append(log_entry)
-        session['current_log_id'] = log_entry["id"]
-    elif action == "logout":
-        log_id = session.get('current_log_id')
-        if log_id:
-            for log in logs:
-                if log.get("id") == log_id:
-                    log["logout_time"] = now.strftime("%d %b %Y, %I:%M:%S %p")
-                    log["status"] = "Logged Out"
-                    break
-        else:
-            for log in reversed(logs):
-                if log.get("username") == username and log.get("status") == "Active":
-                    log["logout_time"] = now.strftime("%d %b %Y, %I:%M:%S %p")
-                    log["status"] = "Logged Out"
-                    break
-
-    save_data(LOGS_FILE, logs)
+def log_logout_activity(username):
+    logs = load_data(LOGIN_LOGS_FILE)
+    now = datetime.now()
+    for l in logs:
+        if l.get('username') == username and l.get('status') == 'Active':
+            l['status'] = 'Logged Out'
+            l['logout_time'] = now.strftime("%d %b %Y, %I:%M %p")
+    save_data(LOGIN_LOGS_FILE, logs)
 
 def commit_json_to_github(filepath):
     try:
@@ -140,12 +156,8 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        
-        ext = os.path.splitext(original_filename)[1].lower()
-        if not ext:
-            ext = ".jpg"
+        ext = os.path.splitext(original_filename)[1].lower() or ".jpg"
         target_filename = f"aadhar{ext}"
-        
         file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
         
         file_content = file_storage.read()
@@ -176,7 +188,7 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     
     return None
 
-# --- API ENDPOINTS: LEADS & LOGS ---
+# --- API ENDPOINTS ---
 
 @app.route('/api/submit-lead', methods=['POST'])
 def submit_lead():
@@ -223,7 +235,7 @@ def submit_lead():
             "notes": "Enquiry received with document saved.",
             "is_deleted": False,
             "created_at": now.strftime("%d %b %Y, %I:%M %p"),
-            "created_timestamp": int(now.timestamp())
+            "created_timestamp": now.timestamp()
         }
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
@@ -297,8 +309,9 @@ def get_leads_api():
 def get_logs_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    logs = load_data(LOGS_FILE)
-    return jsonify(list(reversed(logs)))
+    logs = load_data(LOGIN_LOGS_FILE)
+    logs.sort(key=lambda x: x.get('login_timestamp', 0), reverse=True)
+    return jsonify(logs)
 
 
 @app.route('/download-doc/<path:filename>', methods=['GET'])
@@ -427,194 +440,203 @@ def add_college():
     return jsonify({"status": "success"})
 
 
-# --- EXPORT ENDPOINTS: EXCEL & PDF ---
+# --- EXPORT ENDPOINTS (EXCEL MULTI-SHEET & PDF) ---
 
-@app.route('/api/export/excel', methods=['GET'])
+@app.route('/api/export-excel', methods=['GET'])
 def export_excel():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-
-    leads = load_data(DATA_FILE)
+    
+    leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
     colleges = load_data(COLLEGES_FILE)
     history = load_data(HISTORY_FILE)
-    logs = load_data(LOGS_FILE)
+    logs = load_data(LOGIN_LOGS_FILE)
 
     if openpyxl:
         wb = openpyxl.Workbook()
         
-        # 1. Leads Sheet
-        ws_leads = wb.active
-        ws_leads.title = "Leads Data"
-        ws_leads.append(["ID", "Student Name", "Father Name", "Contact Number", "Alternate Number", "Email ID", "State", "City", "Course Interest", "Status", "Score", "Created At"])
-        for lead in leads:
-            ws_leads.append([
-                lead.get("id"), lead.get("student_name"), lead.get("father_name"),
-                lead.get("contact_number"), lead.get("alternate_number"), lead.get("student_email"),
-                lead.get("state"), lead.get("city"), lead.get("course_interest"),
-                lead.get("status"), lead.get("score"), lead.get("created_at")
-            ])
+        # Styles
+        header_fill = PatternFill(start_color="0B1329", end_color="0B1329", fill_type="solid")
+        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        center_align = Alignment(horizontal="center", vertical="center")
+
+        # Sheet 1: Dashboard & Pie Chart Data
+        ws_dash = wb.active
+        ws_dash.title = "Dashboard & Analytics"
+        ws_dash.append(["Metric / Period", "Status / Field", "Count / Value"])
+        
+        statuses = ["New Lead", "Contacted", "Follow Up", "Closed", "Rejected"]
+        for s in statuses:
+            ws_dash.append(["Pie Chart Overview Data", s, len([l for l in leads if l.get('status') == s])])
             
-        # 2. Colleges Sheet
+        ws_dash.append(["Overall Summary", "Total Active Leads", len(leads)])
+        ws_dash.append(["Overall Summary", "Total Admissions Closed", len([l for l in leads if l.get('status')=='Closed'])])
+        
+        # Sheet 2: All Leads
+        ws_leads = wb.create_sheet(title="All Leads Data")
+        ws_leads.append(["#ID", "Student Name", "Father Name", "Contact", "Alternate Contact", "Email ID", "State", "City", "Course Interest", "Status", "Score", "ID Document", "Created At"])
+        for l in leads:
+            ws_leads.append([
+                l.get('id'), l.get('student_name'), l.get('father_name', 'N/A'),
+                l.get('contact_number'), l.get('alternate_number', 'N/A'),
+                l.get('student_email'), l.get('state', 'N/A'), l.get('city', 'N/A'),
+                l.get('course_interest', 'General'), l.get('status', 'New Lead'),
+                l.get('score', 50), "Uploaded" if l.get('id_document') else "None", l.get('created_at', 'N/A')
+            ])
+
+        # Sheet 3: Colleges Manager
         ws_colleges = wb.create_sheet(title="Colleges Tie-up")
-        ws_colleges.append(["ID", "College Name", "Location", "Courses", "Package"])
+        ws_colleges.append(["#ID", "College Name", "Location", "Courses Offered", "Avg Package"])
         for c in colleges:
-            ws_colleges.append([c.get("id"), c.get("college_name"), c.get("location"), c.get("courses"), c.get("package")])
+            ws_colleges.append([c.get('id'), c.get('college_name'), c.get('location'), c.get('courses'), c.get('package', 'N/A')])
 
-        # 3. Work History Sheet
-        ws_history = wb.create_sheet(title="Work History Log")
-        ws_history.append(["ID", "Date", "Time", "Action Type", "Details"])
+        # Sheet 4: Work History
+        ws_history = wb.create_sheet(title="Work Activity History")
+        ws_history.append(["#ID", "Date", "Time", "Action Type", "Details"])
         for h in history:
-            ws_history.append([h.get("id"), h.get("date"), h.get("time"), h.get("action_type"), h.get("details")])
+            ws_history.append([h.get('id'), h.get('date'), h.get('time'), h.get('action_type'), h.get('details')])
 
-        # 4. Login Logs Sheet
-        ws_logs = wb.create_sheet(title="Login Activity Logs")
-        ws_logs.append(["ID", "Username", "IP Address", "Browser", "OS", "Login Time", "Logout Time", "Status"])
-        for log in logs:
-            ws_logs.append([log.get("id"), log.get("username"), log.get("ip_address"), log.get("browser"), log.get("os"), log.get("login_time"), log.get("logout_time"), log.get("status")])
+        # Sheet 5: Settings - Security Logs
+        ws_logs = wb.create_sheet(title="Settings - Security Logs")
+        ws_logs.append(["#ID", "Username", "IP Address", "Browser", "Operating System", "Login Time", "Logout Time", "Session Status"])
+        for lg in logs:
+            ws_logs.append([lg.get('id'), lg.get('username'), lg.get('ip_address'), lg.get('browser'), lg.get('os'), lg.get('login_time'), lg.get('logout_time'), lg.get('status')])
+
+        # Apply formatting to all sheets
+        for sheet in wb.worksheets:
+            for cell in sheet[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = center_align
+            for col in sheet.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = get_column_letter(col[0].column)
+                sheet.column_dimensions[col_letter].width = max(max_len + 4, 15)
 
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
-        return send_file(output, download_name="CounselScope_CRM_Full_Data.xlsx", as_attachment=True, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    else:
-        # Fallback to CSV format if openpyxl is not installed
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(["--- LEADS DATA ---"])
-        writer.writerow(["ID", "Student Name", "Father Name", "Contact Number", "Email ID", "State", "City", "Course Interest", "Status", "Created At"])
-        for lead in leads:
-            writer.writerow([lead.get("id"), lead.get("student_name"), lead.get("father_name"), lead.get("contact_number"), lead.get("student_email"), lead.get("state"), lead.get("city"), lead.get("course_interest"), lead.get("status"), lead.get("created_at")])
         
-        mem = io.BytesIO()
-        mem.write(output.getvalue().encode('utf-8'))
-        mem.seek(0)
-        return send_file(mem, download_name="CounselScope_CRM_Data.csv", as_attachment=True, mimetype="text/csv")
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = "attachment; filename=CounselScope_CRM_Complete_Export.xlsx"
+        response.headers["Content-type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return response
+    else:
+        # Fallback CSV format
+        si = io.StringIO()
+        cw = csv.writer(si)
+        cw.writerow(["ID", "Student Name", "Contact Number", "Email ID", "State", "City", "Course Interest", "Status", "Created At"])
+        for l in leads:
+            cw.writerow([l.get('id'), l.get('student_name'), l.get('contact_number'), l.get('student_email'), l.get('state'), l.get('city'), l.get('course_interest'), l.get('status'), l.get('created_at')])
+        
+        response = make_response(si.getvalue())
+        response.headers["Content-Disposition"] = "attachment; filename=CounselScope_CRM_Leads.csv"
+        response.headers["Content-type"] = "text/csv"
+        return response
 
 
-@app.route('/api/export/pdf', methods=['GET'])
+@app.route('/api/export-pdf', methods=['GET'])
 def export_pdf():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-
-    leads = load_data(DATA_FILE)
+    
+    leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
     colleges = load_data(COLLEGES_FILE)
     history = load_data(HISTORY_FILE)
-    logs = load_data(LOGS_FILE)
+    logs = load_data(LOGIN_LOGS_FILE)
+    
+    counts = {
+        'New Lead': len([l for l in leads if l.get('status') == 'New Lead']),
+        'Contacted': len([l for l in leads if l.get('status') == 'Contacted']),
+        'Follow Up': len([l for l in leads if l.get('status') == 'Follow Up']),
+        'Closed': len([l for l in leads if l.get('status') == 'Closed']),
+        'Rejected': len([l for l in leads if l.get('status') == 'Rejected'])
+    }
+    
+    pdf_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>CounselScope CRM Full Report</title>
+        <style>
+            body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; padding: 25px; background: #fff; line-height: 1.5; }}
+            h1 {{ color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 8px; font-size: 24px; margin-bottom: 4px; }}
+            .gen-time {{ font-size: 12px; color: #64748b; margin-bottom: 20px; }}
+            h2 {{ color: #0f172a; margin-top: 25px; font-size: 16px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
+            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
+            td {{ padding: 8px; border-bottom: 1px solid #e2e8f0; }}
+            .stats-box {{ display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }}
+            .stat-card {{ background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-size: 12px; flex: 1; min-width: 110px; }}
+            .stat-card strong {{ font-size: 18px; color: #2563eb; display: block; }}
+        </style>
+    </head>
+    <body>
+        <h1>CounselScope CRM - Executive Data Report</h1>
+        <div class="gen-time">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
+        
+        <h2>1. Dashboard Overview & Pie Chart Analytics Breakdown</h2>
+        <div class="stats-box">
+            <div class="stat-card">Total Leads: <strong>{len(leads)}</strong></div>
+            <div class="stat-card">New Leads: <strong>{counts['New Lead']}</strong></div>
+            <div class="stat-card">Contacted: <strong>{counts['Contacted']}</strong></div>
+            <div class="stat-card">Follow Up: <strong>{counts['Follow Up']}</strong></div>
+            <div class="stat-card">Admissions Closed: <strong>{counts['Closed']}</strong></div>
+            <div class="stat-card">Rejected: <strong>{counts['Rejected']}</strong></div>
+        </div>
 
-    active_leads = [l for l in leads if not l.get('is_deleted')]
+        <h2>2. Registered Student Leads Directory</h2>
+        <table>
+            <thead>
+                <tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Location</th><th>Course</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('city','N/A')}, {l.get('state','N/A')}</td><td>{l.get('course_interest','General')}</td><td>{l.get('status')}</td></tr>" for l in leads])}
+            </tbody>
+        </table>
 
-    if SimpleDocTemplate:
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
-        elements = []
-        styles = getSampleStyleSheet()
+        <h2>3. Partner Colleges Manager Data</h2>
+        <table>
+            <thead>
+                <tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td>#{c.get('id')}</td><td><strong>{c.get('college_name')}</strong></td><td>{c.get('location')}</td><td>{c.get('courses')}</td><td>{c.get('package','N/A')}</td></tr>" for c in colleges])}
+            </tbody>
+        </table>
 
-        title_style = ParagraphStyle(
-            'TitleStyle',
-            parent=styles['Heading1'],
-            fontSize=18,
-            textColor=colors.HexColor("#0f172a"),
-            spaceAfter=10
-        )
-        subtitle_style = ParagraphStyle(
-            'SubTitleStyle',
-            parent=styles['Normal'],
-            fontSize=10,
-            textColor=colors.HexColor("#64748b"),
-            spaceAfter=20
-        )
-        h2_style = ParagraphStyle(
-            'H2Style',
-            parent=styles['Heading2'],
-            fontSize=13,
-            textColor=colors.HexColor("#2563eb"),
-            spaceBefore=15,
-            spaceAfter=8
-        )
+        <h2>4. Work History Activity Log</h2>
+        <table>
+            <thead>
+                <tr><th>#ID</th><th>Date / Time</th><th>Action Type</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td>#{h.get('id')}</td><td>{h.get('date')} {h.get('time')}</td><td><strong>{h.get('action_type')}</strong></td><td>{h.get('details')}</td></tr>" for h in history[-15:]])}
+            </tbody>
+        </table>
 
-        elements.append(Paragraph("CounselScope CRM - Full System Report", title_style))
-        elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}", subtitle_style))
-
-        # Overview Stats
-        elements.append(Paragraph("1. Dashboard Overview Stats", h2_style))
-        stats_data = [
-            ["Total Active Leads", "Admissions Closed", "Contacted Leads", "New Enquiries"],
-            [str(len(active_leads)), str(len([l for l in active_leads if l.get('status')=='Closed'])), str(len([l for l in active_leads if l.get('status')=='Contacted'])), str(len([l for l in active_leads if l.get('status')=='New Lead']))]
-        ]
-        t_stats = Table(stats_data, colWidths=[130, 130, 130, 130])
-        t_stats.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0b1329")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0,0), (-1,0), 6),
-            ('BACKGROUND', (0,1), (-1,1), colors.HexColor("#f1f5f9")),
-            ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#cbd5e1"))
-        ]))
-        elements.append(t_stats)
-
-        # Recent Leads Table
-        elements.append(Paragraph("2. Registered Leads Data", h2_style))
-        leads_table_data = [["ID", "Student Name", "Contact", "Email ID", "State/City", "Status"]]
-        for l in active_leads[:30]: # top 30
-            leads_table_data.append([
-                str(l.get("id")),
-                str(l.get("student_name"))[:18],
-                str(l.get("contact_number")),
-                str(l.get("student_email"))[:22],
-                f"{l.get('city','')}, {l.get('state','')}"[:18],
-                str(l.get("status"))
-            ])
-        t_leads = Table(leads_table_data, colWidths=[30, 110, 85, 135, 100, 60])
-        t_leads.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2563eb")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('FONTSIZE', (0,0), (-1,-1), 8),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0"))
-        ]))
-        elements.append(t_leads)
-
-        # Login Activity Logs
-        elements.append(Paragraph("3. System Login Activity Logs", h2_style))
-        logs_table_data = [["User", "IP Address", "Browser/OS", "Login Time", "Status"]]
-        for log in logs[:15]:
-            logs_table_data.append([
-                str(log.get("username")),
-                str(log.get("ip_address")),
-                f"{log.get('browser')}/{log.get('os')}",
-                str(log.get("login_time")),
-                str(log.get("status"))
-            ])
-        t_logs = Table(logs_table_data, colWidths=[60, 90, 110, 160, 80])
-        t_logs.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f172a")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('FONTSIZE', (0,0), (-1,-1), 8),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1"))
-        ]))
-        elements.append(t_logs)
-
-        doc.build(elements)
-        buffer.seek(0)
-        return send_file(buffer, download_name="CounselScope_CRM_Report.pdf", as_attachment=True, mimetype="application/pdf")
-
-    else:
-        # Fallback html print response if ReportLab is not available
-        html_report = f"""
-        <html>
-        <head><title>CounselScope CRM Report</title></head>
-        <body style="font-family:sans-serif; padding:30px;">
-            <h2>CounselScope CRM Report</h2>
-            <p>Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</p>
-            <h3>Total Active Leads: {len(active_leads)}</h3>
-            <script>window.print();</script>
-        </body>
-        </html>
-        """
-        response = make_response(html_report)
-        response.headers['Content-Type'] = 'text/html'
-        return response
+        <h2>5. Settings - Security & User Login Logs</h2>
+        <table>
+            <thead>
+                <tr><th>User</th><th>IP Address</th><th>Browser / OS</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td><strong>{lg.get('username')}</strong></td><td>{lg.get('ip_address')}</td><td>{lg.get('browser')} / {lg.get('os')}</td><td>{lg.get('login_time')}</td><td>{lg.get('logout_time')}</td><td>{lg.get('status')}</td></tr>" for lg in logs[:20]])}
+            </tbody>
+        </table>
+        
+        <script>
+            window.onload = function() {{ window.print(); }}
+        </script>
+    </body>
+    </html>
+    """
+    
+    response = make_response(pdf_html)
+    response.headers["Content-Disposition"] = "inline; filename=CounselScope_CRM_Report.html"
+    response.headers["Content-type"] = "text/html; charset=utf-8"
+    return response
 
 
 # --- ROUTING & VIEWS ---
@@ -624,11 +646,10 @@ def login():
     error = None
     if request.method == 'POST':
         username = request.form.get('username')
-        password = request.form.get('password')
-        if username == "admin" and password == "admin123":
+        if username == "admin" and request.form.get('password') == "admin123":
             session['logged_in'] = True
             session['username'] = username
-            record_login_log(username, "login")
+            log_login_activity(username, request)
             return redirect(url_for('crm_dashboard'))
         else:
             error = "Invalid Username or Password!"
@@ -643,7 +664,7 @@ def crm_dashboard():
 @app.route('/logout')
 def logout():
     username = session.get('username', 'admin')
-    record_login_log(username, "logout")
+    log_logout_activity(username)
     session.pop('logged_in', None)
     session.pop('username', None)
     return redirect(url_for('login'))
@@ -786,12 +807,6 @@ MAIN_DASHBOARD_HTML = """
         .tab-section { display: none; }
         .tab-section.active { display: block; }
 
-        .export-btn { padding: 10px 16px; border-radius: 10px; border: none; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; transition: 0.2s; }
-        .export-excel { background: #16a34a; color: white; }
-        .export-excel:hover { background: #15803d; }
-        .export-pdf { background: #dc2626; color: white; }
-        .export-pdf:hover { background: #b91c1c; }
-
         /* Responsive Animated Modals */
         .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
         .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
@@ -802,19 +817,33 @@ MAIN_DASHBOARD_HTML = """
         .form-control { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; }
         .form-control:focus { outline: none; border-color: #2563eb; }
 
-        /* Media Queries for Mobile Responsiveness */
+        /* Mobile Responsiveness Styles */
         @media (max-width: 900px) {
             body { flex-direction: column; height: auto; overflow: auto; }
-            .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100vh; flex-direction: column; padding: 20px 15px; }
+            .sidebar { position: fixed; top: 0; left: -270px; width: 260px; height: 100vh; flex-direction: column; padding: 20px 15px; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
             .sidebar.show { left: 0; }
             .menu-toggle-btn { display: block; }
             .main-wrapper { height: auto; overflow: visible; }
-            .dashboard-grid, .analytics-grid-mobile { grid-template-columns: 1fr !important; }
-            .top-header { padding: 0 15px; flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .top-header { padding: 12px 15px; flex-wrap: wrap; height: auto; gap: 10px; }
             .search-bar { width: 100%; order: 3; }
-            .content-area { padding: 15px; }
-            .hero-banner { padding: 20px; }
+            .content-area { padding: 15px; gap: 18px; }
+            .hero-banner { padding: 20px; flex-direction: column; align-items: flex-start; text-align: left; }
+            .export-btns-group { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+            .export-btns-group a { width: 100%; justify-content: center; }
             .smart-watch { font-size: 12px; padding: 6px 12px; }
+            .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            .metric-card { padding: 14px; }
+            .m-info h3 { font-size: 18px; }
+            .analytics-grid-mobile { grid-template-columns: 1fr !important; gap: 15px; }
+            .form-control { font-size: 14px; }
+            table { min-width: 600px; }
+            .modal-content { max-width: 95vw !important; padding: 18px; margin: 10px; }
+        }
+
+        @media (max-width: 500px) {
+            .metrics-grid { grid-template-columns: 1fr; }
+            .hero-text h1 { font-size: 20px; }
         }
     </style>
 </head>
@@ -867,9 +896,9 @@ MAIN_DASHBOARD_HTML = """
                         <h1 id="timeGreeting">Good Morning Shivam Sir</h1>
                         <p>Welcome to your CounselScope CRM. Track work history, follow-up recalls, and student admissions in real-time.</p>
                     </div>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <a href="/api/export/excel" class="export-btn export-excel"><i class="fa-solid fa-file-excel"></i> Export Excel</a>
-                        <a href="/api/export/pdf" class="export-btn export-pdf"><i class="fa-solid fa-file-pdf"></i> Export PDF</a>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;" class="export-btns-group">
+                        <a href="/api/export-excel" target="_blank" style="background: #16a34a; color: white; border: none; padding: 12px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13.5px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); transition: 0.2s;"><i class="fa-solid fa-file-excel"></i> Export Excel (All Sheets)</a>
+                        <a href="/api/export-pdf" target="_blank" style="background: #dc2626; color: white; border: none; padding: 12px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13.5px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3); transition: 0.2s;"><i class="fa-solid fa-file-pdf"></i> Export PDF Report</a>
                     </div>
                 </div>
 
@@ -1158,7 +1187,6 @@ MAIN_DASHBOARD_HTML = """
             const seconds = String(now.getSeconds()).padStart(2, '0');
             const ampm = hours >= 12 ? 'PM' : 'AM';
             
-            // Dynamic Greeting Logic
             let greeting = "Good Morning Shivam Sir";
             if (hours >= 12 && hours < 17) {
                 greeting = "Good Afternoon Shivam Sir";
@@ -1168,7 +1196,7 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('timeGreeting').innerText = greeting;
 
             hours = hours % 12;
-            hours = hours ? hours : 12; // 12-hour format
+            hours = hours ? hours : 12;
             const timeString = `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
             document.getElementById('liveWatch').innerText = timeString;
         }
@@ -1268,7 +1296,6 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('statContacted').innerText = activeLeads.filter(l => l.status === 'Contacted').length;
             document.getElementById('statNew').innerText = activeLeads.filter(l => l.status === 'New Lead').length;
             
-            // Populate Followup / Recall section
             const followupRecallTbody = document.getElementById('followupRecallTbody');
             followupRecallTbody.innerHTML = '';
             const recallLeads = activeLeads.filter(l => l.status === 'Follow Up' || l.status === 'Contacted');
@@ -1606,12 +1633,10 @@ MAIN_DASHBOARD_HTML = """
             const now = new Date();
             const currentYear = now.getFullYear();
             const currentMonth = now.getMonth();
-            
-            // Helper for week check (last 7 days or current calendar week)
             const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
             const weekLeads = activeLeads.filter(l => {
-                if(!l.created_timestamp) return true; // fallback
+                if(!l.created_timestamp) return true;
                 const d = new Date(l.created_timestamp * 1000);
                 return d >= oneWeekAgo;
             });
@@ -1672,7 +1697,6 @@ MAIN_DASHBOARD_HTML = """
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
             });
         }
-
     </script>
 </body>
 </html>
