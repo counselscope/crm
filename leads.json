@@ -60,7 +60,7 @@
         "city": "Hh",
         "course_interest": "General",
         "id_document": null,
-        "status": "New Lead",
+        "status": "Contacted",
         "score": 80,
         "notes": "Enquiry received with document saved.",
         "is_deleted": false,
