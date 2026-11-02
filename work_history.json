@@ -47,5 +47,12 @@
         "time": "05:23:09 AM",
         "action_type": "Call Initiated",
         "details": "Called student Raj "
+    },
+    {
+        "id": 8,
+        "date": "2026-11-02",
+        "time": "08:55:55 AM",
+        "action_type": "Email Sent",
+        "details": "Emailed student Raj "
     }
 ]
