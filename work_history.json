@@ -61,5 +61,12 @@
         "time": "04:33:12 PM",
         "action_type": "College Added",
         "details": "Added new college tie-up: khasala"
+    },
+    {
+        "id": 10,
+        "date": "2026-11-02",
+        "time": "04:36:20 PM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Contacted' for student Raj "
     }
 ]
