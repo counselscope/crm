@@ -78,16 +78,17 @@ def commit_json_to_github(filepath):
     except Exception as e:
         print("GitHub JSON Commit Error:", e)
 
-def upload_file_to_github(file_storage, student_name, doc_type_name):
-    if not GITHUB_TOKEN or not GITHUB_REPO or not file_storage or file_storage.filename == '':
+def upload_file_to_github(file_storage, student_name, original_filename):
+    if not GITHUB_TOKEN or not GITHUB_REPO:
         return None
     
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        ext = os.path.splitext(file_storage.filename)[1].lower()
+        
+        ext = os.path.splitext(original_filename)[1].lower()
         if not ext:
             ext = ".jpg"
-        target_filename = f"{doc_type_name}{ext}"
+        target_filename = f"aadhar{ext}"
         
         file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
         
@@ -104,7 +105,7 @@ def upload_file_to_github(file_storage, student_name, doc_type_name):
         sha = get_res.json().get('sha') if get_res.status_code == 200 else None
 
         payload = {
-            "message": f"Upload {doc_type_name} for student: {student_name}",
+            "message": f"Upload document for student: {student_name}",
             "content": encoded_content,
             "branch": GITHUB_BRANCH
         }
@@ -135,61 +136,16 @@ def submit_lead():
         student_email = data.get('student_email')
         state = data.get('state', 'N/A')
         city = data.get('city', 'N/A')
-        
         course_interest = data.get('course_interest', 'General')
-        if course_interest == 'Other' and data.get('other_course'):
-            course_interest = f"Other ({data.get('other_course')})"
-
-        hear_about = data.get('hear_about', 'N/A')
-        if hear_about == 'Other' and data.get('other_source'):
-            hear_about = f"Other ({data.get('other_source')})"
-
-        preferred_time = data.get('preferred_time', 'N/A')
-        current_education_level = data.get('current_education_level', 'N/A')
-        edu_percentage = data.get('edu_percentage', 'N/A')
-        class_10_percentage = data.get('class_10_percentage', 'N/A')
-        class_12_percentage = data.get('class_12_percentage', 'N/A')
-
-        annual_budget = data.get('annual_budget', 'N/A')
-        fee_payment_option = data.get('fee_payment_option', 'N/A')
-        loan_assistance = data.get('loan_assistance', 'N/A')
-        hostel_required = data.get('hostel_required', 'N/A')
-        contacted_college = data.get('contacted_college', 'N/A')
-
-        help_with_list = []
-        if data.get('help_with_list'):
-            try:
-                help_with_list = json.loads(data.get('help_with_list'))
-            except:
-                pass
-
-        colleges_pref = []
-        for i in range(1, 4):
-            c_name = data.get(f'col_name_{i}')
-            c_st = data.get(f'col_state_{i}')
-            if c_name:
-                colleges_pref.append({"name": c_name, "state": c_st or 'N/A'})
 
         if not student_name or not contact_number or not student_email:
             return jsonify({"status": "error", "message": "Required fields missing"}), 400
 
-        # Document Uploads Handling
-        uploaded_docs = {}
+        document_filename = None
         if 'id_document' in request.files:
-            p = upload_file_to_github(request.files['id_document'], student_name, 'aadhar_doc')
-            if p: uploaded_docs['id_document'] = p
-        if 'aadhar_doc' in request.files:
-            p = upload_file_to_github(request.files['aadhar_doc'], student_name, 'aadhar_doc')
-            if p: uploaded_docs['id_document'] = p
-        if 'class_10_doc' in request.files:
-            p = upload_file_to_github(request.files['class_10_doc'], student_name, 'class_10_doc')
-            if p: uploaded_docs['class_10_doc'] = p
-        if 'class_12_doc' in request.files:
-            p = upload_file_to_github(request.files['class_12_doc'], student_name, 'class_12_doc')
-            if p: uploaded_docs['class_12_doc'] = p
-        if 'edu_scorecard' in request.files:
-            p = upload_file_to_github(request.files['edu_scorecard'], student_name, 'edu_scorecard')
-            if p: uploaded_docs['edu_scorecard'] = p
+            file = request.files['id_document']
+            if file and file.filename != '':
+                document_filename = upload_file_to_github(file, student_name, file.filename)
 
         leads = load_data(DATA_FILE)
         score = 80 if alternate_number != 'N/A' else 50
@@ -204,34 +160,18 @@ def submit_lead():
             "state": state,
             "city": city,
             "course_interest": course_interest,
-            "hear_about": hear_about,
-            "preferred_time": preferred_time,
-            "current_education_level": current_education_level,
-            "edu_percentage": edu_percentage,
-            "class_10_percentage": class_10_percentage,
-            "class_12_percentage": class_12_percentage,
-            "annual_budget": annual_budget,
-            "fee_payment_option": fee_payment_option,
-            "loan_assistance": loan_assistance,
-            "hostel_required": hostel_required,
-            "contacted_college": contacted_college,
-            "help_with_list": help_with_list,
-            "colleges_pref": colleges_pref,
-            "id_document": uploaded_docs.get('id_document'),
-            "class_10_doc": uploaded_docs.get('class_10_doc'),
-            "class_12_doc": uploaded_docs.get('class_12_doc'),
-            "edu_scorecard": uploaded_docs.get('edu_scorecard'),
+            "id_document": document_filename,
             "status": "New Lead",
             "score": score,
-            "notes": "Full Enquiry Form Submitted.",
+            "notes": "Enquiry received with document saved.",
             "is_deleted": False,
             "created_at": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
-        log_activity("New Form Enquiry", f"Enquiry submitted by {student_name} ({contact_number})")
+        log_activity("New Lead Form", f"New enquiry received for {student_name} ({contact_number})")
 
-        return jsonify({"status": "success", "message": "Lead captured and documents securely stored!"}), 200
+        return jsonify({"status": "success", "message": "Lead captured and document securely stored!"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -250,8 +190,6 @@ def update_lead():
         state = request.form.get('state', 'N/A')
         city = request.form.get('city', 'N/A')
         course_interest = request.form.get('course_interest', 'General')
-        annual_budget = request.form.get('annual_budget', 'N/A')
-        loan_assistance = request.form.get('loan_assistance', 'N/A')
         delete_doc = request.form.get('delete_doc') == 'true'
 
         leads = load_data(DATA_FILE)
@@ -272,18 +210,16 @@ def update_lead():
         target_lead['state'] = state
         target_lead['city'] = city
         target_lead['course_interest'] = course_interest
-        target_lead['annual_budget'] = annual_budget
-        target_lead['loan_assistance'] = loan_assistance
 
         if delete_doc:
             target_lead['id_document'] = None
-            target_lead['class_10_doc'] = None
-            target_lead['class_12_doc'] = None
-            target_lead['edu_scorecard'] = None
 
         if 'id_document' in request.files:
-            doc_path = upload_file_to_github(request.files['id_document'], student_name, 'aadhar_doc')
-            if doc_path: target_lead['id_document'] = doc_path
+            file = request.files['id_document']
+            if file and file.filename != '':
+                doc_path = upload_file_to_github(file, student_name, file.filename)
+                if doc_path:
+                    target_lead['id_document'] = doc_path
 
         save_data(DATA_FILE, leads)
         log_activity("Lead Updated", f"Updated lead information for {student_name}")
@@ -455,7 +391,7 @@ def home():
 
 
 # --- FRONTEND HTML TEMPLATES ---
-LOGIN_HTML = r"""
+LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -496,7 +432,7 @@ LOGIN_HTML = r"""
 </html>
 """
 
-MAIN_DASHBOARD_HTML = r"""
+MAIN_DASHBOARD_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -577,9 +513,9 @@ MAIN_DASHBOARD_HTML = r"""
         .action-icon-btn { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-size: 13px; transition: 0.2s; margin-right: 4px; }
         .call-btn { background: #dcfce7; color: #16a34a; }
         .mail-btn { background: #e0f2fe; color: #0284c7; }
-        .doc-btn { background: #e0f2fe; color: #0284c7; border: none; cursor: pointer; }
+        .doc-btn { background: #e0f2fe; color: #0284c7; }
         .doc-btn:hover { background: #0284c7; color: white; }
-        .edit-btn { background: #fef3c7; color: #d97706; border: none; cursor: pointer; }
+        .edit-btn { background: #fef3c7; color: #d97706; }
         .edit-btn:hover { background: #d97706; color: white; }
         .trash-btn { background: #fee2e2; color: #dc2626; border: none; cursor: pointer; }
 
@@ -589,7 +525,7 @@ MAIN_DASHBOARD_HTML = r"""
 
         /* Responsive Animated Modals */
         .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
-        .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 600px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
+        .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
         @keyframes modalPopup { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .close-modal { position: absolute; top: 15px; right: 20px; font-size: 22px; cursor: pointer; color: #64748b; transition: 0.2s; }
         .close-modal:hover { color: #0f172a; }
@@ -630,6 +566,7 @@ MAIN_DASHBOARD_HTML = r"""
                 <li class="nav-item" onclick="switchTab('colleges-tab', this)"><button><i class="fa-solid fa-building-columns"></i> Colleges Manager</button></li>
                 <li class="nav-item" onclick="switchTab('history-tab', this)"><button><i class="fa-solid fa-clock-rotate-left"></i> Work History</button></li>
                 <li class="nav-item" onclick="switchTab('trash-tab', this)"><button><i class="fa-solid fa-trash-can"></i> Trash Bin</button></li>
+                <li class="nav-item" onclick="switchTab('settings-tab', this)"><button><i class="fa-solid fa-gear"></i> Settings</button></li>
             </ul>
         </div>
         <div style="padding: 10px;">
@@ -665,7 +602,7 @@ MAIN_DASHBOARD_HTML = r"""
 
                 <div class="metrics-grid" style="margin-bottom: 25px;">
                     <div class="metric-card"><div class="m-icon blue"><i class="fa-solid fa-users"></i></div><div class="m-info"><h3 id="statTotal">0</h3><p>Total Leads</p></div></div>
-                    <div class="metric-card"><div class="m-icon green"><i class="fa-solid fa-graduation-cap"></i></div><div class="m-info"><h3 id="statClosed">0</h3><p>Admissions Closed</p></div></div>
+                    <div class="metric-card"><div class="m-icon green"><div class="m-icon green"><i class="fa-solid fa-graduation-cap"></i></div></div><div class="m-info"><h3 id="statClosed">0</h3><p>Admissions Closed</p></div></div>
                     <div class="metric-card"><div class="m-icon orange"><i class="fa-solid fa-phone-volume"></i></div><div class="m-info"><h3 id="statContacted">0</h3><p>Contacted</p></div></div>
                     <div class="metric-card"><div class="m-icon purple"><i class="fa-solid fa-spinner"></i></div><div class="m-info"><h3 id="statNew">0</h3><p>New Leads</p></div></div>
                 </div>
@@ -681,14 +618,31 @@ MAIN_DASHBOARD_HTML = r"""
                                 <tr>
                                     <th>Student</th>
                                     <th>Contact</th>
-                                    <th>Course</th>
-                                    <th>Budget</th>
                                     <th>Status</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody id="followupRecallTbody"></tbody>
                         </table>
+                    </div>
+                </div>
+
+                <!-- WEEKLY, MONTHLY & YEARLY LEADS ANALYTICS -->
+                <div class="card" style="margin-bottom: 25px;">
+                    <div class="card-header">
+                        <h3>Lead Analytics (Weekly, Monthly & Yearly)</h3>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button onclick="showAnalyticsPeriod('week')" id="btnWeek" style="padding: 6px 14px; border-radius: 8px; border: 1px solid #2563eb; background: #2563eb; color: white; font-weight: 600; cursor: pointer; font-size: 12.5px;">This Week (<span id="countWeek">0</span>)</button>
+                            <button onclick="showAnalyticsPeriod('month')" id="btnMonth" style="padding: 6px 14px; border-radius: 8px; border: 1px solid #2563eb; background: white; color: #2563eb; font-weight: 600; cursor: pointer; font-size: 12.5px;">This Month (<span id="countMonth">0</span>)</button>
+                            <button onclick="showAnalyticsPeriod('year')" id="btnYear" style="padding: 6px 14px; border-radius: 8px; border: 1px solid #2563eb; background: white; color: #2563eb; font-weight: 600; cursor: pointer; font-size: 12.5px;">This Year (<span id="countYear">0</span>)</button>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: center;" class="analytics-grid-mobile">
+                        <div>
+                            <p id="analyticsDesc" style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 12px; line-height: 1.5;">Click each option above to view lead status distribution and total statistics for the selected time period.</p>
+                            <div id="analyticsSummaryText" style="font-weight: 700; color: var(--text-dark); font-size: 14px;"></div>
+                        </div>
+                        <div class="chart-container" style="height: 200px;"><canvas id="analyticsPieChart"></canvas></div>
                     </div>
                 </div>
 
@@ -702,7 +656,7 @@ MAIN_DASHBOARD_HTML = r"""
                                         <th>Student</th>
                                         <th>Contact</th>
                                         <th>Email</th>
-                                        <th>Docs</th>
+                                        <th>ID Doc</th>
                                         <th>Status</th>
                                         <th>Action</th>
                                     </tr>
@@ -722,16 +676,34 @@ MAIN_DASHBOARD_HTML = r"""
             <div id="leads-tab" class="tab-section">
                 <div class="card">
                     <div class="card-header"><h3>All Registered Leads</h3></div>
+                    <!-- Filters Section -->
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 14px; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <select id="filterStatus" class="form-control" style="width: auto; margin:0;" onchange="applyLeadFilters()">
+                            <option value="">All Statuses</option>
+                            <option value="New Lead">New Lead</option>
+                            <option value="Contacted">Contacted</option>
+                            <option value="Follow Up">Follow Up</option>
+                            <option value="Closed">Closed</option>
+                            <option value="Rejected">Rejected</option>
+                        </select>
+                        <select id="filterState" class="form-control" style="width: auto; margin:0;" onchange="applyLeadFilters()">
+                            <option value="">All States</option>
+                        </select>
+                        <select id="filterCity" class="form-control" style="width: auto; margin:0;" onchange="applyLeadFilters()">
+                            <option value="">All Cities</option>
+                        </select>
+                        <button onclick="resetLeadFilters()" style="background: #64748b; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-rotate-right" style="margin-right: 5px;"></i> Reset Filters</button>
+                    </div>
                     <div style="overflow-x: auto;">
                         <table>
                             <thead>
                                 <tr>
                                     <th>#ID</th>
                                     <th>Student Name</th>
-                                    <th>Course</th>
-                                    <th>Budget</th>
-                                    <th>Loan Assist</th>
-                                    <th>Docs</th>
+                                    <th>Contact</th>
+                                    <th>Email ID</th>
+                                    <th>ID Doc</th>
+                                    <th>Score</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -802,15 +774,52 @@ MAIN_DASHBOARD_HTML = r"""
                     </div>
                 </div>
             </div>
+
+            <!-- SETTINGS TAB -->
+            <div id="settings-tab" class="tab-section">
+                <div class="card">
+                    <div class="card-header"><h3><i class="fa-solid fa-gear"></i> System Settings & Security Logs</h3></div>
+                    <p style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 20px; line-height: 1.5;">Configure system preferences and review secure user login and session activity logs.</p>
+                    <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <button onclick="openLogsModal()" style="background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; gap: 8px;"><i class="fa-solid fa-shield-halved"></i> View Login Activity Logs</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- FULL DETAILS & DOCUMENTS VIEW MODAL -->
+    <!-- VIEW DOCUMENT MODAL -->
     <div id="docModal" class="modal-overlay">
         <div class="modal-content">
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
-            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Details & All Documents</h3>
+            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Details & Document</h3>
             <div id="modalBodyContainer"></div>
+            <div style="margin-top: 20px; text-align: right;">
+                <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 18px; text-decoration: none; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; width: auto; height: auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOGS MODAL -->
+    <div id="logsModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 820px;">
+            <span class="close-modal" onclick="closeLogsModal()">&times;</span>
+            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-shield-halved" style="color:#2563eb; margin-right:8px;"></i> User Login & Session Activity Logs</h3>
+            <div style="max-height: 420px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>IP Address</th>
+                            <th>Browser / OS</th>
+                            <th>Login Time</th>
+                            <th>Logout Time</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsTbody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -844,23 +853,12 @@ MAIN_DASHBOARD_HTML = r"""
                 <label style="font-size:12px; font-weight:600; color:#475569;">Course Interest</label>
                 <input type="text" id="edit_course_interest" class="form-control">
                 
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-                    <div>
-                        <label style="font-size:12px; font-weight:600; color:#475569;">Annual Budget</label>
-                        <input type="text" id="edit_annual_budget" class="form-control">
-                    </div>
-                    <div>
-                        <label style="font-size:12px; font-weight:600; color:#475569;">Loan Assistance</label>
-                        <input type="text" id="edit_loan_assistance" class="form-control">
-                    </div>
-                </div>
-
-                <label style="font-size:12px; font-weight:600; color:#475569;">Update Aadhar / Primary Doc</label>
+                <label style="font-size:12px; font-weight:600; color:#475569;">Update / Replace Document</label>
                 <input type="file" id="edit_id_document" class="form-control" accept="image/*,.pdf">
                 
                 <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" id="edit_delete_doc" style="width:16px; height:16px;">
-                    <label for="edit_delete_doc" style="font-size:13px; color:#ef4444; font-weight:600; cursor:pointer;">Delete all uploaded documents</label>
+                    <label for="edit_delete_doc" style="font-size:13px; color:#ef4444; font-weight:600; cursor:pointer;">Delete existing document</label>
                 </div>
 
                 <div style="margin-top: 20px; text-align: right;">
@@ -879,6 +877,7 @@ MAIN_DASHBOARD_HTML = r"""
             document.getElementById('sidebarNav').classList.toggle('show');
         }
 
+        // Live Smartwatch & Time-based Greeting
         function updateClockAndGreeting() {
             const now = new Date();
             let hours = now.getHours();
@@ -886,6 +885,7 @@ MAIN_DASHBOARD_HTML = r"""
             const seconds = String(now.getSeconds()).padStart(2, '0');
             const ampm = hours >= 12 ? 'PM' : 'AM';
             
+            // Dynamic Greeting Logic
             let greeting = "Good Morning Shivam Sir";
             if (hours >= 12 && hours < 17) {
                 greeting = "Good Afternoon Shivam Sir";
@@ -895,7 +895,7 @@ MAIN_DASHBOARD_HTML = r"""
             document.getElementById('timeGreeting').innerText = greeting;
 
             hours = hours % 12;
-            hours = hours ? hours : 12;
+            hours = hours ? hours : 12; // 12-hour format
             const timeString = `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
             document.getElementById('liveWatch').innerText = timeString;
         }
@@ -1000,15 +1000,13 @@ MAIN_DASHBOARD_HTML = r"""
             followupRecallTbody.innerHTML = '';
             const recallLeads = activeLeads.filter(l => l.status === 'Follow Up' || l.status === 'Contacted');
             if(recallLeads.length === 0) {
-                followupRecallTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No pending follow-ups for today.</td></tr>`;
+                followupRecallTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No pending follow-ups for today.</td></tr>`;
             } else {
                 recallLeads.forEach(lead => {
                     followupRecallTbody.innerHTML += `
                         <tr>
                             <td><strong>${lead.student_name}</strong></td>
                             <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
-                            <td>${lead.course_interest || 'N/A'}</td>
-                            <td>${lead.annual_budget || 'N/A'}</td>
                             <td><span class="badge-status ${getBadgeClass(lead.status)}">${lead.status}</span></td>
                             <td>
                                 <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
@@ -1027,19 +1025,30 @@ MAIN_DASHBOARD_HTML = r"""
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View All Details & Docs"><i class="fa-solid fa-eye"></i></button>`;
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>`;
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
                         <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
                         <td><a href="mailto:${lead.student_email}" onclick="logAction('Email Sent', 'Emailed student ${lead.student_name}')" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
                         <td>${docAction}</td>
-                        <td><span class="badge-status ${getBadgeClass(lead.status)}">${lead.status}</span></td>
+                        <td>
+                            <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
+                                <option value="New Lead" ${lead.status==='New Lead'?'selected':''}>New Lead</option>
+                                <option value="Contacted" ${lead.status==='Contacted'?'selected':''}>Contacted</option>
+                                <option value="Follow Up" ${lead.status==='Follow Up'?'selected':''}>Follow Up</option>
+                                <option value="Closed" ${lead.status==='Closed'?'selected':''}>Closed</option>
+                                <option value="Rejected" ${lead.status==='Rejected'?'selected':''}>Rejected</option>
+                            </select>
+                        </td>
                         <td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>
                     </tr>
                 `;
             });
+            
+            updateFilterDropdowns(activeLeads);
             populateAllLeadsTable(activeLeads);
+            updateAnalyticsData(activeLeads);
 
             const trashTbody = document.getElementById('trashTbody');
             trashTbody.innerHTML = '';
@@ -1053,15 +1062,15 @@ MAIN_DASHBOARD_HTML = r"""
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Details"><i class="fa-solid fa-eye"></i></button>`;
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>`;
                 allTbody.innerHTML += `
                     <tr>
                         <td>#${lead.id}</td>
                         <td><strong>${lead.student_name}</strong><br><small style="color:#64748b;">${lead.father_name || ''}</small></td>
-                        <td>${lead.course_interest || 'N/A'}</td>
-                        <td>${lead.annual_budget || 'N/A'}</td>
-                        <td><strong>${lead.loan_assistance || 'No'}</strong></td>
+                        <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
+                        <td><a href="mailto:${lead.student_email}" onclick="logAction('Email Sent', 'Emailed student ${lead.student_name}')" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
                         <td>${docAction}</td>
+                        <td><strong>${lead.score || 50} pts</strong></td>
                         <td>
                             <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
                                 <option value="New Lead" ${lead.status==='New Lead'?'selected':''}>New Lead</option>
@@ -1083,80 +1092,34 @@ MAIN_DASHBOARD_HTML = r"""
         function openDocModal(lead) {
             const modal = document.getElementById('docModal');
             const container = document.getElementById('modalBodyContainer');
+            const downloadBtn = document.getElementById('modalDownloadBtn');
             
-            let helpListHtml = '';
-            if (lead.help_with_list && lead.help_with_list.length > 0) {
-                helpListHtml = lead.help_with_list.map(h => `<li style="margin-bottom:3px;">${h}</li>`).join('');
-            } else {
-                helpListHtml = '<li>General Counselling</li>';
-            }
-
-            let prefCollegesHtml = '';
-            if (lead.colleges_pref && lead.colleges_pref.length > 0) {
-                prefCollegesHtml = lead.colleges_pref.map(c => `<li><strong>${c.name}</strong> (${c.state})</li>`).join('');
-            } else {
-                prefCollegesHtml = '<li>None Specified</li>';
-            }
-
-            let docsHtml = '';
-            const docList = [
-                { title: 'Aadhar Attachment', path: lead.id_document },
-                { title: 'Class 10th Document', path: lead.class_10_doc },
-                { title: 'Class 12th Document', path: lead.class_12_doc },
-                { title: 'Scorecard / Marksheet', path: lead.edu_scorecard }
-            ];
-
-            docList.forEach(doc => {
-                if (doc.path) {
-                    const fullUrl = `/download-doc/${doc.path}`;
-                    let preview = '';
-                    if (doc.path.match(/\.(jpeg|jpg|png|gif)$/i)) {
-                        preview = `<div style="margin-top:6px;"><img src="${fullUrl}" style="max-width:100%; max-height:160px; border-radius:6px; border:1px solid #cbd5e1;"></div>`;
-                    }
-                    docsHtml += `
-                        <div style="background:#fff; border:1px solid #cbd5e1; padding:10px; border-radius:8px; margin-top:10px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <strong style="font-size:12.5px; color:#1e293b;"><i class="fa-solid fa-file-arrow-down" style="color:#2563eb; margin-right:5px;"></i> ${doc.title}</strong>
-                                <a href="${fullUrl}" target="_blank" class="action-icon-btn doc-btn" style="width:auto; padding:4px 10px; height:auto; font-size:12px;"><i class="fa-solid fa-download"></i> Download</a>
-                            </div>
-                            ${preview}
-                        </div>
-                    `;
+            let docPreviewHtml = '';
+            if (lead.id_document) {
+                const fullUrl = `/download-doc/${lead.id_document}`;
+                downloadBtn.href = fullUrl;
+                downloadBtn.style.display = 'inline-flex';
+                
+                if(lead.id_document.match(/\.(jpeg|jpg|png|gif)$/i)) {
+                    docPreviewHtml = `<div style="margin-top: 15px; text-align: center;"><img src="${fullUrl}" style="max-width:100%; max-height:220px; border-radius:8px; border:1px solid #cbd5e1;" alt="Document"></div>`;
+                } else {
+                    docPreviewHtml = `<div style="margin-top: 15px;"><p style="color:#475569; font-size:13px;"><i class="fa-solid fa-file-pdf" style="color:#ef4444; margin-right:5px;"></i> Document attached. Click download to view.</p></div>`;
                 }
-            });
-
-            if (!docsHtml) {
-                docsHtml = `<p style="color:#94a3b8; font-size:12.5px; margin-top:10px;">No documents attached by student.</p>`;
+            } else {
+                downloadBtn.style.display = 'none';
+                docPreviewHtml = `<div style="margin-top: 15px; background: #fffbeb; border: 1px solid #fde68a; padding: 12px; border-radius: 8px;"><p style="color:#b45309; font-size:13px; margin:0;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:5px;"></i> Document has been deleted or is not available. Showing submitted information.</p></div>`;
             }
 
             container.innerHTML = `
-                <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155; line-height: 1.6;">
-                    <h4 style="color:#0f172a; margin-bottom:8px; border-bottom:1px dashed #cbd5e1; padding-bottom:4px;">👤 Personal & Academic Details</h4>
-                    <p><strong>Student Name:</strong> ${lead.student_name}</p>
-                    <p><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
-                    <p><strong>Contact:</strong> ${lead.contact_number} (Alt: ${lead.alternate_number || 'N/A'})</p>
-                    <p><strong>Email:</strong> ${lead.student_email}</p>
-                    <p><strong>Location:</strong> ${lead.city}, ${lead.state}</p>
-                    <p><strong>Education Level:</strong> ${lead.current_education_level || 'N/A'} (Score: ${lead.edu_percentage || 'N/A'})</p>
-                    <p><strong>10th / 12th Marks:</strong> 10th: ${lead.class_10_percentage || 'N/A'} | 12th: ${lead.class_12_percentage || 'N/A'}</p>
-
-                    <h4 style="color:#0f172a; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed #cbd5e1; padding-bottom:4px;">📋 Counselling & Financial Requirements</h4>
-                    <p><strong>Course Interest:</strong> ${lead.course_interest || 'N/A'}</p>
-                    <p><strong>Annual Budget:</strong> ${lead.annual_budget || 'N/A'}</p>
-                    <p><strong>Fee Payment:</strong> ${lead.fee_payment_option || 'N/A'}</p>
-                    <p><strong>Loan Assistance:</strong> ${lead.loan_assistance || 'N/A'} | <strong>Hostel:</strong> ${lead.hostel_required || 'N/A'}</p>
-                    <p><strong>Contacted Other College:</strong> ${lead.contacted_college || 'N/A'}</p>
-                    <p><strong>Hear About Us:</strong> ${lead.hear_about || 'N/A'} | <strong>Time Slot:</strong> ${lead.preferred_time || 'N/A'}</p>
-
-                    <h4 style="color:#0f172a; margin-top:12px; margin-bottom:4px;">🎯 Wants Help With:</h4>
-                    <ul style="padding-left:20px; color:#475569;">${helpListHtml}</ul>
-
-                    <h4 style="color:#0f172a; margin-top:12px; margin-bottom:4px;">🏛️ Preferred Colleges:</h4>
-                    <ul style="padding-left:20px; color:#475569;">${prefCollegesHtml}</ul>
+                <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13.5px; color: #334155; line-height: 1.6;">
+                    <p style="margin-bottom:6px;"><strong>Student Name:</strong> ${lead.student_name}</p>
+                    <p style="margin-bottom:6px;"><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
+                    <p style="margin-bottom:6px;"><strong>Contact:</strong> ${lead.contact_number}</p>
+                    <p style="margin-bottom:6px;"><strong>Email:</strong> ${lead.student_email}</p>
+                    <p style="margin-bottom:6px;"><strong>Location:</strong> ${lead.city || 'N/A'}, ${lead.state || 'N/A'}</p>
+                    <p style="margin-bottom:0;"><strong>Course Interest:</strong> ${lead.course_interest || 'General'}</p>
                 </div>
-
-                <h4 style="color:#0f172a; margin-top:15px; font-size:14px;"><i class="fa-solid fa-folder-open" style="color:#2563eb; margin-right:5px;"></i> Uploaded Document Attachments</h4>
-                ${docsHtml}
+                ${docPreviewHtml}
             `;
             modal.style.display = 'flex';
         }
@@ -1172,8 +1135,6 @@ MAIN_DASHBOARD_HTML = r"""
             document.getElementById('edit_state').value = lead.state || '';
             document.getElementById('edit_city').value = lead.city || '';
             document.getElementById('edit_course_interest').value = lead.course_interest || '';
-            document.getElementById('edit_annual_budget').value = lead.annual_budget || '';
-            document.getElementById('edit_loan_assistance').value = lead.loan_assistance || '';
             document.getElementById('edit_delete_doc').checked = false;
             document.getElementById('edit_id_document').value = '';
             
@@ -1197,8 +1158,6 @@ MAIN_DASHBOARD_HTML = r"""
             formData.append('state', document.getElementById('edit_state').value);
             formData.append('city', document.getElementById('edit_city').value);
             formData.append('course_interest', document.getElementById('edit_course_interest').value);
-            formData.append('annual_budget', document.getElementById('edit_annual_budget').value);
-            formData.append('loan_assistance', document.getElementById('edit_loan_assistance').value);
             formData.append('delete_doc', document.getElementById('edit_delete_doc').checked);
 
             const fileField = document.getElementById('edit_id_document');
@@ -1279,6 +1238,168 @@ MAIN_DASHBOARD_HTML = r"""
         }
         fetchLeadsData();
         setInterval(fetchLeadsData, 5000);
+
+        // Filtering Logic for All Leads
+        function updateFilterDropdowns(leads) {
+            const stateSelect = document.getElementById('filterState');
+            const citySelect = document.getElementById('filterCity');
+            
+            const currentState = stateSelect.value;
+            const currentCity = citySelect.value;
+            
+            const states = [...new Set(leads.map(l => l.state).filter(s => s && s !== 'N/A'))].sort();
+            const cities = [...new Set(leads.map(l => l.city).filter(c => c && c !== 'N/A'))].sort();
+            
+            stateSelect.innerHTML = '<option value="">All States</option>' + states.map(s => `<option value="${s}" ${s===currentState?'selected':''}>${s}</option>`).join('');
+            citySelect.innerHTML = '<option value="">All Cities</option>' + cities.map(c => `<option value="${c}" ${c===currentCity?'selected':''}>${c}</option>`).join('');
+        }
+
+        function applyLeadFilters() {
+            const statusVal = document.getElementById('filterStatus').value;
+            const stateVal = document.getElementById('filterState').value;
+            const cityVal = document.getElementById('filterCity').value;
+            
+            const activeLeads = rawLeadsData.filter(l => !l.is_deleted);
+            const filtered = activeLeads.filter(l => {
+                if(statusVal && l.status !== statusVal) return false;
+                if(stateVal && l.state !== stateVal) return false;
+                if(cityVal && l.city !== cityVal) return false;
+                return true;
+            });
+            populateAllLeadsTable(filtered);
+        }
+
+        function resetLeadFilters() {
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterState').value = '';
+            document.getElementById('filterCity').value = '';
+            const activeLeads = rawLeadsData.filter(l => !l.is_deleted);
+            populateAllLeadsTable(activeLeads);
+        }
+
+        // Settings Logs Modal Logic
+        async function openLogsModal() {
+            const modal = document.getElementById('logsModal');
+            const tbody = document.getElementById('logsTbody');
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Loading logs...</td></tr>`;
+            modal.style.display = 'flex';
+            
+            try {
+                const res = await fetch('/api/get-logs');
+                if(res.ok) {
+                    const logs = await res.json();
+                    tbody.innerHTML = '';
+                    if(logs.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No login activity logs available.</td></tr>`;
+                        return;
+                    }
+                    logs.forEach(log => {
+                        const statusBadge = log.status === 'Active' ? '<span class="badge-status badge-closed">Active</span>' : '<span class="badge-status badge-rejected">Logged Out</span>';
+                        tbody.innerHTML += `
+                            <tr>
+                                <td><strong>${log.username}</strong></td>
+                                <td>${log.ip_address}</td>
+                                <td>${log.browser} / ${log.os}</td>
+                                <td>${log.login_time}</td>
+                                <td>${log.logout_time}</td>
+                                <td>${statusBadge}</td>
+                            </tr>
+                        `;
+                    });
+                }
+            } catch(e) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Failed to load logs.</td></tr>`;
+            }
+        }
+        function closeLogsModal() { document.getElementById('logsModal').style.display = 'none'; }
+
+        // Weekly, Monthly & Yearly Analytics Logic
+        let currentAnalyticsPeriod = 'week';
+        let analyticsPieChartInstance = null;
+
+        function showAnalyticsPeriod(period) {
+            currentAnalyticsPeriod = period;
+            document.getElementById('btnWeek').style.background = period === 'week' ? '#2563eb' : 'white';
+            document.getElementById('btnWeek').style.color = period === 'week' ? 'white' : '#2563eb';
+            document.getElementById('btnMonth').style.background = period === 'month' ? '#2563eb' : 'white';
+            document.getElementById('btnMonth').style.color = period === 'month' ? 'white' : '#2563eb';
+            document.getElementById('btnYear').style.background = period === 'year' ? '#2563eb' : 'white';
+            document.getElementById('btnYear').style.color = period === 'year' ? 'white' : '#2563eb';
+            
+            updateAnalyticsData(rawLeadsData.filter(l => !l.is_deleted));
+        }
+
+        function updateAnalyticsData(activeLeads) {
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth();
+            
+            // Helper for week check (last 7 days or current calendar week)
+            const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+            const weekLeads = activeLeads.filter(l => {
+                if(!l.created_timestamp) return true; // fallback
+                const d = new Date(l.created_timestamp * 1000);
+                return d >= oneWeekAgo;
+            });
+
+            const monthLeads = activeLeads.filter(l => {
+                if(!l.created_timestamp) return true;
+                const d = new Date(l.created_timestamp * 1000);
+                return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+            });
+
+            const yearLeads = activeLeads.filter(l => {
+                if(!l.created_timestamp) return true;
+                const d = new Date(l.created_timestamp * 1000);
+                return d.getFullYear() === currentYear;
+            });
+
+            document.getElementById('countWeek').innerText = weekLeads.length;
+            document.getElementById('countMonth').innerText = monthLeads.length;
+            document.getElementById('countYear').innerText = yearLeads.length;
+
+            let targetLeads = weekLeads;
+            let periodName = "this week";
+            if(currentAnalyticsPeriod === 'month') {
+                targetLeads = monthLeads;
+                periodName = "this month";
+            } else if(currentAnalyticsPeriod === 'year') {
+                targetLeads = yearLeads;
+                periodName = "this year";
+            }
+
+            document.getElementById('analyticsDesc').innerText = `Displaying lead status distribution for ${periodName} (${targetLeads.length} total leads).`;
+
+            if(targetLeads.length === 0) {
+                document.getElementById('analyticsSummaryText').innerText = "No leads available for this period.";
+            } else {
+                document.getElementById('analyticsSummaryText').innerText = `Total Leads: ${targetLeads.length}`;
+            }
+
+            const counts = {
+                'New Lead': targetLeads.filter(l => l.status==='New Lead').length,
+                'Contacted': targetLeads.filter(l => l.status==='Contacted').length,
+                'Follow Up': targetLeads.filter(l => l.status==='Follow Up').length,
+                'Closed': targetLeads.filter(l => l.status==='Closed').length,
+                'Rejected': targetLeads.filter(l => l.status==='Rejected').length
+            };
+
+            const ctx = document.getElementById('analyticsPieChart').getContext('2d');
+            if(analyticsPieChartInstance) analyticsPieChartInstance.destroy();
+            analyticsPieChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['New', 'Contacted', 'Follow Up', 'Closed', 'Rejected'],
+                    datasets: [{
+                        data: [counts['New Lead'], counts['Contacted'], counts['Follow Up'], counts['Closed'], counts['Rejected']],
+                        backgroundColor: ['#38bdf8', '#f59e0b', '#6366f1', '#22c55e', '#ef4444']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+            });
+        }
+
     </script>
 </body>
 </html>
