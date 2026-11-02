@@ -20,5 +20,16 @@
         "logout_time": "02 Nov 2026, 05:37 PM",
         "status": "Logged Out",
         "session_id": "1793640279.411692"
+    },
+    {
+        "id": 3,
+        "username": "admin",
+        "ip_address": "127.0.0.1",
+        "browser": "Google Chrome",
+        "os": "Windows",
+        "login_time": "02 Nov 2026, 05:37 PM",
+        "login_timestamp": 1793641070.165806,
+        "logout_time": "N/A",
+        "status": "Active"
     }
 ]
