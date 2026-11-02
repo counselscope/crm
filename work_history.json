@@ -75,5 +75,12 @@
         "time": "04:38:00 PM",
         "action_type": "Email Sent",
         "details": "Emailed student mukesh"
+    },
+    {
+        "id": 12,
+        "date": "2026-11-02",
+        "time": "05:28:54 PM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'New Lead' for student Raj "
     }
 ]
