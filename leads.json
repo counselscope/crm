@@ -59,7 +59,7 @@
         "state": "Gujarat",
         "city": "Hh",
         "course_interest": "General",
-        "id_document": "student_documents/Raj/aadhar.jpg",
+        "id_document": null,
         "status": "New Lead",
         "score": 80,
         "notes": "Enquiry received with document saved.",
