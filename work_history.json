@@ -40,5 +40,12 @@
         "time": "05:18:53 AM",
         "action_type": "New Lead Form",
         "details": "New enquiry received for Raj  (9874563232)"
+    },
+    {
+        "id": 7,
+        "date": "2026-11-02",
+        "time": "05:23:09 AM",
+        "action_type": "Call Initiated",
+        "details": "Called student Raj "
     }
 ]
