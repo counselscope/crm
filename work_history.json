@@ -82,5 +82,12 @@
         "time": "05:28:54 PM",
         "action_type": "Status Change",
         "details": "Status changed to 'New Lead' for student Raj "
+    },
+    {
+        "id": 13,
+        "date": "2026-11-02",
+        "time": "05:34:04 PM",
+        "action_type": "New Lead Form",
+        "details": "New enquiry received for Mi (7021889854)"
     }
 ]
