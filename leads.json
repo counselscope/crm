@@ -106,5 +106,28 @@
             "state": "Bihar",
             "city": "Patna"
         }
+    },
+    {
+        "id": 6,
+        "student_name": "Jesita",
+        "contact_number": "7387553438",
+        "student_email": "saloni027singh@gmail.com",
+        "id_document": "student_documents/Jesita/doc_1793726794.jpg",
+        "status": "New Lead",
+        "score": 80,
+        "notes": "Enquiry received via dynamic HTML form submission.",
+        "is_deleted": false,
+        "created_at": "03 Nov 2026, 05:26 PM",
+        "created_timestamp": 1793726797.296291,
+        "form_data": {
+            "student_name": "Jesita",
+            "father_name": "Vikram",
+            "contact_number": "7387553438",
+            "alternate_number": "",
+            "student_email": "saloni027singh@gmail.com",
+            "current_education_level": "Under Graduation",
+            "state": "Maharashtra",
+            "city": "Mumbai"
+        }
     }
 ]
