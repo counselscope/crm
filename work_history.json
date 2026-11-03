@@ -117,5 +117,12 @@
         "time": "05:26:38 PM",
         "action_type": "New Lead Form",
         "details": "New dynamic enquiry received for Jesita (7387553438)"
+    },
+    {
+        "id": 18,
+        "date": "2026-11-03",
+        "time": "05:40:32 PM",
+        "action_type": "Clear Logs",
+        "details": "Admin admin cleared all login activity logs."
     }
 ]
