@@ -51,8 +51,7 @@ def parse_user_agent(ua_string):
     elif "macintosh" in ua or "mac os" in ua:
         os_name = "macOS"
     elif "iphone" in ua or "ipad" in ua:
-        os_info = "iOS"
-        os_name = os_info
+        os_name = "iOS"
     elif "android" in ua:
         os_name = "Android"
     elif "linux" in ua:
@@ -157,7 +156,7 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         ext = os.path.splitext(original_filename)[1].lower() or ".jpg"
-        target_filename = f"aadhar{ext}"
+        target_filename = f"doc_{int(datetime.now().timestamp())}{ext}"
         file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
         
         file_content = file_storage.read()
@@ -188,60 +187,76 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     
     return None
 
-# --- API ENDPOINTS ---
+# --- DYNAMIC API ENDPOINTS ---
 
 @app.route('/api/submit-lead', methods=['POST'])
 def submit_lead():
     try:
-        data = request.form
-        if not data:
+        # Dynamically capture all form fields submitted from HTML form
+        form_data = request.form.to_dict()
+        if not form_data:
             return jsonify({"status": "error", "message": "No data provided"}), 400
         
-        student_name = data.get('student_name')
-        father_name = data.get('father_name', 'N/A')
-        contact_number = data.get('contact_number')
-        alternate_number = data.get('alternate_number', 'N/A')
-        student_email = data.get('student_email')
-        state = data.get('state', 'N/A')
-        city = data.get('city', 'N/A')
-        course_interest = data.get('course_interest', 'General')
+        # Intelligent fallback for core identifiers if named differently in HTML forms
+        student_name = (
+            form_data.get('student_name') or 
+            form_data.get('name') or 
+            form_data.get('FullName') or 
+            form_data.get('full_name') or 
+            'Valued Enquirer'
+        )
+        
+        contact_number = (
+            form_data.get('contact_number') or 
+            form_data.get('phone') or 
+            form_data.get('mobile') or 
+            form_data.get('contact') or 
+            'N/A'
+        )
+        
+        student_email = (
+            form_data.get('student_email') or 
+            form_data.get('email') or 
+            'N/A'
+        )
 
-        if not student_name or not contact_number or not student_email:
-            return jsonify({"status": "error", "message": "Required fields missing"}), 400
-
+        # Dynamic file/document upload handler supporting any file input name
         document_filename = None
         if 'id_document' in request.files:
             file = request.files['id_document']
             if file and file.filename != '':
                 document_filename = upload_file_to_github(file, student_name, file.filename)
+        elif len(request.files) > 0:
+            for file_key in request.files:
+                file = request.files[file_key]
+                if file and file.filename != '':
+                    document_filename = upload_file_to_github(file, student_name, file.filename)
+                    break
 
         leads = load_data(DATA_FILE)
-        score = 80 if alternate_number != 'N/A' else 50
         now = datetime.now()
 
+        # Construct lead object storing both core indices and ALL dynamic form fields
         new_lead = {
             "id": len(leads) + 1,
             "student_name": student_name,
-            "father_name": father_name,
             "contact_number": contact_number,
-            "alternate_number": alternate_number,
             "student_email": student_email,
-            "state": state,
-            "city": city,
-            "course_interest": course_interest,
             "id_document": document_filename,
             "status": "New Lead",
-            "score": score,
-            "notes": "Enquiry received with document saved.",
+            "score": 80 if contact_number != 'N/A' else 50,
+            "notes": "Enquiry received via dynamic HTML form submission.",
             "is_deleted": False,
             "created_at": now.strftime("%d %b %Y, %I:%M %p"),
-            "created_timestamp": now.timestamp()
+            "created_timestamp": now.timestamp(),
+            "form_data": form_data  # Preserves every single HTML field dynamically
         }
+        
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
-        log_activity("New Lead Form", f"New enquiry received for {student_name} ({contact_number})")
+        log_activity("New Lead Form", f"New dynamic enquiry received for {student_name} ({contact_number})")
 
-        return jsonify({"status": "success", "message": "Lead captured and document securely stored!"}), 200
+        return jsonify({"status": "success", "message": "Lead captured and stored dynamically!"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -251,17 +266,9 @@ def update_lead():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
     try:
-        lead_id = int(request.form.get('lead_id'))
-        student_name = request.form.get('student_name')
-        father_name = request.form.get('father_name', 'N/A')
-        contact_number = request.form.get('contact_number')
-        alternate_number = request.form.get('alternate_number', 'N/A')
-        student_email = request.form.get('student_email')
-        state = request.form.get('state', 'N/A')
-        city = request.form.get('city', 'N/A')
-        course_interest = request.form.get('course_interest', 'General')
-        delete_doc = request.form.get('delete_doc') == 'true'
-
+        form_data = request.form.to_dict()
+        lead_id = int(form_data.get('lead_id'))
+        
         leads = load_data(DATA_FILE)
         target_lead = None
         for lead in leads:
@@ -272,27 +279,35 @@ def update_lead():
         if not target_lead:
             return jsonify({"status": "error", "message": "Lead not found"}), 404
 
-        target_lead['student_name'] = student_name
-        target_lead['father_name'] = father_name
-        target_lead['contact_number'] = contact_number
-        target_lead['alternate_number'] = alternate_number
-        target_lead['student_email'] = student_email
-        target_lead['state'] = state
-        target_lead['city'] = city
-        target_lead['course_interest'] = course_interest
+        # Update core attributes if present
+        if 'student_name' in form_data:
+            target_lead['student_name'] = form_data.get('student_name')
+        if 'contact_number' in form_data:
+            target_lead['contact_number'] = form_data.get('contact_number')
+        if 'student_email' in form_data:
+            target_lead['student_email'] = form_data.get('student_email')
 
+        delete_doc = form_data.get('delete_doc') == 'true'
         if delete_doc:
             target_lead['id_document'] = None
 
         if 'id_document' in request.files:
             file = request.files['id_document']
             if file and file.filename != '':
-                doc_path = upload_file_to_github(file, student_name, file.filename)
+                doc_path = upload_file_to_github(file, target_lead.get('student_name', 'Student'), file.filename)
                 if doc_path:
                     target_lead['id_document'] = doc_path
 
+        # Dynamically update the form_data record
+        if 'form_data' not in target_lead or not isinstance(target_lead['form_data'], dict):
+            target_lead['form_data'] = {}
+        
+        for k, v in form_data.items():
+            if k != 'lead_id' and k != 'delete_doc':
+                target_lead['form_data'][k] = v
+
         save_data(DATA_FILE, leads)
-        log_activity("Lead Updated", f"Updated lead information for {student_name}")
+        log_activity("Lead Updated", f"Updated dynamic lead information for #{lead_id}")
         return jsonify({"status": "success", "message": "Lead updated successfully!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -472,16 +487,17 @@ def export_excel():
         ws_dash.append(["Overall Summary", "Total Active Leads", len(leads)])
         ws_dash.append(["Overall Summary", "Total Admissions Closed", len([l for l in leads if l.get('status')=='Closed'])])
         
-        # Sheet 2: All Leads
+        # Sheet 2: All Leads (Dynamic columns support)
         ws_leads = wb.create_sheet(title="All Leads Data")
-        ws_leads.append(["#ID", "Student Name", "Father Name", "Contact", "Alternate Contact", "Email ID", "State", "City", "Course Interest", "Status", "Score", "ID Document", "Created At"])
+        ws_leads.append(["#ID", "Student Name", "Contact", "Email ID", "Status", "Score", "ID Document", "Created At", "Dynamic Form Details"])
         for l in leads:
+            form_summary = json.dumps(l.get('form_data', {}))
             ws_leads.append([
-                l.get('id'), l.get('student_name'), l.get('father_name', 'N/A'),
-                l.get('contact_number'), l.get('alternate_number', 'N/A'),
-                l.get('student_email'), l.get('state', 'N/A'), l.get('city', 'N/A'),
-                l.get('course_interest', 'General'), l.get('status', 'New Lead'),
-                l.get('score', 50), "Uploaded" if l.get('id_document') else "None", l.get('created_at', 'N/A')
+                l.get('id'), l.get('student_name'),
+                l.get('contact_number'), l.get('student_email'),
+                l.get('status', 'New Lead'), l.get('score', 50),
+                "Uploaded" if l.get('id_document') else "None",
+                l.get('created_at', 'N/A'), form_summary
             ])
 
         # Sheet 3: Colleges Manager
@@ -522,12 +538,11 @@ def export_excel():
         response.headers["Content-type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         return response
     else:
-        # Fallback CSV format
         si = io.StringIO()
         cw = csv.writer(si)
-        cw.writerow(["ID", "Student Name", "Contact Number", "Email ID", "State", "City", "Course Interest", "Status", "Created At"])
+        cw.writerow(["ID", "Student Name", "Contact Number", "Email ID", "Status", "Created At"])
         for l in leads:
-            cw.writerow([l.get('id'), l.get('student_name'), l.get('contact_number'), l.get('student_email'), l.get('state'), l.get('city'), l.get('course_interest'), l.get('status'), l.get('created_at')])
+            cw.writerow([l.get('id'), l.get('student_name'), l.get('contact_number'), l.get('student_email'), l.get('status'), l.get('created_at')])
         
         response = make_response(si.getvalue())
         response.headers["Content-Disposition"] = "attachment; filename=CounselScope_CRM_Leads.csv"
@@ -586,13 +601,13 @@ def export_pdf():
             <div class="stat-card">Rejected: <strong>{counts['Rejected']}</strong></div>
         </div>
 
-        <h2>2. Registered Student Leads Directory</h2>
+        <h2>2. Registered Student Leads Directory (Dynamic Form Data)</h2>
         <table>
             <thead>
-                <tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Location</th><th>Course</th><th>Status</th></tr>
+                <tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Status</th><th>Submitted Form Fields</th></tr>
             </thead>
             <tbody>
-                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('city','N/A')}, {l.get('state','N/A')}</td><td>{l.get('course_interest','General')}</td><td>{l.get('status')}</td></tr>" for l in leads])}
+                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('status')}</td><td><small>{str(l.get('form_data', 'N/A'))}</small></td></tr>" for l in leads])}
             </tbody>
         </table>
 
@@ -807,7 +822,6 @@ MAIN_DASHBOARD_HTML = """
         .tab-section { display: none; }
         .tab-section.active { display: block; }
 
-        /* Responsive Animated Modals */
         .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
         .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
         @keyframes modalPopup { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -817,7 +831,6 @@ MAIN_DASHBOARD_HTML = """
         .form-control { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; }
         .form-control:focus { outline: none; border-color: #2563eb; }
 
-        /* Mobile Responsiveness Styles */
         @media (max-width: 900px) {
             body { flex-direction: column; height: auto; overflow: auto; }
             .sidebar { position: fixed; top: 0; left: -270px; width: 260px; height: 100vh; flex-direction: column; padding: 20px 15px; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
@@ -894,7 +907,7 @@ MAIN_DASHBOARD_HTML = """
                 <div class="hero-banner" style="margin-bottom: 25px;">
                     <div class="hero-text">
                         <h1 id="timeGreeting">Good Morning Shivam Sir</h1>
-                        <p>Welcome to your CounselScope CRM. Track work history, follow-up recalls, and student admissions in real-time.</p>
+                        <p>Welcome to your CounselScope CRM. Track dynamic leads, follow-up recalls, and student admissions in real-time.</p>
                     </div>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;" class="export-btns-group">
                         <a href="/api/export-excel" target="_blank" style="background: #16a34a; color: white; border: none; padding: 12px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13.5px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); transition: 0.2s;"><i class="fa-solid fa-file-excel"></i> Export Excel (All Sheets)</a>
@@ -950,7 +963,7 @@ MAIN_DASHBOARD_HTML = """
 
                 <div class="dashboard-grid">
                     <div class="card">
-                        <div class="card-header"><h3>Recent Lead Enquiries</h3></div>
+                        <div class="card-header"><h3>Recent Dynamic Enquiries</h3></div>
                         <div style="overflow-x: auto;">
                             <table>
                                 <thead>
@@ -977,25 +990,7 @@ MAIN_DASHBOARD_HTML = """
             <!-- ALL LEADS TAB -->
             <div id="leads-tab" class="tab-section">
                 <div class="card">
-                    <div class="card-header"><h3>All Registered Leads</h3></div>
-                    <!-- Filters Section -->
-                    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 14px; border-radius: 12px; border: 1px solid var(--border-color);">
-                        <select id="filterStatus" class="form-control" style="width: auto; margin:0;" onchange="applyLeadFilters()">
-                            <option value="">All Statuses</option>
-                            <option value="New Lead">New Lead</option>
-                            <option value="Contacted">Contacted</option>
-                            <option value="Follow Up">Follow Up</option>
-                            <option value="Closed">Closed</option>
-                            <option value="Rejected">Rejected</option>
-                        </select>
-                        <select id="filterState" class="form-control" style="width: auto; margin:0;" onchange="applyLeadFilters()">
-                            <option value="">All States</option>
-                        </select>
-                        <select id="filterCity" class="form-control" style="width: auto; margin:0;" onchange="applyLeadFilters()">
-                            <option value="">All Cities</option>
-                        </select>
-                        <button onclick="resetLeadFilters()" style="background: #64748b; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-rotate-right" style="margin-right: 5px;"></i> Reset Filters</button>
-                    </div>
+                    <div class="card-header"><h3>All Registered Leads (Dynamic Fields)</h3></div>
                     <div style="overflow-x: auto;">
                         <table>
                             <thead>
@@ -1090,11 +1085,11 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
-    <!-- VIEW DOCUMENT MODAL -->
+    <!-- VIEW DOCUMENT & DYNAMIC FORM DATA MODAL -->
     <div id="docModal" class="modal-overlay">
         <div class="modal-content">
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
-            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Details & Document</h3>
+            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Dynamic Form Fields & Document</h3>
             <div id="modalBodyContainer"></div>
             <div style="margin-top: 20px; text-align: right;">
                 <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 18px; text-decoration: none; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; width: auto; height: auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
@@ -1133,30 +1128,14 @@ MAIN_DASHBOARD_HTML = """
             <form id="editLeadForm" onsubmit="submitEditLead(event)">
                 <input type="hidden" id="edit_lead_id">
                 <label style="font-size:12px; font-weight:600; color:#475569;">Student Name</label>
-                <input type="text" id="edit_student_name" class="form-control" required>
-                <label style="font-size:12px; font-weight:600; color:#475569;">Father's Name</label>
-                <input type="text" id="edit_father_name" class="form-control">
+                <input type="text" id="edit_student_name" name="student_name" class="form-control" required>
                 <label style="font-size:12px; font-weight:600; color:#475569;">Contact Number</label>
-                <input type="tel" id="edit_contact_number" class="form-control" required>
-                <label style="font-size:12px; font-weight:600; color:#475569;">Alternate Number</label>
-                <input type="tel" id="edit_alternate_number" class="form-control">
+                <input type="tel" id="edit_contact_number" name="contact_number" class="form-control" required>
                 <label style="font-size:12px; font-weight:600; color:#475569;">Email ID</label>
-                <input type="email" id="edit_student_email" class="form-control" required>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-                    <div>
-                        <label style="font-size:12px; font-weight:600; color:#475569;">State</label>
-                        <input type="text" id="edit_state" class="form-control">
-                    </div>
-                    <div>
-                        <label style="font-size:12px; font-weight:600; color:#475569;">City</label>
-                        <input type="text" id="edit_city" class="form-control">
-                    </div>
-                </div>
-                <label style="font-size:12px; font-weight:600; color:#475569;">Course Interest</label>
-                <input type="text" id="edit_course_interest" class="form-control">
+                <input type="email" id="edit_student_email" name="student_email" class="form-control" required>
                 
                 <label style="font-size:12px; font-weight:600; color:#475569;">Update / Replace Document</label>
-                <input type="file" id="edit_id_document" class="form-control" accept="image/*,.pdf">
+                <input type="file" id="edit_id_document" name="id_document" class="form-control" accept="image/*,.pdf">
                 
                 <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" id="edit_delete_doc" style="width:16px; height:16px;">
@@ -1179,7 +1158,6 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('sidebarNav').classList.toggle('show');
         }
 
-        // Live Smartwatch & Time-based Greeting
         function updateClockAndGreeting() {
             const now = new Date();
             let hours = now.getHours();
@@ -1325,7 +1303,7 @@ MAIN_DASHBOARD_HTML = """
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>`;
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Dynamic Data"><i class="fa-solid fa-eye"></i></button>`;
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
@@ -1346,7 +1324,6 @@ MAIN_DASHBOARD_HTML = """
                 `;
             });
             
-            updateFilterDropdowns(activeLeads);
             populateAllLeadsTable(activeLeads);
             updateAnalyticsData(activeLeads);
 
@@ -1362,11 +1339,11 @@ MAIN_DASHBOARD_HTML = """
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Document"><i class="fa-solid fa-eye"></i></button>`;
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Dynamic Data"><i class="fa-solid fa-eye"></i></button>`;
                 allTbody.innerHTML += `
                     <tr>
                         <td>#${lead.id}</td>
-                        <td><strong>${lead.student_name}</strong><br><small style="color:#64748b;">${lead.father_name || ''}</small></td>
+                        <td><strong>${lead.student_name}</strong></td>
                         <td><a href="tel:${lead.contact_number}" onclick="logAction('Call Initiated', 'Called student ${lead.student_name}')" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
                         <td><a href="mailto:${lead.student_email}" onclick="logAction('Email Sent', 'Emailed student ${lead.student_name}')" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
                         <td>${docAction}</td>
@@ -1407,18 +1384,23 @@ MAIN_DASHBOARD_HTML = """
                 }
             } else {
                 downloadBtn.style.display = 'none';
-                docPreviewHtml = `<div style="margin-top: 15px; background: #fffbeb; border: 1px solid #fde68a; padding: 12px; border-radius: 8px;"><p style="color:#b45309; font-size:13px; margin:0;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:5px;"></i> Document has been deleted or is not available. Showing submitted information.</p></div>`;
+                docPreviewHtml = `<div style="margin-top: 15px; background: #fffbeb; border: 1px solid #fde68a; padding: 12px; border-radius: 8px;"><p style="color:#b45309; font-size:13px; margin:0;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:5px;"></i> Document not attached.</p></div>`;
             }
 
+            // Automatically render ALL submitted form fields dynamically
+            let dynamicFieldsHtml = '<div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13.5px; color: #334155; line-height: 1.6; max-height: 250px; overflow-y: auto;">';
+            if (lead.form_data && typeof lead.form_data === 'object') {
+                for (const [key, val] of Object.entries(lead.form_data)) {
+                    const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    dynamicFieldsHtml += `<p style="margin-bottom:6px;"><strong>${formattedKey}:</strong> ${val}</p>`;
+                }
+            } else {
+                dynamicFieldsHtml += `<p><strong>Student Name:</strong> ${lead.student_name}</p><p><strong>Contact:</strong> ${lead.contact_number}</p><p><strong>Email:</strong> ${lead.student_email}</p>`;
+            }
+            dynamicFieldsHtml += '</div>';
+
             container.innerHTML = `
-                <div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13.5px; color: #334155; line-height: 1.6;">
-                    <p style="margin-bottom:6px;"><strong>Student Name:</strong> ${lead.student_name}</p>
-                    <p style="margin-bottom:6px;"><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
-                    <p style="margin-bottom:6px;"><strong>Contact:</strong> ${lead.contact_number}</p>
-                    <p style="margin-bottom:6px;"><strong>Email:</strong> ${lead.student_email}</p>
-                    <p style="margin-bottom:6px;"><strong>Location:</strong> ${lead.city || 'N/A'}, ${lead.state || 'N/A'}</p>
-                    <p style="margin-bottom:0;"><strong>Course Interest:</strong> ${lead.course_interest || 'General'}</p>
-                </div>
+                ${dynamicFieldsHtml}
                 ${docPreviewHtml}
             `;
             modal.style.display = 'flex';
@@ -1428,13 +1410,8 @@ MAIN_DASHBOARD_HTML = """
         function openEditModal(lead) {
             document.getElementById('edit_lead_id').value = lead.id;
             document.getElementById('edit_student_name').value = lead.student_name || '';
-            document.getElementById('edit_father_name').value = lead.father_name || '';
             document.getElementById('edit_contact_number').value = lead.contact_number || '';
-            document.getElementById('edit_alternate_number').value = lead.alternate_number || '';
             document.getElementById('edit_student_email').value = lead.student_email || '';
-            document.getElementById('edit_state').value = lead.state || '';
-            document.getElementById('edit_city').value = lead.city || '';
-            document.getElementById('edit_course_interest').value = lead.course_interest || '';
             document.getElementById('edit_delete_doc').checked = false;
             document.getElementById('edit_id_document').value = '';
             
@@ -1451,13 +1428,8 @@ MAIN_DASHBOARD_HTML = """
             const formData = new FormData();
             formData.append('lead_id', document.getElementById('edit_lead_id').value);
             formData.append('student_name', document.getElementById('edit_student_name').value);
-            formData.append('father_name', document.getElementById('edit_father_name').value);
             formData.append('contact_number', document.getElementById('edit_contact_number').value);
-            formData.append('alternate_number', document.getElementById('edit_alternate_number').value);
             formData.append('student_email', document.getElementById('edit_student_email').value);
-            formData.append('state', document.getElementById('edit_state').value);
-            formData.append('city', document.getElementById('edit_city').value);
-            formData.append('course_interest', document.getElementById('edit_course_interest').value);
             formData.append('delete_doc', document.getElementById('edit_delete_doc').checked);
 
             const fileField = document.getElementById('edit_id_document');
@@ -1539,45 +1511,6 @@ MAIN_DASHBOARD_HTML = """
         fetchLeadsData();
         setInterval(fetchLeadsData, 5000);
 
-        // Filtering Logic for All Leads
-        function updateFilterDropdowns(leads) {
-            const stateSelect = document.getElementById('filterState');
-            const citySelect = document.getElementById('filterCity');
-            
-            const currentState = stateSelect.value;
-            const currentCity = citySelect.value;
-            
-            const states = [...new Set(leads.map(l => l.state).filter(s => s && s !== 'N/A'))].sort();
-            const cities = [...new Set(leads.map(l => l.city).filter(c => c && c !== 'N/A'))].sort();
-            
-            stateSelect.innerHTML = '<option value="">All States</option>' + states.map(s => `<option value="${s}" ${s===currentState?'selected':''}>${s}</option>`).join('');
-            citySelect.innerHTML = '<option value="">All Cities</option>' + cities.map(c => `<option value="${c}" ${c===currentCity?'selected':''}>${c}</option>`).join('');
-        }
-
-        function applyLeadFilters() {
-            const statusVal = document.getElementById('filterStatus').value;
-            const stateVal = document.getElementById('filterState').value;
-            const cityVal = document.getElementById('filterCity').value;
-            
-            const activeLeads = rawLeadsData.filter(l => !l.is_deleted);
-            const filtered = activeLeads.filter(l => {
-                if(statusVal && l.status !== statusVal) return false;
-                if(stateVal && l.state !== stateVal) return false;
-                if(cityVal && l.city !== cityVal) return false;
-                return true;
-            });
-            populateAllLeadsTable(filtered);
-        }
-
-        function resetLeadFilters() {
-            document.getElementById('filterStatus').value = '';
-            document.getElementById('filterState').value = '';
-            document.getElementById('filterCity').value = '';
-            const activeLeads = rawLeadsData.filter(l => !l.is_deleted);
-            populateAllLeadsTable(activeLeads);
-        }
-
-        // Settings Logs Modal Logic
         async function openLogsModal() {
             const modal = document.getElementById('logsModal');
             const tbody = document.getElementById('logsTbody');
@@ -1613,7 +1546,6 @@ MAIN_DASHBOARD_HTML = """
         }
         function closeLogsModal() { document.getElementById('logsModal').style.display = 'none'; }
 
-        // Weekly, Monthly & Yearly Analytics Logic
         let currentAnalyticsPeriod = 'week';
         let analyticsPieChartInstance = null;
 
