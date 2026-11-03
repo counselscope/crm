@@ -138,5 +138,12 @@
         "time": "08:35:29 PM",
         "action_type": "Call Initiated",
         "details": "Called student Jesita"
+    },
+    {
+        "id": 21,
+        "date": "2026-11-03",
+        "time": "08:35:44 PM",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #6 (Jesita) to trash"
     }
 ]
