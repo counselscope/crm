@@ -15,5 +15,22 @@
         "location": "Unknown",
         "status": "Successful",
         "session_info": "Session ID: 4477738337388127466"
+    },
+    {
+        "id": 2,
+        "username": "admin",
+        "role": "Admin",
+        "ip_address": "106.192.51.71",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "login_date": "2026-11-03",
+        "login_time": "03 Nov 2026, 05:43 PM",
+        "login_timestamp": 1793727830.504333,
+        "logout_time": "N/A",
+        "logout_timestamp": null,
+        "location": "Unknown",
+        "status": "Successful",
+        "session_info": "Session ID: 9096343442310272771"
     }
 ]
