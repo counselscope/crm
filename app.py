@@ -8,6 +8,7 @@ from datetime import datetime
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Excel export support via openpyxl
 try:
@@ -25,26 +26,92 @@ LOGIN_LOGS_FILE = "login_logs.json"
 DATA_FILE = "leads.json"
 COLLEGES_FILE = "colleges.json"
 HISTORY_FILE = "work_history.json"
+USERS_FILE = "users.json"
 
 # GitHub API Configuration from Environment Variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # e.g. "username/repository-name"
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 
-def parse_user_agent(ua_string):
+def get_default_users():
+    return {
+        "admin": {
+            "password": generate_password_hash("admin123"),
+            "role": "Admin"
+        },
+        "client": {
+            "password": generate_password_hash("client123"),
+            "role": "Client"
+        }
+    }
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        default_users = get_default_users()
+        save_data(USERS_FILE, default_users)
+        return default_users
+    try:
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return get_default_users()
+
+def get_geolocation(ip):
+    if not ip or ip in ["127.0.0.1", "localhost", "::1"]:
+        return "Local / Unknown"
+    try:
+        res = requests.get(f"https://ipapi.co/{ip}/json/", timeout=2)
+        if res.status_code == 200:
+            data = res.json()
+            if not data.get("error"):
+                city = data.get("city", "Unknown")
+                region = data.get("region", "Unknown")
+                country = data.get("country_name", "Unknown")
+                return f"{city}, {region}, {country}"
+    except Exception:
+        pass
+    return "Unknown"
+
+def parse_user_agent_detailed(ua_string):
     ua = (ua_string or "").lower()
     browser = "Unknown Browser"
+    browser_version = "Unknown"
+    
     if "chrome" in ua and "edge" not in ua and "opr" not in ua:
         browser = "Google Chrome"
+        try:
+            parts = ua.split("chrome/")
+            if len(parts) > 1:
+                browser_version = parts[1].split(" ")[0]
+        except:
+            pass
     elif "firefox" in ua:
         browser = "Mozilla Firefox"
+        try:
+            parts = ua.split("firefox/")
+            if len(parts) > 1:
+                browser_version = parts[1].split(" ")[0]
+        except:
+            pass
     elif "safari" in ua and "chrome" not in ua:
         browser = "Apple Safari"
+        try:
+            parts = ua.split("version/")
+            if len(parts) > 1:
+                browser_version = parts[1].split(" ")[0]
+        except:
+            pass
     elif "edge" in ua:
         browser = "Microsoft Edge"
+        try:
+            parts = ua.split("edg/")
+            if len(parts) > 1:
+                browser_version = parts[1].split(" ")[0]
+        except:
+            pass
     elif "opr" in ua or "opera" in ua:
         browser = "Opera"
-        
+    
     os_name = "Unknown OS"
     if "windows" in ua:
         os_name = "Windows"
@@ -57,7 +124,7 @@ def parse_user_agent(ua_string):
     elif "linux" in ua:
         os_name = "Linux"
         
-    return browser, os_name
+    return f"{browser} ({browser_version})", os_name
 
 def load_data(filename):
     if not os.path.exists(filename):
@@ -72,7 +139,7 @@ def save_data(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
     
-    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGIN_LOGS_FILE]:
+    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGIN_LOGS_FILE, USERS_FILE]:
         commit_json_to_github(filename)
 
 def log_activity(action_type, details):
@@ -88,38 +155,55 @@ def log_activity(action_type, details):
     history.append(log_item)
     save_data(HISTORY_FILE, history)
 
-def log_login_activity(username, req):
+def log_login_activity(username, role, req, status="Successful"):
     logs = load_data(LOGIN_LOGS_FILE)
-    now = datetime.now()
-    ip = req.remote_addr or "127.0.0.1"
-    browser, os_name = parse_user_agent(req.headers.get('User-Agent', ''))
+    now_local = datetime.now()
     
-    for l in logs:
-        if l.get('username') == username and l.get('status') == 'Active':
-            l['status'] = 'Logged Out'
-            l['logout_time'] = now.strftime("%d %b %Y, %I:%M %p")
-            
+    ip = req.headers.get('X-Forwarded-For', req.remote_addr)
+    if ip and ',' in ip:
+        ip = ip.split(',')[0].strip()
+    if not ip:
+        ip = "127.0.0.1"
+        
+    ua_string = req.headers.get('User-Agent', '')
+    browser_info, os_info = parse_user_agent_detailed(ua_string)
+    location = get_geolocation(ip)
+    
+    if status == "Successful":
+        for l in logs:
+            if l.get('username') == username and l.get('status') == 'Active':
+                l['status'] = 'Logged Out'
+                l['logout_time'] = now_local.strftime("%d %b %Y, %I:%M %p")
+                l['logout_timestamp'] = now_local.timestamp()
+                
     log_entry = {
         "id": len(logs) + 1,
         "username": username,
+        "role": role,
         "ip_address": ip,
-        "browser": browser,
-        "os": os_name,
-        "login_time": now.strftime("%d %b %Y, %I:%M %p"),
-        "login_timestamp": now.timestamp(),
-        "logout_time": "N/A",
-        "status": "Active"
+        "user_agent": ua_string,
+        "browser": browser_info,
+        "os": os_info,
+        "login_date": now_local.strftime("%Y-%m-%d"),
+        "login_time": now_local.strftime("%d %b %Y, %I:%M %p"),
+        "login_timestamp": now_local.timestamp(),
+        "logout_time": "N/A" if status == "Successful" else "N/A",
+        "logout_timestamp": None,
+        "location": location,
+        "status": status,
+        "session_info": f"Session ID: {abs(hash(ip + str(now_local.timestamp())))}"
     }
     logs.append(log_entry)
     save_data(LOGIN_LOGS_FILE, logs)
 
 def log_logout_activity(username):
     logs = load_data(LOGIN_LOGS_FILE)
-    now = datetime.now()
+    now_local = datetime.now()
     for l in logs:
         if l.get('username') == username and l.get('status') == 'Active':
             l['status'] = 'Logged Out'
-            l['logout_time'] = now.strftime("%d %b %Y, %I:%M %p")
+            l['logout_time'] = now_local.strftime("%d %b %Y, %I:%M %p")
+            l['logout_timestamp'] = now_local.timestamp()
     save_data(LOGIN_LOGS_FILE, logs)
 
 def commit_json_to_github(filepath):
@@ -187,17 +271,15 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     
     return None
 
-# --- DYNAMIC API ENDPOINTS ---
+# --- API ENDPOINTS ---
 
 @app.route('/api/submit-lead', methods=['POST'])
 def submit_lead():
     try:
-        # Dynamically capture all form fields submitted from HTML form
         form_data = request.form.to_dict()
         if not form_data:
             return jsonify({"status": "error", "message": "No data provided"}), 400
         
-        # Intelligent fallback for core identifiers if named differently in HTML forms
         student_name = (
             form_data.get('student_name') or 
             form_data.get('name') or 
@@ -220,7 +302,6 @@ def submit_lead():
             'N/A'
         )
 
-        # Dynamic file/document upload handler supporting any file input name
         document_filename = None
         if 'id_document' in request.files:
             file = request.files['id_document']
@@ -236,7 +317,6 @@ def submit_lead():
         leads = load_data(DATA_FILE)
         now = datetime.now()
 
-        # Construct lead object storing both core indices and ALL dynamic form fields
         new_lead = {
             "id": len(leads) + 1,
             "student_name": student_name,
@@ -249,7 +329,7 @@ def submit_lead():
             "is_deleted": False,
             "created_at": now.strftime("%d %b %Y, %I:%M %p"),
             "created_timestamp": now.timestamp(),
-            "form_data": form_data  # Preserves every single HTML field dynamically
+            "form_data": form_data
         }
         
         leads.append(new_lead)
@@ -279,7 +359,6 @@ def update_lead():
         if not target_lead:
             return jsonify({"status": "error", "message": "Lead not found"}), 404
 
-        # Update core attributes if present
         if 'student_name' in form_data:
             target_lead['student_name'] = form_data.get('student_name')
         if 'contact_number' in form_data:
@@ -298,7 +377,6 @@ def update_lead():
                 if doc_path:
                     target_lead['id_document'] = doc_path
 
-        # Dynamically update the form_data record
         if 'form_data' not in target_lead or not isinstance(target_lead['form_data'], dict):
             target_lead['form_data'] = {}
         
@@ -327,6 +405,126 @@ def get_logs_api():
     logs = load_data(LOGIN_LOGS_FILE)
     logs.sort(key=lambda x: x.get('login_timestamp', 0), reverse=True)
     return jsonify(logs)
+
+
+@app.route('/api/clear-logs', methods=['POST'])
+def clear_logs():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    
+    save_data(LOGIN_LOGS_FILE, [])
+    log_activity("Clear Logs", f"Admin {session.get('username')} cleared all login activity logs.")
+    return jsonify({"status": "success", "message": "All login logs cleared successfully."})
+
+
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    
+    data = request.json or request.form
+    target_user = data.get('target_user')
+    new_password = data.get('new_password')
+    confirm_password = data.get('confirm_password')
+    
+    if not target_user or not new_password or not confirm_password:
+        return jsonify({"status": "error", "message": "All fields are required."}), 400
+        
+    if new_password != confirm_password:
+        return jsonify({"status": "error", "message": "New passwords do not match."}), 400
+        
+    users = load_users()
+    if target_user not in users:
+        return jsonify({"status": "error", "message": "Target user not found."}), 404
+        
+    users[target_user]['password'] = generate_password_hash(new_password)
+    save_data(USERS_FILE, users)
+    log_activity("Password Changed", f"Admin changed password for user: {target_user}")
+    
+    return jsonify({"status": "success", "message": f"Password for {target_user} updated successfully."})
+
+
+@app.route('/api/export-logs-report', methods=['GET'])
+def export_logs_report():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    logs = load_data(LOGIN_LOGS_FILE)
+    
+    date_filter = request.args.get('date')
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    month_filter = request.args.get('month')
+    year_filter = request.args.get('year')
+    export_format = request.args.get('format', 'csv')
+    
+    filtered_logs = []
+    for l in logs:
+        ldate = l.get('login_date', '')
+        if date_filter and ldate != date_filter:
+            continue
+        if from_date and ldate < from_date:
+            continue
+        if to_date and ldate > to_date:
+            continue
+        if month_filter and not ldate.startswith(month_filter):
+            continue
+        if year_filter and not ldate.startswith(year_filter):
+            continue
+        filtered_logs.append(l)
+        
+    if export_format == 'excel' and openpyxl:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Login Activity Logs"
+        
+        headers = ["ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status", "Session Info"]
+        ws.append(headers)
+        
+        header_fill = PatternFill(start_color="0B1329", end_color="0B1329", fill_type="solid")
+        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        center_align = Alignment(horizontal="center", vertical="center")
+        
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+            
+        for l in filtered_logs:
+            ws.append([
+                l.get('id'), l.get('username'), l.get('role', 'N/A'), l.get('ip_address'),
+                l.get('browser'), l.get('os'), l.get('location'), l.get('login_time'),
+                l.get('logout_time'), l.get('status'), l.get('session_info')
+            ])
+            
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 15)
+            
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        resp = make_response(output.getvalue())
+        resp.headers["Content-Disposition"] = "attachment; filename=Login_Activity_Report.xlsx"
+        resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return resp
+    else:
+        si = io.StringIO()
+        cw = csv.writer(si)
+        cw.writerow(["ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status", "Session Info"])
+        for l in filtered_logs:
+            cw.writerow([
+                l.get('id'), l.get('username'), l.get('role', 'N/A'), l.get('ip_address'),
+                l.get('browser'), l.get('os'), l.get('location'), l.get('login_time'),
+                l.get('logout_time'), l.get('status'), l.get('session_info')
+            ])
+            
+        resp = make_response(si.getvalue())
+        resp.headers["Content-Disposition"] = "attachment; filename=Login_Activity_Report.csv"
+        resp.headers["Content-Type"] = "text/csv"
+        return resp
 
 
 @app.route('/download-doc/<path:filename>', methods=['GET'])
@@ -470,12 +668,10 @@ def export_excel():
     if openpyxl:
         wb = openpyxl.Workbook()
         
-        # Styles
         header_fill = PatternFill(start_color="0B1329", end_color="0B1329", fill_type="solid")
         header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
         center_align = Alignment(horizontal="center", vertical="center")
 
-        # Sheet 1: Dashboard & Pie Chart Data
         ws_dash = wb.active
         ws_dash.title = "Dashboard & Analytics"
         ws_dash.append(["Metric / Period", "Status / Field", "Count / Value"])
@@ -487,7 +683,6 @@ def export_excel():
         ws_dash.append(["Overall Summary", "Total Active Leads", len(leads)])
         ws_dash.append(["Overall Summary", "Total Admissions Closed", len([l for l in leads if l.get('status')=='Closed'])])
         
-        # Sheet 2: All Leads (Dynamic columns support)
         ws_leads = wb.create_sheet(title="All Leads Data")
         ws_leads.append(["#ID", "Student Name", "Contact", "Email ID", "Status", "Score", "ID Document", "Created At", "Dynamic Form Details"])
         for l in leads:
@@ -500,25 +695,21 @@ def export_excel():
                 l.get('created_at', 'N/A'), form_summary
             ])
 
-        # Sheet 3: Colleges Manager
         ws_colleges = wb.create_sheet(title="Colleges Tie-up")
         ws_colleges.append(["#ID", "College Name", "Location", "Courses Offered", "Avg Package"])
         for c in colleges:
             ws_colleges.append([c.get('id'), c.get('college_name'), c.get('location'), c.get('courses'), c.get('package', 'N/A')])
 
-        # Sheet 4: Work History
         ws_history = wb.create_sheet(title="Work Activity History")
         ws_history.append(["#ID", "Date", "Time", "Action Type", "Details"])
         for h in history:
             ws_history.append([h.get('id'), h.get('date'), h.get('time'), h.get('action_type'), h.get('details')])
 
-        # Sheet 5: Settings - Security Logs
         ws_logs = wb.create_sheet(title="Settings - Security Logs")
-        ws_logs.append(["#ID", "Username", "IP Address", "Browser", "Operating System", "Login Time", "Logout Time", "Session Status"])
+        ws_logs.append(["#ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status", "Session Info"])
         for lg in logs:
-            ws_logs.append([lg.get('id'), lg.get('username'), lg.get('ip_address'), lg.get('browser'), lg.get('os'), lg.get('login_time'), lg.get('logout_time'), lg.get('status')])
+            ws_logs.append([lg.get('id'), lg.get('username'), lg.get('role', 'N/A'), lg.get('ip_address'), lg.get('browser'), lg.get('os'), lg.get('location'), lg.get('login_time'), lg.get('logout_time'), lg.get('status'), lg.get('session_info')])
 
-        # Apply formatting to all sheets
         for sheet in wb.worksheets:
             for cell in sheet[1]:
                 cell.fill = header_fill
@@ -634,10 +825,10 @@ def export_pdf():
         <h2>5. Settings - Security & User Login Logs</h2>
         <table>
             <thead>
-                <tr><th>User</th><th>IP Address</th><th>Browser / OS</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr>
+                <tr><th>User</th><th>Role</th><th>IP Address</th><th>Browser / OS</th><th>Location</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr>
             </thead>
             <tbody>
-                {''.join([f"<tr><td><strong>{lg.get('username')}</strong></td><td>{lg.get('ip_address')}</td><td>{lg.get('browser')} / {lg.get('os')}</td><td>{lg.get('login_time')}</td><td>{lg.get('logout_time')}</td><td>{lg.get('status')}</td></tr>" for lg in logs[:20]])}
+                {''.join([f"<tr><td><strong>{lg.get('username')}</strong></td><td>{lg.get('role','N/A')}</td><td>{lg.get('ip_address')}</td><td>{lg.get('browser')} / {lg.get('os')}</td><td>{lg.get('location')}</td><td>{lg.get('login_time')}</td><td>{lg.get('logout_time')}</td><td>{lg.get('status')}</td></tr>" for lg in logs[:20]])}
             </tbody>
         </table>
         
@@ -660,13 +851,20 @@ def export_pdf():
 def login():
     error = None
     if request.method == 'POST':
-        username = request.form.get('username')
-        if username == "admin" and request.form.get('password') == "admin123":
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '')
+        
+        users = load_users()
+        user_data = users.get(username)
+        
+        if user_data and check_password_hash(user_data['password'], password):
             session['logged_in'] = True
             session['username'] = username
-            log_login_activity(username, request)
+            session['role'] = user_data['role']
+            log_login_activity(username, user_data['role'], request, status="Successful")
             return redirect(url_for('crm_dashboard'))
         else:
+            log_login_activity(username if username else "unknown", "Unknown", request, status="Failed")
             error = "Invalid Username or Password!"
     return render_template_string(LOGIN_HTML, error=error)
 
@@ -674,7 +872,7 @@ def login():
 def crm_dashboard():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template_string(MAIN_DASHBOARD_HTML)
+    return render_template_string(MAIN_DASHBOARD_HTML, role=session.get('role', 'Client'), username=session.get('username', 'admin'))
 
 @app.route('/logout')
 def logout():
@@ -682,6 +880,7 @@ def logout():
     log_logout_activity(username)
     session.pop('logged_in', None)
     session.pop('username', None)
+    session.pop('role', None)
     return redirect(url_for('login'))
 
 @app.route('/')
@@ -711,6 +910,7 @@ LOGIN_HTML = """
         button { width: 100%; padding: 12px; background: #0284c7; border: none; border-radius: 10px; color: white; font-weight: 600; font-size: 15px; cursor: pointer; transition: 0.2s; }
         button:hover { background: #0369a1; }
         .error { color: #f43f5e; font-size: 13px; margin-bottom: 15px; background: rgba(244,63,94,0.1); padding: 10px; border-radius: 8px; }
+        .credentials-hint { background: #0f172a; padding: 12px; border-radius: 8px; margin-top: 15px; font-size: 11.5px; color: #94a3b8; border: 1px solid #334155; text-align: left; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -721,11 +921,16 @@ LOGIN_HTML = """
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
         <form method="POST">
             <label>Username</label>
-            <input type="text" name="username" required placeholder="admin">
+            <input type="text" name="username" required placeholder="admin or client">
             <label>Password</label>
             <input type="password" name="password" required placeholder="••••••••">
             <button type="submit">Sign In</button>
         </form>
+        <div class="credentials-hint">
+            <strong>Default Logins:</strong><br>
+            • Admin: <code>admin</code> / <code>admin123</code><br>
+            • Client: <code>client</code> / <code>client123</code>
+        </div>
     </div>
 </body>
 </html>
@@ -868,7 +1073,7 @@ MAIN_DASHBOARD_HTML = """
                 <img src="https://i.ibb.co/6R6t2Y0/unnamed.jpg" alt="Logo">
                 <div class="sidebar-brand-text">
                     <h3>CounselScope</h3>
-                    <p>World-Class CRM</p>
+                    <p>Role: {{ role }}</p>
                 </div>
             </div>
             <ul class="nav-menu">
@@ -877,10 +1082,11 @@ MAIN_DASHBOARD_HTML = """
                 <li class="nav-item" onclick="switchTab('colleges-tab', this)"><button><i class="fa-solid fa-building-columns"></i> Colleges Manager</button></li>
                 <li class="nav-item" onclick="switchTab('history-tab', this)"><button><i class="fa-solid fa-clock-rotate-left"></i> Work History</button></li>
                 <li class="nav-item" onclick="switchTab('trash-tab', this)"><button><i class="fa-solid fa-trash-can"></i> Trash Bin</button></li>
-                <li class="nav-item" onclick="switchTab('settings-tab', this)"><button><i class="fa-solid fa-gear"></i> Settings</button></li>
+                <li class="nav-item" onclick="switchTab('settings-tab', this)"><button><i class="fa-solid fa-gear"></i> Settings & Logs</button></li>
             </ul>
         </div>
         <div style="padding: 10px;">
+            <div style="font-size:11.5px; color:#94a3b8; margin-bottom:8px; text-align:center;">Logged in as: <strong>{{ username }}</strong></div>
             <a href="/logout" style="background:#ef4444; color:white; padding:10px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:600; font-size:13px;">Logout</a>
         </div>
     </aside>
@@ -906,7 +1112,7 @@ MAIN_DASHBOARD_HTML = """
             <div id="dashboard-tab" class="tab-section active">
                 <div class="hero-banner" style="margin-bottom: 25px;">
                     <div class="hero-text">
-                        <h1 id="timeGreeting">Good Morning Shivam Sir</h1>
+                        <h1 id="timeGreeting">Good Morning {{ username | title }}</h1>
                         <p>Welcome to your CounselScope CRM. Track dynamic leads, follow-up recalls, and student admissions in real-time.</p>
                     </div>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;" class="export-btns-group">
@@ -1072,13 +1278,104 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- SETTINGS TAB -->
+            <!-- SETTINGS & LOGS TAB (UPGRADED) -->
             <div id="settings-tab" class="tab-section">
-                <div class="card">
-                    <div class="card-header"><h3><i class="fa-solid fa-gear"></i> System Settings & Security Logs</h3></div>
-                    <p style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 20px; line-height: 1.5;">Configure system preferences and review secure user login and session activity logs.</p>
-                    <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                        <button onclick="openLogsModal()" style="background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; gap: 8px;"><i class="fa-solid fa-shield-halved"></i> Logs</button>
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header"><h3><i class="fa-solid fa-gear"></i> System Settings & Login Activity Logs</h3></div>
+                    <p style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 20px; line-height: 1.5;">Review detailed login records with IP addresses, geolocation, browser/OS specs, and manage system security.</p>
+                    
+                    <!-- Download Reports Section -->
+                    <div style="background: #f8fafc; padding: 18px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px;">
+                        <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-dark);"><i class="fa-solid fa-download"></i> Download Login Activity Reports</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: center;">
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Specific Date</label>
+                                <input type="date" id="dlDate" class="form-control" style="margin:0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">From Date</label>
+                                <input type="date" id="dlFromDate" class="form-control" style="margin:0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">To Date</label>
+                                <input type="date" id="dlToDate" class="form-control" style="margin:0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Month (YYYY-MM)</label>
+                                <input type="month" id="dlMonth" class="form-control" style="margin:0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Year (YYYY)</label>
+                                <input type="number" id="dlYear" placeholder="2026" class="form-control" style="margin:0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Format</label>
+                                <select id="dlFormat" class="form-control" style="margin:0;">
+                                    <option value="csv">CSV Report</option>
+                                    <option value="excel">Excel Report (.xlsx)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button onclick="downloadLogsReport()" style="background: #16a34a; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-file-arrow-down"></i> Download Filtered Logs</button>
+                            <button onclick="resetLogFilters()" style="background: #64748b; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;">Reset Filters</button>
+                        </div>
+                    </div>
+
+                    {% if role == 'Admin' %}
+                    <!-- Admin Only: Clear Logs & Password Management -->
+                    <div style="background: #fff1f2; padding: 18px; border-radius: 12px; border: 1px solid #fecdd3; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <h4 style="font-size: 14px; color: #9f1239; margin-bottom: 4px;"><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone (Admin Only)</h4>
+                            <p style="font-size: 12px; color: #881337; margin:0;">Permanently clear all login activity records from the database.</p>
+                        </div>
+                        <button onclick="clearAllLogs()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-trash-can"></i> Clear All Logs</button>
+                    </div>
+
+                    <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px;">
+                        <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-dark);"><i class="fa-solid fa-key"></i> Password Management (Admin Only)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 15px;">
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Select User Account</label>
+                                <select id="targetUser" class="form-control" style="margin:0;">
+                                    <option value="admin">Admin Account</option>
+                                    <option value="client">Client Account</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">New Password</label>
+                                <input type="password" id="newPassword" placeholder="Enter new password" class="form-control" style="margin:0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Confirm New Password</label>
+                                <input type="password" id="confirmPassword" placeholder="Confirm new password" class="form-control" style="margin:0;">
+                            </div>
+                        </div>
+                        <button onclick="updatePassword()" style="background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-floppy-disk" style="margin-right: 5px;"></i> Save Updated Password</button>
+                    </div>
+                    {% endif %}
+
+                    <!-- Detailed Login Activity Table -->
+                    <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-dark);"><i class="fa-solid fa-list-check"></i> Complete Login Activity Logs</h4>
+                    <div style="overflow-x: auto; max-height: 480px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#ID</th>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th>IP Address</th>
+                                    <th>Browser / OS</th>
+                                    <th>Location</th>
+                                    <th>Login Time</th>
+                                    <th>Logout Time</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="settingsLogsTbody">
+                                <tr><td colspan="9" style="text-align:center; color:#94a3b8;">Loading logs...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1093,29 +1390,6 @@ MAIN_DASHBOARD_HTML = """
             <div id="modalBodyContainer"></div>
             <div style="margin-top: 20px; text-align: right;">
                 <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 18px; text-decoration: none; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; width: auto; height: auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
-            </div>
-        </div>
-    </div>
-
-    <!-- LOGS MODAL -->
-    <div id="logsModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 820px;">
-            <span class="close-modal" onclick="closeLogsModal()">&times;</span>
-            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-shield-halved" style="color:#2563eb; margin-right:8px;"></i> User Login & Session Activity Logs</h3>
-            <div style="max-height: 420px; overflow-y: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>User</th>
-                            <th>IP Address</th>
-                            <th>Browser / OS</th>
-                            <th>Login Time</th>
-                            <th>Logout Time</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logsTbody"></tbody>
-                </table>
             </div>
         </div>
     </div>
@@ -1165,11 +1439,11 @@ MAIN_DASHBOARD_HTML = """
             const seconds = String(now.getSeconds()).padStart(2, '0');
             const ampm = hours >= 12 ? 'PM' : 'AM';
             
-            let greeting = "Good Morning Shivam Sir";
+            let greeting = "Good Morning {{ username | title }}";
             if (hours >= 12 && hours < 17) {
-                greeting = "Good Afternoon Shivam Sir";
+                greeting = "Good Afternoon {{ username | title }}";
             } else if (hours >= 17) {
-                greeting = "Good Evening Shivam Sir";
+                greeting = "Good Evening {{ username | title }}";
             }
             document.getElementById('timeGreeting').innerText = greeting;
 
@@ -1192,6 +1466,9 @@ MAIN_DASHBOARD_HTML = """
                 document.getElementById('historyDateSelect').value = today;
                 fetchWorkHistory();
             }
+            if(tabId === 'settings-tab') {
+                fetchSettingsLogs();
+            }
             if(window.innerWidth <= 900) {
                 document.getElementById('sidebarNav').classList.remove('show');
             }
@@ -1205,6 +1482,117 @@ MAIN_DASHBOARD_HTML = """
                     renderUI(rawLeadsData);
                 }
             } catch(e) { console.error(e); }
+        }
+
+        async function fetchSettingsLogs() {
+            const tbody = document.getElementById('settingsLogsTbody');
+            if(!tbody) return;
+            try {
+                const res = await fetch('/api/get-logs');
+                if(res.ok) {
+                    const logs = await res.json();
+                    tbody.innerHTML = '';
+                    if(logs.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#94a3b8;">No login activity logs available.</td></tr>`;
+                        return;
+                    }
+                    logs.forEach(log => {
+                        const statusBadge = log.status === 'Successful' || log.status === 'Active' ? '<span class="badge-status badge-closed">Successful</span>' : (log.status === 'Failed' ? '<span class="badge-status badge-rejected">Failed</span>' : '<span class="badge-status badge-contacted">Logged Out</span>');
+                        tbody.innerHTML += `
+                            <tr>
+                                <td>#${log.id}</td>
+                                <td><strong>${log.username}</strong></td>
+                                <td><span class="badge-status badge-followup">${log.role || 'N/A'}</span></td>
+                                <td><code>${log.ip_address}</code></td>
+                                <td>${log.browser || 'Unknown'} / ${log.os || 'Unknown'}</td>
+                                <td><small>${log.location || 'Unknown'}</small></td>
+                                <td>${log.login_time}</td>
+                                <td>${log.logout_time}</td>
+                                <td>${statusBadge}</td>
+                            </tr>
+                        `;
+                    });
+                }
+            } catch(e) {
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#ef4444;">Failed to load logs.</td></tr>`;
+            }
+        }
+
+        function downloadLogsReport() {
+            const date = document.getElementById('dlDate').value;
+            const fromDate = document.getElementById('dlFromDate').value;
+            const toDate = document.getElementById('dlToDate').value;
+            const month = document.getElementById('dlMonth').value;
+            const year = document.getElementById('dlYear').value;
+            const format = document.getElementById('dlFormat').value;
+            
+            let url = `/api/export-logs-report?format=${format}`;
+            if(date) url += `&date=${date}`;
+            if(fromDate) url += `&from_date=${fromDate}`;
+            if(toDate) url += `&to_date=${toDate}`;
+            if(month) url += `&month=${month}`;
+            if(year) url += `&year=${year}`;
+            
+            window.open(url, '_blank');
+        }
+
+        function resetLogFilters() {
+            document.getElementById('dlDate').value = '';
+            document.getElementById('dlFromDate').value = '';
+            document.getElementById('dlToDate').value = '';
+            document.getElementById('dlMonth').value = '';
+            document.getElementById('dlYear').value = '';
+            document.getElementById('dlFormat').value = 'csv';
+        }
+
+        async function clearAllLogs() {
+            if(confirm("Are you sure you want to permanently clear all login activity logs? This action cannot be undone.")) {
+                try {
+                    const res = await fetch('/api/clear-logs', { method: 'POST' });
+                    const result = await res.json();
+                    if(res.ok) {
+                        alert(result.message || 'Logs cleared successfully.');
+                        fetchSettingsLogs();
+                    } else {
+                        alert('Error: ' + (result.error || result.message || 'Unauthorized'));
+                    }
+                } catch(e) {
+                    alert('Something went wrong.');
+                }
+            }
+        }
+
+        async function updatePassword() {
+            const targetUser = document.getElementById('targetUser').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if(!newPassword || !confirmPassword) {
+                alert('Please fill in both password fields.');
+                return;
+            }
+            if(newPassword !== confirmPassword) {
+                alert('New passwords do not match.');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target_user: targetUser, new_password: newPassword, confirm_password: confirmPassword})
+                });
+                const result = await res.json();
+                if(res.ok) {
+                    alert(result.message || 'Password updated successfully!');
+                    document.getElementById('newPassword').value = '';
+                    document.getElementById('confirmPassword').value = '';
+                } else {
+                    alert('Error: ' + (result.error || result.message || 'Unauthorized'));
+                }
+            } catch(e) {
+                alert('Something went wrong.');
+            }
         }
 
         async function fetchWorkHistory() {
@@ -1387,7 +1775,6 @@ MAIN_DASHBOARD_HTML = """
                 docPreviewHtml = `<div style="margin-top: 15px; background: #fffbeb; border: 1px solid #fde68a; padding: 12px; border-radius: 8px;"><p style="color:#b45309; font-size:13px; margin:0;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:5px;"></i> Document not attached.</p></div>`;
             }
 
-            // Automatically render ALL submitted form fields dynamically
             let dynamicFieldsHtml = '<div style="background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13.5px; color: #334155; line-height: 1.6; max-height: 250px; overflow-y: auto;">';
             if (lead.form_data && typeof lead.form_data === 'object') {
                 for (const [key, val] of Object.entries(lead.form_data)) {
@@ -1510,41 +1897,6 @@ MAIN_DASHBOARD_HTML = """
         }
         fetchLeadsData();
         setInterval(fetchLeadsData, 5000);
-
-        async function openLogsModal() {
-            const modal = document.getElementById('logsModal');
-            const tbody = document.getElementById('logsTbody');
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Loading logs...</td></tr>`;
-            modal.style.display = 'flex';
-            
-            try {
-                const res = await fetch('/api/get-logs');
-                if(res.ok) {
-                    const logs = await res.json();
-                    tbody.innerHTML = '';
-                    if(logs.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No login activity logs available.</td></tr>`;
-                        return;
-                    }
-                    logs.forEach(log => {
-                        const statusBadge = log.status === 'Active' ? '<span class="badge-status badge-closed">Active</span>' : '<span class="badge-status badge-rejected">Logged Out</span>';
-                        tbody.innerHTML += `
-                            <tr>
-                                <td><strong>${log.username}</strong></td>
-                                <td>${log.ip_address}</td>
-                                <td>${log.browser} / ${log.os}</td>
-                                <td>${log.login_time}</td>
-                                <td>${log.logout_time}</td>
-                                <td>${statusBadge}</td>
-                            </tr>
-                        `;
-                    });
-                }
-            } catch(e) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Failed to load logs.</td></tr>`;
-            }
-        }
-        function closeLogsModal() { document.getElementById('logsModal').style.display = 'none'; }
 
         let currentAnalyticsPeriod = 'week';
         let analyticsPieChartInstance = null;
