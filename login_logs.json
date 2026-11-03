@@ -106,7 +106,8 @@
         "os": "Windows",
         "login_time": "03 Nov 2026, 05:20 PM",
         "login_timestamp": 1793726445.932333,
-        "logout_time": "N/A",
-        "status": "Active"
+        "logout_time": "03 Nov 2026, 05:40 PM",
+        "status": "Logged Out",
+        "logout_timestamp": 1793727600.259725
     }
 ]
