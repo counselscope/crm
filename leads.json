@@ -116,7 +116,7 @@
         "status": "New Lead",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
-        "is_deleted": false,
+        "is_deleted": true,
         "created_at": "03 Nov 2026, 05:26 PM",
         "created_timestamp": 1793726797.296291,
         "form_data": {
