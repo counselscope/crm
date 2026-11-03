@@ -10,14 +10,6 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Excel export support via openpyxl
-try:
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
-except ImportError:
-    openpyxl = None
-
 app = Flask(__name__)
 app.secret_key = "counselscope_world_class_crm_2026_secret"
 CORS(app)
@@ -173,6 +165,7 @@ def log_login_activity(username, role, req, status="Successful"):
         for l in logs:
             if l.get('username') == username and l.get('status') == 'Active':
                 l['status'] = 'Logged Out'
+                l['logout_date'] = now_local.strftime("%Y-%m-%d")
                 l['logout_time'] = now_local.strftime("%d %b %Y, %I:%M %p")
                 l['logout_timestamp'] = now_local.timestamp()
                 
@@ -187,10 +180,11 @@ def log_login_activity(username, role, req, status="Successful"):
         "login_date": now_local.strftime("%Y-%m-%d"),
         "login_time": now_local.strftime("%d %b %Y, %I:%M %p"),
         "login_timestamp": now_local.timestamp(),
-        "logout_time": "N/A" if status == "Successful" else "N/A",
+        "logout_date": "N/A",
+        "logout_time": "N/A",
         "logout_timestamp": None,
         "location": location,
-        "status": status,
+        "status": "Active" if status == "Successful" else "Failed",
         "session_info": f"Session ID: {abs(hash(ip + str(now_local.timestamp())))}"
     }
     logs.append(log_entry)
@@ -202,6 +196,7 @@ def log_logout_activity(username):
     for l in logs:
         if l.get('username') == username and l.get('status') == 'Active':
             l['status'] = 'Logged Out'
+            l['logout_date'] = now_local.strftime("%Y-%m-%d")
             l['logout_time'] = now_local.strftime("%d %b %Y, %I:%M %p")
             l['logout_timestamp'] = now_local.timestamp()
     save_data(LOGIN_LOGS_FILE, logs)
@@ -280,27 +275,9 @@ def submit_lead():
         if not form_data:
             return jsonify({"status": "error", "message": "No data provided"}), 400
         
-        student_name = (
-            form_data.get('student_name') or 
-            form_data.get('name') or 
-            form_data.get('FullName') or 
-            form_data.get('full_name') or 
-            'Valued Enquirer'
-        )
-        
-        contact_number = (
-            form_data.get('contact_number') or 
-            form_data.get('phone') or 
-            form_data.get('mobile') or 
-            form_data.get('contact') or 
-            'N/A'
-        )
-        
-        student_email = (
-            form_data.get('student_email') or 
-            form_data.get('email') or 
-            'N/A'
-        )
+        student_name = form_data.get('student_name') or form_data.get('name') or 'Valued Enquirer'
+        contact_number = form_data.get('contact_number') or form_data.get('phone') or 'N/A'
+        student_email = form_data.get('student_email') or form_data.get('email') or 'N/A'
 
         document_filename = None
         if 'id_document' in request.files:
@@ -327,6 +304,7 @@ def submit_lead():
             "score": 80 if contact_number != 'N/A' else 50,
             "notes": "Enquiry received via dynamic HTML form submission.",
             "is_deleted": False,
+            "created_date": now.strftime("%Y-%m-%d"),
             "created_at": now.strftime("%d %b %Y, %I:%M %p"),
             "created_timestamp": now.timestamp(),
             "form_data": form_data
@@ -417,6 +395,104 @@ def clear_logs():
     return jsonify({"status": "success", "message": "All login logs cleared successfully."})
 
 
+@app.route('/api/delete-logs-range', methods=['POST'])
+def delete_logs_range():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    
+    data = request.json or {}
+    date_val = data.get('date')
+    from_date = data.get('from_date')
+    to_date = data.get('to_date')
+    
+    logs = load_data(LOGIN_LOGS_FILE)
+    new_logs = []
+    for l in logs:
+        ldate = l.get('login_date', '')
+        keep = True
+        if date_val and ldate == date_val:
+            keep = False
+        if from_date and to_date and (from_date <= ldate <= to_date):
+            keep = False
+        if keep:
+            new_logs.append(l)
+            
+    save_data(LOGIN_LOGS_FILE, new_logs)
+    log_activity("Delete Logs", f"Admin deleted login logs by filter (date: {date_val}, range: {from_date} to {to_date})")
+    return jsonify({"status": "success", "message": "Selected login logs deleted successfully."})
+
+
+@app.route('/api/delete-history-range', methods=['POST'])
+def delete_history_range():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    
+    data = request.json or {}
+    date_val = data.get('date')
+    from_date = data.get('from_date')
+    to_date = data.get('to_date')
+    
+    history = load_data(HISTORY_FILE)
+    new_hist = []
+    for h in history:
+        hdate = h.get('date', '')
+        keep = True
+        if date_val and hdate == date_val:
+            keep = False
+        if from_date and to_date and (from_date <= hdate <= to_date):
+            keep = False
+        if keep:
+            new_hist.append(h)
+            
+    save_data(HISTORY_FILE, new_hist)
+    log_activity("Delete Work History", f"Admin deleted work history by filter (date: {date_val}, range: {from_date} to {to_date})")
+    return jsonify({"status": "success", "message": "Selected work history records deleted successfully."})
+
+
+@app.route('/api/delete-college-range', methods=['POST'])
+def delete_college_range():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    
+    data = request.json or {}
+    college_id = data.get('college_id')
+    
+    colleges = load_data(COLLEGES_FILE)
+    colleges = [c for c in colleges if c.get('id') != college_id]
+    save_data(COLLEGES_FILE, colleges)
+    log_activity("Delete College", f"Admin deleted college tie-up #{college_id}")
+    return jsonify({"status": "success", "message": "College record deleted successfully."})
+
+
+@app.route('/api/delete-lead-range', methods=['POST'])
+def delete_lead_range():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    
+    data = request.json or {}
+    lead_id = data.get('lead_id')
+    date_val = data.get('date')
+    from_date = data.get('from_date')
+    to_date = data.get('to_date')
+    
+    leads = load_data(DATA_FILE)
+    if lead_id:
+        for l in leads:
+            if l.get('id') == lead_id:
+                l['is_deleted'] = True
+    elif date_val or (from_date and to_date):
+        for l in leads:
+            ldate = l.get('created_date', '')
+            if date_val and ldate == date_val:
+                l['is_deleted'] = True
+            if from_date and to_date and (from_date <= ldate <= to_date):
+                l['is_deleted'] = True
+                
+    save_data(DATA_FILE, leads)
+    log_activity("Delete Leads", f"Admin deleted lead records by filter")
+    return jsonify({"status": "success", "message": "Selected lead records moved to trash successfully."})
+
+
 @app.route('/api/change-password', methods=['POST'])
 def change_password():
     if not session.get('logged_in') or session.get('role') != 'Admin':
@@ -444,87 +520,213 @@ def change_password():
     return jsonify({"status": "success", "message": f"Password for {target_user} updated successfully."})
 
 
-@app.route('/api/export-logs-report', methods=['GET'])
-def export_logs_report():
+# --- PDF-ONLY EXPORT ENDPOINTS ---
+
+@app.route('/api/export-logs-pdf', methods=['GET'])
+def export_logs_pdf():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
         
     logs = load_data(LOGIN_LOGS_FILE)
-    
     date_filter = request.args.get('date')
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
-    month_filter = request.args.get('month')
-    year_filter = request.args.get('year')
-    export_format = request.args.get('format', 'csv')
     
-    filtered_logs = []
+    filtered = []
     for l in logs:
         ldate = l.get('login_date', '')
         if date_filter and ldate != date_filter:
             continue
-        if from_date and ldate < from_date:
+        if from_date and to_date and not (from_date <= ldate <= to_date):
             continue
-        if to_date and ldate > to_date:
+        filtered.append(l)
+        
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Login Activity Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
+            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
+            .filter-info {{ font-size: 12px; color: #64748b; margin-bottom: 15px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
+            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
+            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
+        </style>
+    </head>
+    <body>
+        <h1>CounselScope CRM - Login Activity Report</h1>
+        <div class="filter-info">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')} | Filter: Date={date_filter or 'All'}, Range={from_date or 'N/A'} to {to_date or 'N/A'}</div>
+        <table>
+            <thead>
+                <tr><th>ID</th><th>Username</th><th>Role</th><th>IP Address</th><th>Browser / OS</th><th>Location</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('username')}</strong></td><td>{l.get('role')}</td><td>{l.get('ip_address')}</td><td>{l.get('browser')} / {l.get('os')}</td><td>{l.get('location')}</td><td>{l.get('login_time')}</td><td>{l.get('logout_time')}</td><td>{l.get('status')}</td></tr>" for l in filtered])}
+            </tbody>
+        </table>
+        <script>window.onload = function() {{ window.print(); }}</script>
+    </body>
+    </html>
+    """
+    resp = make_response(html)
+    resp.headers["Content-Disposition"] = "inline; filename=Login_Activity_Report.html"
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    return resp
+
+
+@app.route('/api/export-history-pdf', methods=['GET'])
+def export_history_pdf():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    history = load_data(HISTORY_FILE)
+    date_filter = request.args.get('date')
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    
+    filtered = []
+    for h in history:
+        hdate = h.get('date', '')
+        if date_filter and hdate != date_filter:
             continue
-        if month_filter and not ldate.startswith(month_filter):
+        if from_date and to_date and not (from_date <= hdate <= to_date):
             continue
-        if year_filter and not ldate.startswith(year_filter):
+        filtered.append(h)
+        
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Work History Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
+            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
+            .filter-info {{ font-size: 12px; color: #64748b; margin-bottom: 15px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
+            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
+            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
+        </style>
+    </head>
+    <body>
+        <h1>CounselScope CRM - Work History Report</h1>
+        <div class="filter-info">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
+        <table>
+            <thead>
+                <tr><th>ID</th><th>Date</th><th>Time</th><th>Action Type</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td>#{h.get('id')}</td><td>{h.get('date')}</td><td>{h.get('time')}</td><td><strong>{h.get('action_type')}</strong></td><td>{h.get('details')}</td></tr>" for h in filtered])}
+            </tbody>
+        </table>
+        <script>window.onload = function() {{ window.print(); }}</script>
+    </body>
+    </html>
+    """
+    resp = make_response(html)
+    resp.headers["Content-Disposition"] = "inline; filename=Work_History_Report.html"
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    return resp
+
+
+@app.route('/api/export-college-pdf', methods=['GET'])
+def export_college_pdf():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    colleges = load_data(COLLEGES_FILE)
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>College Directory Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
+            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
+            .filter-info {{ font-size: 12px; color: #64748b; margin-bottom: 15px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
+            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
+            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
+        </style>
+    </head>
+    <body>
+        <h1>CounselScope CRM - College Directory Report</h1>
+        <div class="filter-info">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
+        <table>
+            <thead>
+                <tr><th>ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td>#{c.get('id')}</td><td><strong>{c.get('college_name')}</strong></td><td>{c.get('location')}</td><td>{c.get('courses')}</td><td>{c.get('package')}</td></tr>" for c in colleges])}
+            </tbody>
+        </table>
+        <script>window.onload = function() {{ window.print(); }}</script>
+    </body>
+    </html>
+    """
+    resp = make_response(html)
+    resp.headers["Content-Disposition"] = "inline; filename=College_Directory_Report.html"
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    return resp
+
+
+@app.route('/api/export-leads-pdf', methods=['GET'])
+def export_leads_pdf():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
+    date_filter = request.args.get('date')
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    
+    filtered = []
+    for l in leads:
+        ldate = l.get('created_date', '')
+        if date_filter and ldate != date_filter:
             continue
-        filtered_logs.append(l)
+        if from_date and to_date and not (from_date <= ldate <= to_date):
+            continue
+        filtered.append(l)
         
-    if export_format == 'excel' and openpyxl:
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Login Activity Logs"
-        
-        headers = ["ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status", "Session Info"]
-        ws.append(headers)
-        
-        header_fill = PatternFill(start_color="0B1329", end_color="0B1329", fill_type="solid")
-        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
-        center_align = Alignment(horizontal="center", vertical="center")
-        
-        for cell in ws[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = center_align
-            
-        for l in filtered_logs:
-            ws.append([
-                l.get('id'), l.get('username'), l.get('role', 'N/A'), l.get('ip_address'),
-                l.get('browser'), l.get('os'), l.get('location'), l.get('login_time'),
-                l.get('logout_time'), l.get('status'), l.get('session_info')
-            ])
-            
-        for col in ws.columns:
-            max_len = max(len(str(cell.value or '')) for cell in col)
-            col_letter = get_column_letter(col[0].column)
-            ws.column_dimensions[col_letter].width = max(max_len + 4, 15)
-            
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-        
-        resp = make_response(output.getvalue())
-        resp.headers["Content-Disposition"] = "attachment; filename=Login_Activity_Report.xlsx"
-        resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        return resp
-    else:
-        si = io.StringIO()
-        cw = csv.writer(si)
-        cw.writerow(["ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status", "Session Info"])
-        for l in filtered_logs:
-            cw.writerow([
-                l.get('id'), l.get('username'), l.get('role', 'N/A'), l.get('ip_address'),
-                l.get('browser'), l.get('os'), l.get('location'), l.get('login_time'),
-                l.get('logout_time'), l.get('status'), l.get('session_info')
-            ])
-            
-        resp = make_response(si.getvalue())
-        resp.headers["Content-Disposition"] = "attachment; filename=Login_Activity_Report.csv"
-        resp.headers["Content-Type"] = "text/csv"
-        return resp
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Student Leads Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
+            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
+            .filter-info {{ font-size: 12px; color: #64748b; margin-bottom: 15px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
+            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
+            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
+        </style>
+    </head>
+    <body>
+        <h1>CounselScope CRM - Student Leads Report</h1>
+        <div class="filter-info">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
+        <table>
+            <thead>
+                <tr><th>ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Status</th><th>Form Details</th></tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('status')}</td><td><small>{str(l.get('form_data',''))}</small></td></tr>" for l in filtered])}
+            </tbody>
+        </table>
+        <script>window.onload = function() {{ window.print(); }}</script>
+    </body>
+    </html>
+    """
+    resp = make_response(html)
+    resp.headers["Content-Disposition"] = "inline; filename=Student_Leads_Report.html"
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    return resp
 
 
 @app.route('/download-doc/<path:filename>', methods=['GET'])
@@ -653,196 +855,13 @@ def add_college():
     return jsonify({"status": "success"})
 
 
-# --- EXPORT ENDPOINTS (EXCEL MULTI-SHEET & PDF) ---
-
 @app.route('/api/export-excel', methods=['GET'])
 def export_excel():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
-    colleges = load_data(COLLEGES_FILE)
-    history = load_data(HISTORY_FILE)
-    logs = load_data(LOGIN_LOGS_FILE)
-
-    if openpyxl:
-        wb = openpyxl.Workbook()
-        
-        header_fill = PatternFill(start_color="0B1329", end_color="0B1329", fill_type="solid")
-        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
-        center_align = Alignment(horizontal="center", vertical="center")
-
-        ws_dash = wb.active
-        ws_dash.title = "Dashboard & Analytics"
-        ws_dash.append(["Metric / Period", "Status / Field", "Count / Value"])
-        
-        statuses = ["New Lead", "Contacted", "Follow Up", "Closed", "Rejected"]
-        for s in statuses:
-            ws_dash.append(["Pie Chart Overview Data", s, len([l for l in leads if l.get('status') == s])])
-            
-        ws_dash.append(["Overall Summary", "Total Active Leads", len(leads)])
-        ws_dash.append(["Overall Summary", "Total Admissions Closed", len([l for l in leads if l.get('status')=='Closed'])])
-        
-        ws_leads = wb.create_sheet(title="All Leads Data")
-        ws_leads.append(["#ID", "Student Name", "Contact", "Email ID", "Status", "Score", "ID Document", "Created At", "Dynamic Form Details"])
-        for l in leads:
-            form_summary = json.dumps(l.get('form_data', {}))
-            ws_leads.append([
-                l.get('id'), l.get('student_name'),
-                l.get('contact_number'), l.get('student_email'),
-                l.get('status', 'New Lead'), l.get('score', 50),
-                "Uploaded" if l.get('id_document') else "None",
-                l.get('created_at', 'N/A'), form_summary
-            ])
-
-        ws_colleges = wb.create_sheet(title="Colleges Tie-up")
-        ws_colleges.append(["#ID", "College Name", "Location", "Courses Offered", "Avg Package"])
-        for c in colleges:
-            ws_colleges.append([c.get('id'), c.get('college_name'), c.get('location'), c.get('courses'), c.get('package', 'N/A')])
-
-        ws_history = wb.create_sheet(title="Work Activity History")
-        ws_history.append(["#ID", "Date", "Time", "Action Type", "Details"])
-        for h in history:
-            ws_history.append([h.get('id'), h.get('date'), h.get('time'), h.get('action_type'), h.get('details')])
-
-        ws_logs = wb.create_sheet(title="Settings - Security Logs")
-        ws_logs.append(["#ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status", "Session Info"])
-        for lg in logs:
-            ws_logs.append([lg.get('id'), lg.get('username'), lg.get('role', 'N/A'), lg.get('ip_address'), lg.get('browser'), lg.get('os'), lg.get('location'), lg.get('login_time'), lg.get('logout_time'), lg.get('status'), lg.get('session_info')])
-
-        for sheet in wb.worksheets:
-            for cell in sheet[1]:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = center_align
-            for col in sheet.columns:
-                max_len = max(len(str(cell.value or '')) for cell in col)
-                col_letter = get_column_letter(col[0].column)
-                sheet.column_dimensions[col_letter].width = max(max_len + 4, 15)
-
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-        
-        response = make_response(output.getvalue())
-        response.headers["Content-Disposition"] = "attachment; filename=CounselScope_CRM_Complete_Export.xlsx"
-        response.headers["Content-type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        return response
-    else:
-        si = io.StringIO()
-        cw = csv.writer(si)
-        cw.writerow(["ID", "Student Name", "Contact Number", "Email ID", "Status", "Created At"])
-        for l in leads:
-            cw.writerow([l.get('id'), l.get('student_name'), l.get('contact_number'), l.get('student_email'), l.get('status'), l.get('created_at')])
-        
-        response = make_response(si.getvalue())
-        response.headers["Content-Disposition"] = "attachment; filename=CounselScope_CRM_Leads.csv"
-        response.headers["Content-type"] = "text/csv"
-        return response
-
+    return redirect(url_for('crm_dashboard'))
 
 @app.route('/api/export-pdf', methods=['GET'])
 def export_pdf():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
-    colleges = load_data(COLLEGES_FILE)
-    history = load_data(HISTORY_FILE)
-    logs = load_data(LOGIN_LOGS_FILE)
-    
-    counts = {
-        'New Lead': len([l for l in leads if l.get('status') == 'New Lead']),
-        'Contacted': len([l for l in leads if l.get('status') == 'Contacted']),
-        'Follow Up': len([l for l in leads if l.get('status') == 'Follow Up']),
-        'Closed': len([l for l in leads if l.get('status') == 'Closed']),
-        'Rejected': len([l for l in leads if l.get('status') == 'Rejected'])
-    }
-    
-    pdf_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>CounselScope CRM Full Report</title>
-        <style>
-            body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; padding: 25px; background: #fff; line-height: 1.5; }}
-            h1 {{ color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 8px; font-size: 24px; margin-bottom: 4px; }}
-            .gen-time {{ font-size: 12px; color: #64748b; margin-bottom: 20px; }}
-            h2 {{ color: #0f172a; margin-top: 25px; font-size: 16px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
-            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
-            td {{ padding: 8px; border-bottom: 1px solid #e2e8f0; }}
-            .stats-box {{ display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }}
-            .stat-card {{ background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-size: 12px; flex: 1; min-width: 110px; }}
-            .stat-card strong {{ font-size: 18px; color: #2563eb; display: block; }}
-        </style>
-    </head>
-    <body>
-        <h1>CounselScope CRM - Executive Data Report</h1>
-        <div class="gen-time">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
-        
-        <h2>1. Dashboard Overview & Pie Chart Analytics Breakdown</h2>
-        <div class="stats-box">
-            <div class="stat-card">Total Leads: <strong>{len(leads)}</strong></div>
-            <div class="stat-card">New Leads: <strong>{counts['New Lead']}</strong></div>
-            <div class="stat-card">Contacted: <strong>{counts['Contacted']}</strong></div>
-            <div class="stat-card">Follow Up: <strong>{counts['Follow Up']}</strong></div>
-            <div class="stat-card">Admissions Closed: <strong>{counts['Closed']}</strong></div>
-            <div class="stat-card">Rejected: <strong>{counts['Rejected']}</strong></div>
-        </div>
-
-        <h2>2. Registered Student Leads Directory (Dynamic Form Data)</h2>
-        <table>
-            <thead>
-                <tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Status</th><th>Submitted Form Fields</th></tr>
-            </thead>
-            <tbody>
-                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('status')}</td><td><small>{str(l.get('form_data', 'N/A'))}</small></td></tr>" for l in leads])}
-            </tbody>
-        </table>
-
-        <h2>3. Partner Colleges Manager Data</h2>
-        <table>
-            <thead>
-                <tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr>
-            </thead>
-            <tbody>
-                {''.join([f"<tr><td>#{c.get('id')}</td><td><strong>{c.get('college_name')}</strong></td><td>{c.get('location')}</td><td>{c.get('courses')}</td><td>{c.get('package','N/A')}</td></tr>" for c in colleges])}
-            </tbody>
-        </table>
-
-        <h2>4. Work History Activity Log</h2>
-        <table>
-            <thead>
-                <tr><th>#ID</th><th>Date / Time</th><th>Action Type</th><th>Details</th></tr>
-            </thead>
-            <tbody>
-                {''.join([f"<tr><td>#{h.get('id')}</td><td>{h.get('date')} {h.get('time')}</td><td><strong>{h.get('action_type')}</strong></td><td>{h.get('details')}</td></tr>" for h in history[-15:]])}
-            </tbody>
-        </table>
-
-        <h2>5. Settings - Security & User Login Logs</h2>
-        <table>
-            <thead>
-                <tr><th>User</th><th>Role</th><th>IP Address</th><th>Browser / OS</th><th>Location</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-                {''.join([f"<tr><td><strong>{lg.get('username')}</strong></td><td>{lg.get('role','N/A')}</td><td>{lg.get('ip_address')}</td><td>{lg.get('browser')} / {lg.get('os')}</td><td>{lg.get('location')}</td><td>{lg.get('login_time')}</td><td>{lg.get('logout_time')}</td><td>{lg.get('status')}</td></tr>" for lg in logs[:20]])}
-            </tbody>
-        </table>
-        
-        <script>
-            window.onload = function() {{ window.print(); }}
-        </script>
-    </body>
-    </html>
-    """
-    
-    response = make_response(pdf_html)
-    response.headers["Content-Disposition"] = "inline; filename=CounselScope_CRM_Report.html"
-    response.headers["Content-type"] = "text/html; charset=utf-8"
-    return response
+    return redirect(url_for('crm_dashboard'))
 
 
 # --- ROUTING & VIEWS ---
@@ -1115,10 +1134,6 @@ MAIN_DASHBOARD_HTML = """
                         <h1 id="timeGreeting">Good Morning {{ username | title }}</h1>
                         <p>Welcome to your CounselScope CRM. Track dynamic leads, follow-up recalls, and student admissions in real-time.</p>
                     </div>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;" class="export-btns-group">
-                        <a href="/api/export-excel" target="_blank" style="background: #16a34a; color: white; border: none; padding: 12px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13.5px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); transition: 0.2s;"><i class="fa-solid fa-file-excel"></i> Export Excel (All Sheets)</a>
-                        <a href="/api/export-pdf" target="_blank" style="background: #dc2626; color: white; border: none; padding: 12px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 13.5px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3); transition: 0.2s;"><i class="fa-solid fa-file-pdf"></i> Export PDF Report</a>
-                    </div>
                 </div>
 
                 <div class="metrics-grid" style="margin-bottom: 25px;">
@@ -1193,10 +1208,36 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- ALL LEADS TAB -->
+            <!-- ALL LEADS TAB (WITH PDF EXPORT & ROLE-BASED DELETE) -->
             <div id="leads-tab" class="tab-section">
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-users"></i> All Leads Management & PDF Export</h3>
+                    </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Specific Date</label>
+                            <input type="date" id="leadDlDate" class="form-control" style="margin:0;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 600; color: #475569;">From Date</label>
+                            <input type="date" id="leadDlFrom" class="form-control" style="margin:0;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 600; color: #475569;">To Date</label>
+                            <input type="date" id="leadDlTo" class="form-control" style="margin:0;">
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="downloadLeadsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download PDF Report</button>
+                            {% if role == 'Admin' %}
+                            <button onclick="deleteLeadsRange()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Range</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card">
-                    <div class="card-header"><h3>All Registered Leads (Dynamic Fields)</h3></div>
+                    <div class="card-header"><h3>Registered Leads Directory</h3></div>
                     <div style="overflow-x: auto;">
                         <table>
                             <thead>
@@ -1217,21 +1258,40 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- WORK HISTORY TAB -->
+            <!-- WORK HISTORY TAB (WITH PDF EXPORT & ROLE-BASED DELETE) -->
             <div id="history-tab" class="tab-section">
-                <div class="card">
+                <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header">
-                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Work Activity History Log</h3>
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Work History & PDF Export</h3>
+                    </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
                         <div>
-                            <label style="font-size:12px; font-weight:600; margin-right:8px;">Select Date:</label>
-                            <input type="date" id="historyDateSelect" class="form-control" style="width:auto; display:inline-block; margin:0;" onchange="fetchWorkHistory()">
+                            <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Specific Date</label>
+                            <input type="date" id="histDlDate" class="form-control" style="margin:0;" onchange="fetchWorkHistory()">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 600; color: #475569;">From Date</label>
+                            <input type="date" id="histDlFrom" class="form-control" style="margin:0;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 600; color: #475569;">To Date</label>
+                            <input type="date" id="histDlTo" class="form-control" style="margin:0;">
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="downloadHistoryPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download PDF Report</button>
+                            {% if role == 'Admin' %}
+                            <button onclick="deleteHistoryRange()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Range</button>
+                            {% endif %}
                         </div>
                     </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3>Work Activity History Log</h3></div>
                     <div style="overflow-x: auto;">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Time</th>
+                                    <th>Date & Time</th>
                                     <th>Activity / Task</th>
                                     <th>Details</th>
                                 </tr>
@@ -1242,8 +1302,9 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- COLLEGES TAB -->
+            <!-- COLLEGES TAB (WITH PDF EXPORT & ROLE-BASED DELETE) -->
             <div id="colleges-tab" class="tab-section">
+                {% if role == 'Admin' %}
                 <div class="card" style="margin-bottom: 20px;">
                     <h3>Add New College / Tie-up</h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 15px;">
@@ -1254,11 +1315,18 @@ MAIN_DASHBOARD_HTML = """
                         <button onclick="addNewCollege()" style="background:#2563eb; color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer; padding:10px;">Save College</button>
                     </div>
                 </div>
+                {% endif %}
+
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header"><h3>College Directory PDF Export</h3></div>
+                    <button onclick="downloadCollegePDF()" style="background: #dc2626; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download College Directory PDF</button>
+                </div>
+
                 <div class="card">
                     <div class="card-header"><h3>Partner Colleges List</h3></div>
                     <div style="overflow-x: auto;">
                         <table>
-                            <thead><tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr></thead>
+                            <thead><tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th>{% if role == 'Admin' %}<th>Action</th>{% endif %}</tr></thead>
                             <tbody id="collegesTbody"></tbody>
                         </table>
                     </div>
@@ -1278,16 +1346,16 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- SETTINGS & LOGS TAB (UPGRADED) -->
+            <!-- SETTINGS & LOGS TAB -->
             <div id="settings-tab" class="tab-section">
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"><h3><i class="fa-solid fa-gear"></i> System Settings & Login Activity Logs</h3></div>
                     <p style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 20px; line-height: 1.5;">Review detailed login records with IP addresses, geolocation, browser/OS specs, and manage system security.</p>
                     
-                    <!-- Download Reports Section -->
+                    <!-- Download Reports Section (PDF Only) -->
                     <div style="background: #f8fafc; padding: 18px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px;">
-                        <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-dark);"><i class="fa-solid fa-download"></i> Download Login Activity Reports</h4>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: center;">
+                        <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-dark);"><i class="fa-solid fa-file-pdf"></i> Download Login Activity PDF Report</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: center;">
                             <div>
                                 <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Specific Date</label>
                                 <input type="date" id="dlDate" class="form-control" style="margin:0;">
@@ -1300,24 +1368,12 @@ MAIN_DASHBOARD_HTML = """
                                 <label style="font-size: 11.5px; font-weight: 600; color: #475569;">To Date</label>
                                 <input type="date" id="dlToDate" class="form-control" style="margin:0;">
                             </div>
-                            <div>
-                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Month (YYYY-MM)</label>
-                                <input type="month" id="dlMonth" class="form-control" style="margin:0;">
-                            </div>
-                            <div>
-                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Year (YYYY)</label>
-                                <input type="number" id="dlYear" placeholder="2026" class="form-control" style="margin:0;">
-                            </div>
-                            <div>
-                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Format</label>
-                                <select id="dlFormat" class="form-control" style="margin:0;">
-                                    <option value="csv">CSV Report</option>
-                                    <option value="excel">Excel Report (.xlsx)</option>
-                                </select>
-                            </div>
                         </div>
                         <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button onclick="downloadLogsReport()" style="background: #16a34a; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-file-arrow-down"></i> Download Filtered Logs</button>
+                            <button onclick="downloadLogsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-file-pdf"></i> Download PDF Report</button>
+                            {% if role == 'Admin' %}
+                            <button onclick="deleteLogsRange()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Range</button>
+                            {% endif %}
                             <button onclick="resetLogFilters()" style="background: #64748b; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;">Reset Filters</button>
                         </div>
                     </div>
@@ -1382,7 +1438,7 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
-    <!-- VIEW DOCUMENT & DYNAMIC FORM DATA MODAL -->
+    <!-- VIEW DOCUMENT MODAL -->
     <div id="docModal" class="modal-overlay">
         <div class="modal-content">
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
@@ -1462,8 +1518,6 @@ MAIN_DASHBOARD_HTML = """
             if(navElement) navElement.classList.add('active');
             if(tabId === 'colleges-tab') fetchColleges();
             if(tabId === 'history-tab') {
-                const today = new Date().toISOString().split('T')[0];
-                document.getElementById('historyDateSelect').value = today;
                 fetchWorkHistory();
             }
             if(tabId === 'settings-tab') {
@@ -1497,7 +1551,7 @@ MAIN_DASHBOARD_HTML = """
                         return;
                     }
                     logs.forEach(log => {
-                        const statusBadge = log.status === 'Successful' || log.status === 'Active' ? '<span class="badge-status badge-closed">Successful</span>' : (log.status === 'Failed' ? '<span class="badge-status badge-rejected">Failed</span>' : '<span class="badge-status badge-contacted">Logged Out</span>');
+                        const statusBadge = log.status === 'Active' ? '<span class="badge-status badge-closed">Active</span>' : (log.status === 'Failed' ? '<span class="badge-status badge-rejected">Failed</span>' : '<span class="badge-status badge-contacted">Logged Out</span>');
                         tbody.innerHTML += `
                             <tr>
                                 <td>#${log.id}</td>
@@ -1518,21 +1572,40 @@ MAIN_DASHBOARD_HTML = """
             }
         }
 
-        function downloadLogsReport() {
+        function downloadLogsPDF() {
             const date = document.getElementById('dlDate').value;
             const fromDate = document.getElementById('dlFromDate').value;
             const toDate = document.getElementById('dlToDate').value;
-            const month = document.getElementById('dlMonth').value;
-            const year = document.getElementById('dlYear').value;
-            const format = document.getElementById('dlFormat').value;
-            
-            let url = `/api/export-logs-report?format=${format}`;
+            let url = `/api/export-logs-pdf?1=1`;
             if(date) url += `&date=${date}`;
             if(fromDate) url += `&from_date=${fromDate}`;
             if(toDate) url += `&to_date=${toDate}`;
-            if(month) url += `&month=${month}`;
-            if(year) url += `&year=${year}`;
-            
+            window.open(url, '_blank');
+        }
+
+        function downloadHistoryPDF() {
+            const date = document.getElementById('histDlDate').value;
+            const fromDate = document.getElementById('histDlFrom').value;
+            const toDate = document.getElementById('histDlTo').value;
+            let url = `/api/export-history-pdf?1=1`;
+            if(date) url += `&date=${date}`;
+            if(fromDate) url += `&from_date=${fromDate}`;
+            if(toDate) url += `&to_date=${toDate}`;
+            window.open(url, '_blank');
+        }
+
+        function downloadCollegePDF() {
+            window.open('/api/export-college-pdf', '_blank');
+        }
+
+        function downloadLeadsPDF() {
+            const date = document.getElementById('leadDlDate').value;
+            const fromDate = document.getElementById('leadDlFrom').value;
+            const toDate = document.getElementById('leadDlTo').value;
+            let url = `/api/export-leads-pdf?1=1`;
+            if(date) url += `&date=${date}`;
+            if(fromDate) url += `&from_date=${fromDate}`;
+            if(toDate) url += `&to_date=${toDate}`;
             window.open(url, '_blank');
         }
 
@@ -1540,25 +1613,81 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('dlDate').value = '';
             document.getElementById('dlFromDate').value = '';
             document.getElementById('dlToDate').value = '';
-            document.getElementById('dlMonth').value = '';
-            document.getElementById('dlYear').value = '';
-            document.getElementById('dlFormat').value = 'csv';
         }
 
         async function clearAllLogs() {
-            if(confirm("Are you sure you want to permanently clear all login activity logs? This action cannot be undone.")) {
-                try {
-                    const res = await fetch('/api/clear-logs', { method: 'POST' });
-                    const result = await res.json();
-                    if(res.ok) {
-                        alert(result.message || 'Logs cleared successfully.');
-                        fetchSettingsLogs();
-                    } else {
-                        alert('Error: ' + (result.error || result.message || 'Unauthorized'));
-                    }
-                } catch(e) {
-                    alert('Something went wrong.');
-                }
+            if(confirm("Are you sure you want to permanently clear all login activity logs?")) {
+                const res = await fetch('/api/clear-logs', { method: 'POST' });
+                if(res.ok) { alert('Logs cleared.'); fetchSettingsLogs(); }
+            }
+        }
+
+        async function deleteLogsRange() {
+            const date = document.getElementById('dlDate').value;
+            const from_date = document.getElementById('dlFromDate').value;
+            const to_date = document.getElementById('dlToDate').value;
+            if(!date && (!from_date || !to_date)) {
+                alert('Please select a specific date or date range to delete.');
+                return;
+            }
+            if(confirm("Are you sure you want to delete selected login logs?")) {
+                const res = await fetch('/api/delete-logs-range', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({date, from_date, to_date})
+                });
+                if(res.ok) { alert('Selected logs deleted.'); fetchSettingsLogs(); }
+                else { alert('Unauthorized or error.'); }
+            }
+        }
+
+        async function deleteHistoryRange() {
+            const date = document.getElementById('histDlDate').value;
+            const from_date = document.getElementById('histDlFrom').value;
+            const to_date = document.getElementById('histDlTo').value;
+            if(!date && (!from_date || !to_date)) {
+                alert('Please select a date or date range to delete work history.');
+                return;
+            }
+            if(confirm("Are you sure you want to delete selected work history records?")) {
+                const res = await fetch('/api/delete-history-range', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({date, from_date, to_date})
+                });
+                if(res.ok) { alert('Selected work history deleted.'); fetchWorkHistory(); }
+                else { alert('Unauthorized or error.'); }
+            }
+        }
+
+        async function deleteCollegeRecord(id) {
+            if(confirm("Are you sure you want to delete this college record?")) {
+                const res = await fetch('/api/delete-college-range', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({college_id: id})
+                });
+                if(res.ok) { alert('College deleted.'); fetchColleges(); }
+                else { alert('Unauthorized or error.'); }
+            }
+        }
+
+        async function deleteLeadsRange() {
+            const date = document.getElementById('leadDlDate').value;
+            const from_date = document.getElementById('leadDlFrom').value;
+            const to_date = document.getElementById('leadDlTo').value;
+            if(!date && (!from_date || !to_date)) {
+                alert('Please select a date or date range to delete lead records.');
+                return;
+            }
+            if(confirm("Are you sure you want to delete selected lead records?")) {
+                const res = await fetch('/api/delete-lead-range', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({date, from_date, to_date})
+                });
+                if(res.ok) { alert('Selected leads moved to trash.'); fetchLeadsData(); }
+                else { alert('Unauthorized or error.'); }
             }
         }
 
@@ -1567,36 +1696,21 @@ MAIN_DASHBOARD_HTML = """
             const newPassword = document.getElementById('newPassword').value;
             const confirmPassword = document.getElementById('confirmPassword').value;
             
-            if(!newPassword || !confirmPassword) {
-                alert('Please fill in both password fields.');
+            if(!newPassword || newPassword !== confirmPassword) {
+                alert('Passwords do not match or are empty.');
                 return;
             }
-            if(newPassword !== confirmPassword) {
-                alert('New passwords do not match.');
-                return;
-            }
-            
-            try {
-                const res = await fetch('/api/change-password', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({target_user: targetUser, new_password: newPassword, confirm_password: confirmPassword})
-                });
-                const result = await res.json();
-                if(res.ok) {
-                    alert(result.message || 'Password updated successfully!');
-                    document.getElementById('newPassword').value = '';
-                    document.getElementById('confirmPassword').value = '';
-                } else {
-                    alert('Error: ' + (result.error || result.message || 'Unauthorized'));
-                }
-            } catch(e) {
-                alert('Something went wrong.');
-            }
+            const res = await fetch('/api/change-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({target_user: targetUser, new_password: newPassword, confirm_password: confirmPassword})
+            });
+            if(res.ok) { alert('Password updated successfully!'); document.getElementById('newPassword').value=''; document.getElementById('confirmPassword').value=''; }
+            else { alert('Unauthorized.'); }
         }
 
         async function fetchWorkHistory() {
-            const selectedDate = document.getElementById('historyDateSelect').value;
+            const selectedDate = document.getElementById('histDlDate').value;
             const res = await fetch(`/api/get-history?date=${selectedDate}`);
             if(res.ok) {
                 const history = await res.json();
@@ -1609,7 +1723,7 @@ MAIN_DASHBOARD_HTML = """
                 history.reverse().forEach(item => {
                     tbody.innerHTML += `
                         <tr>
-                            <td><strong style="color:#2563eb;">${item.time}</strong></td>
+                            <td><strong style="color:#2563eb;">${item.date} ${item.time}</strong></td>
                             <td><span class="badge-status badge-followup">${item.action_type}</span></td>
                             <td>${item.details}</td>
                         </tr>
@@ -1633,7 +1747,11 @@ MAIN_DASHBOARD_HTML = """
                 const tbody = document.getElementById('collegesTbody');
                 tbody.innerHTML = '';
                 collegesData.forEach(c => {
-                    tbody.innerHTML += `<tr><td>#${c.id}</td><td><strong>${c.college_name}</strong></td><td>${c.location}</td><td>${c.courses}</td><td>${c.package}</td></tr>`;
+                    let actionHtml = '';
+                    {% if role == 'Admin' %}
+                    actionHtml = `<td><button onclick="deleteCollegeRecord(${c.id})" class="action-icon-btn trash-btn"><i class="fa-solid fa-trash-can"></i></button></td>`;
+                    {% endif %}
+                    tbody.innerHTML += `<tr><td>#${c.id}</td><td><strong>${c.college_name}</strong></td><td>${c.location}</td><td>${c.courses}</td><td>${c.package}</td>${actionHtml}</tr>`;
                 });
             }
         }
