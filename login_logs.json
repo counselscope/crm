@@ -73,6 +73,17 @@
         "os": "Android",
         "login_time": "03 Nov 2026, 01:56 PM",
         "login_timestamp": 1793714190.1178,
+        "logout_time": "03 Nov 2026, 04:56 PM",
+        "status": "Logged Out"
+    },
+    {
+        "id": 8,
+        "username": "admin",
+        "ip_address": "127.0.0.1",
+        "browser": "Google Chrome",
+        "os": "Windows",
+        "login_time": "03 Nov 2026, 04:56 PM",
+        "login_timestamp": 1793724963.615735,
         "logout_time": "N/A",
         "status": "Active"
     }
