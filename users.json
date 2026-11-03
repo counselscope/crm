@@ -1,0 +1,10 @@
+{
+    "admin": {
+        "password": "scrypt:32768:8:1$cie36aAY0e07KpRD$e41d412315a6347510ebe2159da8e6acafb0c87c9a7914037c3e6332102cd72b3fc0abc283d8e978f725d47e2385fbc573e93050617bbeb21f56069bc4328e83",
+        "role": "Admin"
+    },
+    "client": {
+        "password": "scrypt:32768:8:1$BD2aIjk0mDMxlzej$dd65ba48074289c389cc690027f1738c92b9a1296729135cc9067b64a7afd0099af58d7b37da03e56a8ce38a9eeb7b0b79c476a8bc6a64512f25f5fbbe1b8caa",
+        "role": "Client"
+    }
+}
