@@ -110,5 +110,12 @@
         "time": "05:26:33 PM",
         "action_type": "Status Change",
         "details": "Status changed to 'Contacted' for student Raj "
+    },
+    {
+        "id": 17,
+        "date": "2026-11-03",
+        "time": "05:26:38 PM",
+        "action_type": "New Lead Form",
+        "details": "New dynamic enquiry received for Jesita (7387553438)"
     }
 ]
