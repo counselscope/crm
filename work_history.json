@@ -131,5 +131,12 @@
         "time": "06:03:25 PM",
         "action_type": "Clear Logs",
         "details": "Admin admin cleared all login activity logs."
+    },
+    {
+        "id": 20,
+        "date": "2026-11-03",
+        "time": "08:35:29 PM",
+        "action_type": "Call Initiated",
+        "details": "Called student Jesita"
     }
 ]
