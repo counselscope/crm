@@ -96,5 +96,12 @@
         "time": "05:20:26 PM",
         "action_type": "New Lead Form",
         "details": "New dynamic enquiry received for Prachi (9874563232)"
+    },
+    {
+        "id": 15,
+        "date": "2026-11-03",
+        "time": "05:22:58 PM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Follow Up' for student Prachi"
     }
 ]
