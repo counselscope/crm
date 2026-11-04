@@ -4,7 +4,7 @@ import csv
 import io
 import base64
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -651,7 +651,31 @@ def trash_download():
     return resp
 
 
-# --- FULL CRM EXCEL & PDF EXPORT ENDPOINTS ---
+# --- ADMIN PASSWORD MANAGEMENT API ---
+
+@app.route('/api/admin/change-password', methods=['POST'])
+def admin_change_password():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    
+    data = request.json or {}
+    target_user = data.get('target_user') # 'admin' or 'client'
+    new_password = data.get('new_password')
+    
+    if not target_user or not new_password:
+        return jsonify({"status": "error", "message": "Target user and new password are required."}), 400
+        
+    users = load_users()
+    if target_user not in users:
+        return jsonify({"status": "error", "message": "User not found."}), 404
+        
+    users[target_user]['password'] = generate_password_hash(new_password)
+    save_data(USERS_FILE, users)
+    log_activity("Password Changed", f"Admin {session.get('username')} updated password for user: {target_user}")
+    return jsonify({"status": "success", "message": f"Password for {target_user} updated successfully."})
+
+
+# --- FULL CRM EXCEL & PDF EXPORT ENDPOINTS (WITH STUDENTS WORKSHEET FIXED) ---
 
 @app.route('/api/export-full-excel', methods=['GET'])
 def export_full_excel():
@@ -682,6 +706,8 @@ def export_full_excel():
         ["Registered Students", len(students)],
         ["Partner Colleges", len(colleges)],
         ["Contacted Leads", len([l for l in active_leads if l.get('status') == 'Contacted'])],
+        ["Follow-Up Leads", len([l for l in active_leads if l.get('status') == 'Follow Up'])],
+        ["Rejected Leads", len([l for l in active_leads if l.get('status') == 'Rejected'])],
         ["New Leads", len([l for l in active_leads if l.get('status') == 'New Lead'])]
     ]
     for row in dash_data:
@@ -696,14 +722,29 @@ def export_full_excel():
     for l in active_leads:
         ws_leads.append([l.get('id'), l.get('student_name'), l.get('father_name',''), l.get('contact_number'), l.get('student_email'), l.get('assigned_college','None'), l.get('status'), l.get('course_details',''), l.get('budget','')])
 
-    # 3. Students Sheet
+    # 3. Students Sheet (Mandatory & Fully Populated)
     ws_students = wb.create_sheet(title="Students")
-    ws_students.append(["Student ID", "Original Lead ID", "Student Name", "Contact", "Email", "Assigned College", "Course Details", "Converted At"])
+    ws_students.append(["Student ID", "Original Lead ID", "Student Name", "Father Name", "Contact", "Email", "Assigned College", "Qualification", "10th %", "12th %", "Course Details", "Budget", "Admission Status", "Converted At"])
     for cell in ws_students[1]:
         cell.fill = header_fill
         cell.font = header_font
     for s in students:
-        ws_students.append([s.get('student_id'), s.get('original_lead_id'), s.get('student_name'), s.get('contact_number'), s.get('student_email'), s.get('assigned_college','Not Assigned'), s.get('course_details',''), s.get('converted_at','')])
+        ws_students.append([
+            s.get('student_id'), 
+            s.get('original_lead_id', 'N/A'), 
+            s.get('student_name'), 
+            s.get('father_name', ''), 
+            s.get('contact_number'), 
+            s.get('student_email'), 
+            s.get('assigned_college', 'Not Assigned'), 
+            s.get('qualification', 'N/A'), 
+            s.get('percentage_10th', 'N/A'), 
+            s.get('percentage_12th', 'N/A'), 
+            s.get('course_details', 'N/A'), 
+            s.get('budget', 'N/A'), 
+            s.get('status', 'Registered Student'), 
+            s.get('converted_at', 'N/A')
+        ])
 
     # 4. Colleges Sheet
     ws_colleges = wb.create_sheet(title="College Management")
@@ -1148,10 +1189,14 @@ MAIN_DASHBOARD_HTML = """
         .m-icon.green { background: #f0fdf4; color: #16a34a; }
         .m-icon.orange { background: #fff7ed; color: #ea580c; }
         .m-icon.purple { background: #faf5ff; color: #9333ea; }
+        .m-icon.red { background: #ffeeef; color: #dc2626; }
+        .m-icon.indigo { background: #eef2ff; color: #6366f1; }
         .m-info h3 { font-size: 22px; font-weight: 800; color: var(--text-dark); }
         .m-info p { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
 
         .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; }
+        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 25px; }
+        
         .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border-color); padding: 22px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
         .card-header h3 { font-size: 15px; font-weight: 700; color: var(--text-dark); }
@@ -1199,6 +1244,7 @@ MAIN_DASHBOARD_HTML = """
             .menu-toggle-btn { display: block; }
             .main-wrapper { height: auto; overflow: visible; }
             .dashboard-grid { grid-template-columns: 1fr; }
+            .analytics-grid { grid-template-columns: 1fr; }
             .top-header { padding: 12px 15px; flex-wrap: wrap; height: auto; gap: 10px; }
             .search-bar { width: 100%; order: 3; }
             .content-area { padding: 15px; gap: 18px; }
@@ -1265,11 +1311,44 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
 
+                <!-- METRICS GRID (INCLUDING REJECTED & FOLLOW-UP COUNTS) -->
                 <div class="metrics-grid" style="margin-bottom: 25px;">
                     <div class="metric-card"><div class="m-icon blue"><i class="fa-solid fa-users"></i></div><div class="m-info"><h3 id="statTotal">0</h3><p>Total Leads</p></div></div>
                     <div class="metric-card"><div class="m-icon green"><i class="fa-solid fa-user-graduate"></i></div><div class="m-info"><h3 id="statStudents">0</h3><p>Registered Students</p></div></div>
                     <div class="metric-card"><div class="m-icon orange"><i class="fa-solid fa-phone-volume"></i></div><div class="m-info"><h3 id="statContacted">0</h3><p>Contacted</p></div></div>
                     <div class="metric-card"><div class="m-icon purple"><i class="fa-solid fa-spinner"></i></div><div class="m-info"><h3 id="statNew">0</h3><p>New Leads</p></div></div>
+                    <div class="metric-card"><div class="m-icon indigo"><i class="fa-solid fa-calendar-days"></i></div><div class="m-info"><h3 id="statFollowUp">0</h3><p>Follow-Up Leads</p></div></div>
+                    <div class="metric-card"><div class="m-icon red"><i class="fa-solid fa-ban"></i></div><div class="m-info"><h3 id="statRejected">0</h3><p>Rejected Leads</p></div></div>
+                </div>
+
+                <!-- RESTORED THREE DASHBOARD PIE CHARTS (THIS WEEK, THIS MONTH, THIS YEAR) -->
+                <div class="analytics-grid" style="margin-bottom: 25px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>This Week – Lead Statistics</h3>
+                            <span id="weekRangeLabel" style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;"></span>
+                        </div>
+                        <div class="chart-container"><canvas id="weeklyPieChart"></canvas></div>
+                        <div style="text-align: center; margin-top: 10px; font-size: 12.5px; color: var(--text-muted);">Total Leads This Week: <strong id="weekTotalCount" style="color: var(--primary);">0</strong></div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>This Month – Lead Statistics</h3>
+                            <span id="monthRangeLabel" style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;"></span>
+                        </div>
+                        <div class="chart-container"><canvas id="monthlyPieChart"></canvas></div>
+                        <div style="text-align: center; margin-top: 10px; font-size: 12.5px; color: var(--text-muted);">Total Leads This Month: <strong id="monthTotalCount" style="color: var(--primary);">0</strong></div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>This Year – Lead Statistics</h3>
+                            <span id="yearRangeLabel" style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;"></span>
+                        </div>
+                        <div class="chart-container"><canvas id="yearlyPieChart"></canvas></div>
+                        <div style="text-align: center; margin-top: 10px; font-size: 12.5px; color: var(--text-muted);">Total Leads This Year: <strong id="yearTotalCount" style="color: var(--primary);">0</strong></div>
+                    </div>
                 </div>
 
                 <!-- FOLLOW UP RECALL NOTIFICATION CARD -->
@@ -1312,7 +1391,7 @@ MAIN_DASHBOARD_HTML = """
                         </div>
                     </div>
                     <div class="card">
-                        <div class="card-header"><h3>Leads Overview Chart</h3></div>
+                        <div class="card-header"><h3>Overall Leads Overview Chart</h3></div>
                         <div class="chart-container"><canvas id="leadsPieChart"></canvas></div>
                     </div>
                 </div>
@@ -1503,6 +1582,26 @@ MAIN_DASHBOARD_HTML = """
 
             <!-- SETTINGS & LOGS TAB -->
             <div id="settings-tab" class="tab-section">
+                <!-- ADMIN PASSWORD MANAGEMENT RESTORED SECTION -->
+                {% if role == 'Admin' %}
+                <div class="card" style="margin-bottom: 25px; border-left: 5px solid #2563eb;">
+                    <div class="card-header">
+                        <h3 style="color: #2563eb;"><i class="fa-solid fa-key" style="margin-right: 8px;"></i> Admin Password Management</h3>
+                    </div>
+                    <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 15px;">Update passwords securely using the application's hashing mechanism.</p>
+                    <form onsubmit="handleAdminPasswordChange(event)" style="max-width: 450px;">
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-dark);">Select Account to Update</label>
+                        <select id="pwdTargetUser" class="form-control">
+                            <option value="admin">Admin Account (admin)</option>
+                            <option value="client">Client Account (client)</option>
+                        </select>
+                        <label style="font-size: 12px; font-weight: 600; color: var(--text-dark);">New Password</label>
+                        <input type="password" id="pwdNewPassword" class="form-control" required placeholder="Enter new secure password">
+                        <button type="submit" style="background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;">Update Password</button>
+                    </form>
+                </div>
+                {% endif %}
+
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"><h3><i class="fa-solid fa-gear"></i> System Settings & Login Activity Logs</h3></div>
                     
@@ -1696,6 +1795,9 @@ MAIN_DASHBOARD_HTML = """
         let rawStudentsData = [];
         let collegesData = [];
         let pieChartInstance = null;
+        let weeklyPieInstance = null;
+        let monthlyPieInstance = null;
+        let yearlyPieInstance = null;
         const userRole = "{{ role }}";
 
         function toggleSidebar() {
@@ -1799,6 +1901,25 @@ MAIN_DASHBOARD_HTML = """
             }
         }
 
+        async function handleAdminPasswordChange(e) {
+            e.preventDefault();
+            const targetUser = document.getElementById('pwdTargetUser').value;
+            const newPassword = document.getElementById('pwdNewPassword').value;
+            
+            const res = await fetch('/api/admin/change-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({target_user: targetUser, new_password: newPassword})
+            });
+            const result = await res.json();
+            if(res.ok) {
+                alert(result.message);
+                document.getElementById('pwdNewPassword').value = '';
+            } else {
+                alert('Error: ' + result.message);
+            }
+        }
+
         async function fetchWorkHistory() {
             const res = await fetch('/api/get-history');
             if(res.ok) {
@@ -1897,6 +2018,8 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('statTotal').innerText = activeLeads.length;
             document.getElementById('statContacted').innerText = activeLeads.filter(l => l.status === 'Contacted').length;
             document.getElementById('statNew').innerText = activeLeads.filter(l => l.status === 'New Lead').length;
+            document.getElementById('statFollowUp').innerText = activeLeads.filter(l => l.status === 'Follow Up').length;
+            document.getElementById('statRejected').innerText = activeLeads.filter(l => l.status === 'Rejected').length;
             
             const followupRecallTbody = document.getElementById('followupRecallTbody');
             followupRecallTbody.innerHTML = '';
@@ -1952,6 +2075,7 @@ MAIN_DASHBOARD_HTML = """
             populateAllLeadsTable(activeLeads);
             populateTrashTable(trashLeads);
             updatePieChart(activeLeads);
+            updateTimeFilteredCharts(activeLeads);
             fetchStudentsData();
         }
 
@@ -2005,6 +2129,7 @@ MAIN_DASHBOARD_HTML = """
                                 <option value="Contacted" ${lead.status==='Contacted'?'selected':''}>Contacted</option>
                                 <option value="Follow Up" ${lead.status==='Follow Up'?'selected':''}>Follow Up</option>
                                 <option value="Closed" ${lead.status==='Closed'?'selected':''}>Closed</option>
+                                <option value="Rejected" ${lead.status==='Rejected'?'selected':''}>Rejected</option>
                                 <option value="Converted to Student" ${lead.status==='Converted to Student'?'selected':''}>Converted to Student</option>
                             </select>
                         </td>
@@ -2333,6 +2458,90 @@ MAIN_DASHBOARD_HTML = """
                         data: [counts['New Lead'], counts['Contacted'], counts['Follow Up'], counts['Closed'], counts['Rejected']],
                         backgroundColor: ['#38bdf8', '#f59e0b', '#6366f1', '#22c55e', '#ef4444']
                     }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+        }
+
+        function updateTimeFilteredCharts(activeLeads) {
+            const now = new Date();
+            
+            // This Week calculation (Monday to Sunday or last 7 days)
+            const currentDay = now.getDay() || 7;
+            const monday = new Date(now);
+            monday.setDate(now.getDate() - currentDay + 1);
+            monday.setHours(0,0,0,0);
+            
+            const weeklyLeads = activeLeads.filter(l => {
+                const lDate = l.created_timestamp ? new Date(l.created_timestamp * 1000) : new Date(l.created_date || now);
+                return lDate >= monday;
+            });
+
+            // This Month calculation
+            const firstDayMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthlyLeads = activeLeads.filter(l => {
+                const lDate = l.created_timestamp ? new Date(l.created_timestamp * 1000) : new Date(l.created_date || now);
+                return lDate >= firstDayMonth;
+            });
+
+            // This Year calculation
+            const firstDayYear = new Date(now.getFullYear(), 0, 1);
+            const yearlyLeads = activeLeads.filter(l => {
+                const lDate = l.created_timestamp ? new Date(l.created_timestamp * 1000) : new Date(l.created_date || now);
+                return lDate >= firstDayYear;
+            });
+
+            document.getElementById('weekRangeLabel').innerText = `Since ${monday.toLocaleDateString()}`;
+            document.getElementById('weekTotalCount').innerText = weeklyLeads.length;
+
+            document.getElementById('monthRangeLabel').innerText = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+            document.getElementById('monthTotalCount').innerText = monthlyLeads.length;
+
+            document.getElementById('yearRangeLabel').innerText = `Year ${now.getFullYear()}`;
+            document.getElementById('yearTotalCount').innerText = yearlyLeads.length;
+
+            // Render Weekly Pie
+            const getCounts = (list) => ({
+                'New': list.filter(l => l.status==='New Lead').length,
+                'Contacted': list.filter(l => l.status==='Contacted').length,
+                'Follow Up': list.filter(l => l.status==='Follow Up').length,
+                'Closed': list.filter(l => l.status==='Closed').length,
+                'Rejected': list.filter(l => l.status==='Rejected').length
+            });
+
+            const wCounts = getCounts(weeklyLeads);
+            const mCounts = getCounts(monthlyLeads);
+            const yCounts = getCounts(yearlyLeads);
+
+            // Weekly Chart
+            if(weeklyPieInstance) weeklyPieInstance.destroy();
+            weeklyPieInstance = new Chart(document.getElementById('weeklyPieChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['New', 'Contacted', 'Follow Up', 'Closed', 'Rejected'],
+                    datasets: [{ data: [wCounts['New'], wCounts['Contacted'], wCounts['Follow Up'], wCounts['Closed'], wCounts['Rejected']], backgroundColor: ['#38bdf8', '#f59e0b', '#6366f1', '#22c55e', '#ef4444'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+
+            // Monthly Chart
+            if(monthlyPieInstance) monthlyPieInstance.destroy();
+            monthlyPieInstance = new Chart(document.getElementById('monthlyPieChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['New', 'Contacted', 'Follow Up', 'Closed', 'Rejected'],
+                    datasets: [{ data: [mCounts['New'], mCounts['Contacted'], mCounts['Follow Up'], mCounts['Closed'], mCounts['Rejected']], backgroundColor: ['#38bdf8', '#f59e0b', '#6366f1', '#22c55e', '#ef4444'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+
+            // Yearly Chart
+            if(yearlyPieInstance) yearlyPieInstance.destroy();
+            yearlyPieInstance = new Chart(document.getElementById('yearlyPieChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['New', 'Contacted', 'Follow Up', 'Closed', 'Rejected'],
+                    datasets: [{ data: [yCounts['New'], yCounts['Contacted'], yCounts['Follow Up'], yCounts['Closed'], yCounts['Rejected']], backgroundColor: ['#38bdf8', '#f59e0b', '#6366f1', '#22c55e', '#ef4444'] }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
             });
