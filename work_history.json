@@ -154,5 +154,14 @@
         "time": "07:08:44 AM",
         "action_type": "Student Converted",
         "details": "Converted lead #5 (Prachi) into a registered Student."
+    },
+    {
+        "id": 23,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "07:10:03 AM",
+        "action_type": "Lead Updated",
+        "details": "Updated comprehensive information for lead #5 (Prachi)"
     }
 ]
