@@ -1169,7 +1169,7 @@ MAIN_DASHBOARD_HTML = """
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-dark); display: flex; height: 100vh; overflow: hidden; }
 
-        .sidebar { width: 255px; background-color: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; padding: 20px 15px; flex-shrink: 0; justify-content: space-between; transition: 0.3s; z-index: 200; }
+        .sidebar { width: 255px; background-color: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; padding: 20px 15px; flex-shrink: 0; justify-content: space-between; transition: 0.3s ease; z-index: 1000; }
         .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 10px 10px 25px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
         .sidebar-brand img { width: 38px; height: 38px; border-radius: 8px; }
         .sidebar-brand-text h3 { font-size: 16px; font-weight: 700; color: #fff; }
@@ -1242,7 +1242,7 @@ MAIN_DASHBOARD_HTML = """
         .tab-section { display: none; }
         .tab-section.active { display: block; }
 
-        .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
+        .modal-overlay { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
         .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 650px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 90vh; overflow-y: auto; }
         @keyframes modalPopup { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .close-modal { position: absolute; top: 15px; right: 20px; font-size: 22px; cursor: pointer; color: #64748b; transition: 0.2s; }
@@ -1251,23 +1251,56 @@ MAIN_DASHBOARD_HTML = """
         .form-control { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13.5px; }
         .form-control:focus { outline: none; border-color: #2563eb; }
 
+        /* Sidebar Backdrop Overlay for Mobile */
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 900;
+            backdrop-filter: blur(2px);
+        }
+        .sidebar-backdrop.show {
+            display: block;
+        }
+
         @media (max-width: 900px) {
-            body { flex-direction: column; height: auto; overflow: auto; }
-            .sidebar { position: fixed; top: 0; left: -270px; width: 260px; height: 100vh; flex-direction: column; padding: 20px 15px; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
+            body { flex-direction: column; height: 100vh; overflow: hidden; }
+            .sidebar { 
+                position: fixed; 
+                top: 0; 
+                left: -280px; 
+                width: 260px; 
+                height: 100vh; 
+                flex-direction: column; 
+                padding: 20px 15px; 
+                box-shadow: 5px 0 25px rgba(0,0,0,0.5); 
+                transition: left 0.3s ease;
+            }
             .sidebar.show { left: 0; }
             .menu-toggle-btn { display: block; }
-            .main-wrapper { height: auto; overflow: visible; }
+            .main-wrapper { height: 100vh; overflow-y: auto; }
             .dashboard-grid { grid-template-columns: 1fr; }
             .analytics-grid { grid-template-columns: 1fr; }
-            .top-header { padding: 12px 15px; flex-wrap: wrap; height: auto; gap: 10px; }
+            .top-header { padding: 12px 15px; flex-wrap: wrap; height: auto; gap: 10px; position: sticky; top: 0; }
             .search-bar { width: 100%; order: 3; }
             .content-area { padding: 15px; gap: 18px; }
             .hero-banner { padding: 20px; flex-direction: column; align-items: flex-start; text-align: left; }
-            .modal-content { max-width: 95vw !important; padding: 18px; margin: 10px; }
+            .modal-content { max-width: 95vw !important; padding: 18px; margin: 10px; max-height: 85vh; }
+            .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            .metric-card { padding: 14px; gap: 10px; }
+            .m-icon { width: 38px; height: 38px; font-size: 15px; }
+            .m-info h3 { font-size: 18px; }
         }
     </style>
 </head>
 <body>
+
+    <!-- Sidebar Backdrop Overlay -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
 
     <aside class="sidebar" id="sidebarNav">
         <div>
@@ -1808,6 +1841,7 @@ MAIN_DASHBOARD_HTML = """
 
         function toggleSidebar() {
             document.getElementById('sidebarNav').classList.toggle('show');
+            document.getElementById('sidebarBackdrop').classList.toggle('show');
         }
 
         function updateClockAndGreeting() {
@@ -1844,6 +1878,7 @@ MAIN_DASHBOARD_HTML = """
             if(tabId === 'settings-tab') fetchSettingsLogs();
             if(window.innerWidth <= 900) {
                 document.getElementById('sidebarNav').classList.remove('show');
+                document.getElementById('sidebarBackdrop').classList.remove('show');
             }
         }
 
