@@ -271,5 +271,14 @@
         "time": "08:50:00 AM",
         "action_type": "User Login",
         "details": "User admin (Admin) logged in successfully from IP 223.191.95.45"
+    },
+    {
+        "id": 36,
+        "username": "System",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "08:57:30 AM",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for raghav (1234567890)"
     }
 ]
