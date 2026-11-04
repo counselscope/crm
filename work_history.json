@@ -397,5 +397,14 @@
         "time": "12:51:18 PM",
         "action_type": "User Login",
         "details": "User admin (Admin) logged in successfully from IP 223.191.92.146"
+    },
+    {
+        "id": 50,
+        "username": "System",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "12:54:43 PM",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for Ritika (9874563232)"
     }
 ]
