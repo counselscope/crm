@@ -10,13 +10,14 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Excel export support via openpyxl if available
+# Multi-sheet Excel support via openpyxl
 try:
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
+    OPENPYXL_AVAILABLE = True
 except ImportError:
-    openpyxl = None
+    OPENPYXL_AVAILABLE = False
 
 app = Flask(__name__)
 app.secret_key = "counselscope_world_class_crm_2026_secret"
@@ -365,7 +366,6 @@ def update_lead():
         if not target_lead:
             return jsonify({"status": "error", "message": "Lead not found"}), 404
 
-        # Update all comprehensive lead/student fields
         target_lead['student_name'] = form_data.get('student_name', target_lead.get('student_name'))
         target_lead['father_name'] = form_data.get('father_name', target_lead.get('father_name', ''))
         target_lead['contact_number'] = form_data.get('contact_number', target_lead.get('contact_number'))
@@ -440,7 +440,6 @@ def convert_to_student():
         return jsonify({"status": "error", "message": "Lead not found"}), 404
         
     students = load_data(STUDENTS_FILE)
-    # Check if already converted
     for s in students:
         if s.get('original_lead_id') == lead_id:
             return jsonify({"status": "success", "message": "Lead is already converted to student."})
@@ -453,7 +452,6 @@ def convert_to_student():
     students.append(new_student)
     save_data(STUDENTS_FILE, students)
     
-    # Update lead status
     target_lead['status'] = 'Converted to Student'
     save_data(DATA_FILE, leads)
     
@@ -510,6 +508,73 @@ def update_student():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/delete-selected-students', methods=['POST'])
+def delete_selected_students():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    data = request.json or {}
+    ids = data.get('student_ids', [])
+    students = load_data(STUDENTS_FILE)
+    new_students = [s for s in students if s.get('student_id') not in ids]
+    save_data(STUDENTS_FILE, new_students)
+    log_activity("Delete Students", f"Admin deleted {len(ids)} student record(s).")
+    return jsonify({"status": "success", "message": "Selected student records deleted successfully."})
+
+
+@app.route('/api/delete-selected-leads', methods=['POST'])
+def delete_selected_leads():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    data = request.json or {}
+    ids = data.get('lead_ids', [])
+    leads = load_data(DATA_FILE)
+    for l in leads:
+        if l.get('id') in ids:
+            l['is_deleted'] = True
+    save_data(DATA_FILE, leads)
+    log_activity("Delete Leads", f"Admin moved {len(ids)} lead(s) to Trash Bin.")
+    return jsonify({"status": "success", "message": "Selected leads moved to Trash Bin."})
+
+
+@app.route('/api/delete-selected-colleges', methods=['POST'])
+def delete_selected_colleges():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    data = request.json or {}
+    ids = data.get('college_ids', [])
+    colleges = load_data(COLLEGES_FILE)
+    new_colleges = [c for c in colleges if c.get('id') not in ids]
+    save_data(COLLEGES_FILE, new_colleges)
+    log_activity("Delete Colleges", f"Admin deleted {len(ids)} college record(s).")
+    return jsonify({"status": "success", "message": "Selected college records deleted."})
+
+
+@app.route('/api/delete-selected-history', methods=['POST'])
+def delete_selected_history():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    data = request.json or {}
+    ids = data.get('history_ids', [])
+    history = load_data(HISTORY_FILE)
+    new_hist = [h for h in history if h.get('id') not in ids]
+    save_data(HISTORY_FILE, new_hist)
+    log_activity("Delete Work History", f"Admin deleted {len(ids)} work history entry/entries.")
+    return jsonify({"status": "success", "message": "Selected work history records deleted."})
+
+
+@app.route('/api/delete-selected-logs', methods=['POST'])
+def delete_selected_logs():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    data = request.json or {}
+    ids = data.get('log_ids', [])
+    logs = load_data(LOGIN_LOGS_FILE)
+    new_logs = [l for l in logs if l.get('id') not in ids]
+    save_data(LOGIN_LOGS_FILE, new_logs)
+    log_activity("Delete Login Logs", f"Admin deleted {len(ids)} login log entry/entries.")
+    return jsonify({"status": "success", "message": "Selected login activity logs deleted."})
+
+
 @app.route('/api/get-logs', methods=['GET'])
 def get_logs_api():
     if not session.get('logged_in'):
@@ -523,111 +588,10 @@ def get_logs_api():
 def clear_logs():
     if not session.get('logged_in') or session.get('role') != 'Admin':
         return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    
     save_data(LOGIN_LOGS_FILE, [])
     log_activity("Clear Logs", f"Admin {session.get('username')} cleared all login activity logs.")
     return jsonify({"status": "success", "message": "All login logs cleared successfully."})
 
-
-@app.route('/api/delete-logs-range', methods=['POST'])
-def delete_logs_range():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    
-    data = request.json or {}
-    date_val = data.get('date')
-    from_date = data.get('from_date')
-    to_date = data.get('to_date')
-    
-    logs = load_data(LOGIN_LOGS_FILE)
-    new_logs = []
-    for l in logs:
-        ldate = l.get('login_date', '')
-        keep = True
-        if date_val and ldate == date_val:
-            keep = False
-        if from_date and to_date and (from_date <= ldate <= to_date):
-            keep = False
-        if keep:
-            new_logs.append(l)
-            
-    save_data(LOGIN_LOGS_FILE, new_logs)
-    log_activity("Delete Logs", f"Admin deleted login logs by filter")
-    return jsonify({"status": "success", "message": "Selected login logs deleted successfully."})
-
-
-@app.route('/api/delete-history-range', methods=['POST'])
-def delete_history_range():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    
-    data = request.json or {}
-    date_val = data.get('date')
-    from_date = data.get('from_date')
-    to_date = data.get('to_date')
-    
-    history = load_data(HISTORY_FILE)
-    new_hist = []
-    for h in history:
-        hdate = h.get('date', '')
-        keep = True
-        if date_val and hdate == date_val:
-            keep = False
-        if from_date and to_date and (from_date <= hdate <= to_date):
-            keep = False
-        if keep:
-            new_hist.append(h)
-            
-    save_data(HISTORY_FILE, new_hist)
-    log_activity("Delete Work History", f"Admin deleted work history records")
-    return jsonify({"status": "success", "message": "Selected work history records deleted successfully."})
-
-
-@app.route('/api/delete-college-range', methods=['POST'])
-def delete_college_range():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    
-    data = request.json or {}
-    college_id = data.get('college_id')
-    
-    colleges = load_data(COLLEGES_FILE)
-    colleges = [c for c in colleges if c.get('id') != college_id]
-    save_data(COLLEGES_FILE, colleges)
-    log_activity("Delete College", f"Admin deleted college tie-up #{college_id}")
-    return jsonify({"status": "success", "message": "College record deleted successfully."})
-
-
-@app.route('/api/delete-lead-range', methods=['POST'])
-def delete_lead_range():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    
-    data = request.json or {}
-    lead_id = data.get('lead_id')
-    date_val = data.get('date')
-    from_date = data.get('from_date')
-    to_date = data.get('to_date')
-    
-    leads = load_data(DATA_FILE)
-    if lead_id:
-        for l in leads:
-            if l.get('id') == lead_id:
-                l['is_deleted'] = True
-    elif date_val or (from_date and to_date):
-        for l in leads:
-            ldate = l.get('created_date', '')
-            if date_val and ldate == date_val:
-                l['is_deleted'] = True
-            if from_date and to_date and (from_date <= ldate <= to_date):
-                l['is_deleted'] = True
-                
-    save_data(DATA_FILE, leads)
-    log_activity("Delete Leads", f"Admin moved lead records to trash by filter")
-    return jsonify({"status": "success", "message": "Selected lead records moved to trash successfully."})
-
-
-# --- TRASH BIN SPECIFIC DELETE & DOWNLOAD ENDPOINTS ---
 
 @app.route('/api/trash/delete-permanent', methods=['POST'])
 def trash_permanent_delete():
@@ -635,7 +599,6 @@ def trash_permanent_delete():
         return jsonify({"error": "Unauthorized. Admin access required."}), 403
     data = request.json or {}
     lead_ids = data.get('lead_ids', [])
-    
     leads = load_data(DATA_FILE)
     new_leads = [l for l in leads if l.get('id') not in lead_ids]
     save_data(DATA_FILE, new_leads)
@@ -688,86 +651,197 @@ def trash_download():
     return resp
 
 
-@app.route('/api/change-password', methods=['POST'])
-def change_password():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    
-    data = request.json or request.form
-    target_user = data.get('target_user')
-    new_password = data.get('new_password')
-    confirm_password = data.get('confirm_password')
-    
-    if not target_user or not new_password or not confirm_password:
-        return jsonify({"status": "error", "message": "All fields are required."}), 400
-        
-    if new_password != confirm_password:
-        return jsonify({"status": "error", "message": "New passwords do not match."}), 400
-        
-    users = load_users()
-    if target_user not in users:
-        return jsonify({"status": "error", "message": "Target user not found."}), 404
-        
-    users[target_user]['password'] = generate_password_hash(new_password)
-    save_data(USERS_FILE, users)
-    log_activity("Password Changed", f"Admin changed password for user: {target_user}")
-    
-    return jsonify({"status": "success", "message": f"Password for {target_user} updated successfully."})
+# --- FULL CRM EXCEL & PDF EXPORT ENDPOINTS ---
 
-
-# --- PDF EXPORT ENDPOINTS ---
-
-@app.route('/api/export-logs-pdf', methods=['GET'])
-def export_logs_pdf():
+@app.route('/api/export-full-excel', methods=['GET'])
+def export_full_excel():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-        
+
+    if not OPENPYXL_AVAILABLE:
+        return "openpyxl library not installed on server.", 500
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active) # Remove default sheet
+
+    header_fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+
+    # 1. Dashboard Summary Sheet
+    ws_dash = wb.create_sheet(title="Dashboard Summary")
+    leads = load_data(DATA_FILE)
+    active_leads = [l for l in leads if not l.get('is_deleted')]
+    students = load_data(STUDENTS_FILE)
+    colleges = load_data(COLLEGES_FILE)
+
+    dash_data = [
+        ["CounselScope CRM Executive Summary", ""],
+        ["Generated On", datetime.now().strftime('%d %b %Y, %I:%M %p')],
+        ["Metric", "Value"],
+        ["Total Active Leads", len(active_leads)],
+        ["Registered Students", len(students)],
+        ["Partner Colleges", len(colleges)],
+        ["Contacted Leads", len([l for l in active_leads if l.get('status') == 'Contacted'])],
+        ["New Leads", len([l for l in active_leads if l.get('status') == 'New Lead'])]
+    ]
+    for row in dash_data:
+        ws_dash.append(row)
+
+    # 2. All Leads Sheet
+    ws_leads = wb.create_sheet(title="All Leads")
+    ws_leads.append(["ID", "Student Name", "Father Name", "Contact", "Email", "Assigned College", "Status", "Course Details", "Budget"])
+    for cell in ws_leads[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for l in active_leads:
+        ws_leads.append([l.get('id'), l.get('student_name'), l.get('father_name',''), l.get('contact_number'), l.get('student_email'), l.get('assigned_college','None'), l.get('status'), l.get('course_details',''), l.get('budget','')])
+
+    # 3. Students Sheet
+    ws_students = wb.create_sheet(title="Students")
+    ws_students.append(["Student ID", "Original Lead ID", "Student Name", "Contact", "Email", "Assigned College", "Course Details", "Converted At"])
+    for cell in ws_students[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for s in students:
+        ws_students.append([s.get('student_id'), s.get('original_lead_id'), s.get('student_name'), s.get('contact_number'), s.get('student_email'), s.get('assigned_college','Not Assigned'), s.get('course_details',''), s.get('converted_at','')])
+
+    # 4. Colleges Sheet
+    ws_colleges = wb.create_sheet(title="College Management")
+    ws_colleges.append(["ID", "College Name", "Location", "Courses Offered", "Avg Package"])
+    for cell in ws_colleges[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for c in colleges:
+        ws_colleges.append([c.get('id'), c.get('college_name'), c.get('location'), c.get('courses'), c.get('package')])
+
+    # 5. Work History Sheet
+    ws_history = wb.create_sheet(title="Work History")
+    ws_history.append(["ID", "Username", "Role", "Date", "Time", "Action Type", "Details"])
+    for cell in ws_history[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for h in load_data(HISTORY_FILE):
+        ws_history.append([h.get('id'), h.get('username','Admin'), h.get('role','Admin'), h.get('date'), h.get('time'), h.get('action_type'), h.get('details')])
+
+    # 6. Login Activity Logs Sheet
+    ws_logs = wb.create_sheet(title="Activity Logs")
+    ws_logs.append(["ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status"])
+    for cell in ws_logs[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for log in load_data(LOGIN_LOGS_FILE):
+        ws_logs.append([log.get('id'), log.get('username'), log.get('role'), log.get('ip_address'), log.get('browser'), log.get('os'), log.get('location'), log.get('login_time'), log.get('logout_time'), log.get('status')])
+
+    # Auto adjust column widths across all sheets
+    for sheet in wb.worksheets:
+        for col in sheet.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            sheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='CounselScope_Complete_CRM_Export.xlsx')
+
+
+@app.route('/api/export-full-pdf', methods=['GET'])
+def export_full_pdf():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
+    students = load_data(STUDENTS_FILE)
+    colleges = load_data(COLLEGES_FILE)
+    history = load_data(HISTORY_FILE)
     logs = load_data(LOGIN_LOGS_FILE)
-    date_filter = request.args.get('date')
-    from_date = request.args.get('from_date')
-    to_date = request.args.get('to_date')
-    
-    filtered = []
-    for l in logs:
-        ldate = l.get('login_date', '')
-        if date_filter and ldate != date_filter:
-            continue
-        if from_date and to_date and not (from_date <= ldate <= to_date):
-            continue
-        filtered.append(l)
-        
+
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <title>Login Activity Report</title>
+        <title>CounselScope Full CRM Executive PDF Report</title>
         <style>
-            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
-            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
-            .filter-info {{ font-size: 12px; color: #64748b; margin-bottom: 15px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
-            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
-            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
+            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; line-height: 1.4; }}
+            h1 {{ color: #2563eb; font-size: 24px; border-bottom: 3px solid #2563eb; padding-bottom: 8px; margin-bottom: 5px; }}
+            h2 {{ color: #0f172a; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 4px; margin-top: 30px; margin-bottom: 12px; page-break-before: always; }}
+            h2:first-of-type {{ page-break-before: avoid; }}
+            .summary-box {{ background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 20px; flex-wrap: wrap; }}
+            .stat-item {{ font-size: 13px; }}
+            .stat-item strong {{ color: #2563eb; font-size: 16px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10.5px; page-break-inside: auto; }}
+            tr {{ page-break-inside: avoid; page-break-after: auto; }}
+            th {{ background: #0f172a; color: white; padding: 7px; text-align: left; }}
+            td {{ padding: 6px; border-bottom: 1px solid #cbd5e1; }}
         </style>
     </head>
     <body>
-        <h1>CounselScope CRM - Login Activity Report</h1>
-        <div class="filter-info">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
+        <h1>CounselScope CRM - Complete System PDF Report</h1>
+        <p style="font-size: 12px; color: #64748b; margin-bottom: 20px;">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</p>
+
+        <div class="summary-box">
+            <div class="stat-item">Total Leads: <strong>{len(leads)}</strong></div>
+            <div class="stat-item">Registered Students: <strong>{len(students)}</strong></div>
+            <div class="stat-item">Partner Colleges: <strong>{len(colleges)}</strong></div>
+            <div class="stat-item">Activity Records: <strong>{len(history)}</strong></div>
+        </div>
+
+        <h2>1. Registered Students Directory</h2>
         <table>
-            <thead>
-                <tr><th>ID</th><th>Username</th><th>Role</th><th>IP Address</th><th>Browser / OS</th><th>Location</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr>
-            </thead>
+            <thead><tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Assigned College</th><th>Course</th></tr></thead>
             <tbody>
-                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('username')}</strong></td><td>{l.get('role')}</td><td>{l.get('ip_address')}</td><td>{l.get('browser')} / {l.get('os')}</td><td>{l.get('location')}</td><td>{l.get('login_time')}</td><td>{l.get('logout_time')}</td><td>{l.get('status')}</td></tr>" for l in filtered])}
+                {''.join([f"<tr><td>#{s.get('student_id')}</td><td><strong>{s.get('student_name')}</strong></td><td>{s.get('contact_number')}</td><td>{s.get('student_email')}</td><td>{s.get('assigned_college','Not Assigned')}</td><td>{s.get('course_details','N/A')}</td></tr>" for s in students]) if students else "<tr><td colspan='6'>No student records found.</td></tr>"}
             </tbody>
         </table>
+
+        <h2>2. Active Leads Directory</h2>
+        <table>
+            <thead><tr><th>#ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Assigned College</th><th>Status</th></tr></thead>
+            <tbody>
+                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('assigned_college','None')}</td><td>{l.get('status')}</td></tr>" for l in leads])}
+            </tbody>
+        </table>
+
+        <h2>3. Partner Colleges Directory</h2>
+        <table>
+            <thead><tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr></thead>
+            <tbody>
+                {''.join([f"<tr><td>#{c.get('id')}</td><td><strong>{c.get('college_name')}</strong></td><td>{c.get('location')}</td><td>{c.get('courses')}</td><td>{c.get('package')}</td></tr>" for c in colleges])}
+            </tbody>
+        </table>
+
+        <h2>4. Work History & Activity Logs</h2>
+        <table>
+            <thead><tr><th>User</th><th>Role</th><th>Date & Time</th><th>Action Type</th><th>Details</th></tr></thead>
+            <tbody>
+                {''.join([f"<tr><td>{h.get('username','Admin')}</td><td>{h.get('role','Admin')}</td><td>{h.get('date')} {h.get('time')}</td><td><strong>{h.get('action_type')}</strong></td><td>{h.get('details')}</td></tr>" for h in history[-25:]])}
+            </tbody>
+        </table>
+
         <script>window.onload = function() {{ window.print(); }}</script>
     </body>
     </html>
     """
     resp = make_response(html)
-    resp.headers["Content-Disposition"] = "inline; filename=Login_Activity_Report.html"
+    resp.headers["Content-Disposition"] = "inline; filename=CounselScope_Complete_CRM_Report.html"
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    return resp
+
+
+@app.route('/api/export-logs-pdf', methods=['GET'])
+def export_logs_pdf():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+    logs = load_data(LOGIN_LOGS_FILE)
+    html = f"""
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Login Activity Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
+    <body><h1>CounselScope CRM - Login Activity Report</h1><table><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>IP Address</th><th>Browser / OS</th><th>Location</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr></thead><tbody>
+    {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('username')}</strong></td><td>{l.get('role')}</td><td>{l.get('ip_address')}</td><td>{l.get('browser')} / {l.get('os')}</td><td>{l.get('location')}</td><td>{l.get('login_time')}</td><td>{l.get('logout_time')}</td><td>{l.get('status')}</td></tr>" for l in logs])}
+    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
+    """
+    resp = make_response(html)
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     return resp
 
@@ -776,51 +850,14 @@ def export_logs_pdf():
 def export_history_pdf():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-        
     history = load_data(HISTORY_FILE)
-    date_filter = request.args.get('date')
-    from_date = request.args.get('from_date')
-    to_date = request.args.get('to_date')
-    
-    filtered = []
-    for h in history:
-        hdate = h.get('date', '')
-        if date_filter and hdate != date_filter:
-            continue
-        if from_date and to_date and not (from_date <= hdate <= to_date):
-            continue
-        filtered.append(h)
-        
     html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Work History Report</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
-            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
-            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
-            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
-        </style>
-    </head>
-    <body>
-        <h1>CounselScope CRM - Work History Report</h1>
-        <table>
-            <thead>
-                <tr><th>ID</th><th>User</th><th>Role</th><th>Date / Time</th><th>Action Type</th><th>Details</th></tr>
-            </thead>
-            <tbody>
-                {''.join([f"<tr><td>#{h.get('id')}</td><td>{h.get('username','Admin')}</td><td>{h.get('role','Admin')}</td><td>{h.get('date')} {h.get('time')}</td><td><strong>{h.get('action_type')}</strong></td><td>{h.get('details')}</td></tr>" for h in filtered])}
-            </tbody>
-        </table>
-        <script>window.onload = function() {{ window.print(); }}</script>
-    </body>
-    </html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Work History Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
+    <body><h1>CounselScope CRM - Work History Report</h1><table><thead><tr><th>ID</th><th>User</th><th>Role</th><th>Date / Time</th><th>Action Type</th><th>Details</th></tr></thead><tbody>
+    {''.join([f"<tr><td>#{h.get('id')}</td><td>{h.get('username','Admin')}</td><td>{h.get('role','Admin')}</td><td>{h.get('date')} {h.get('time')}</td><td><strong>{h.get('action_type')}</strong></td><td>{h.get('details')}</td></tr>" for h in history])}
+    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
     """
     resp = make_response(html)
-    resp.headers["Content-Disposition"] = "inline; filename=Work_History_Report.html"
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     return resp
 
@@ -829,38 +866,14 @@ def export_history_pdf():
 def export_college_pdf():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-        
     colleges = load_data(COLLEGES_FILE)
     html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>College Directory Report</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
-            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
-            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
-            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
-        </style>
-    </head>
-    <body>
-        <h1>CounselScope CRM - College Directory Report</h1>
-        <table>
-            <thead>
-                <tr><th>ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr>
-            </thead>
-            <tbody>
-                {''.join([f"<tr><td>#{c.get('id')}</td><td><strong>{c.get('college_name')}</strong></td><td>{c.get('location')}</td><td>{c.get('courses')}</td><td>{c.get('package')}</td></tr>" for c in colleges])}
-            </tbody>
-        </table>
-        <script>window.onload = function() {{ window.print(); }}</script>
-    </body>
-    </html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>College Directory Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
+    <body><h1>CounselScope CRM - College Directory Report</h1><table><thead><tr><th>ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr></thead><tbody>
+    {''.join([f"<tr><td>#{c.get('id')}</td><td><strong>{c.get('college_name')}</strong></td><td>{c.get('location')}</td><td>{c.get('courses')}</td><td>{c.get('package')}</td></tr>" for c in colleges])}
+    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
     """
     resp = make_response(html)
-    resp.headers["Content-Disposition"] = "inline; filename=College_Directory_Report.html"
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     return resp
 
@@ -869,38 +882,14 @@ def export_college_pdf():
 def export_leads_pdf():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-        
     leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
     html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Student Leads Report</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; }}
-            h1 {{ color: #2563eb; font-size: 22px; border-bottom: 2px solid #2563eb; padding-bottom: 6px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }}
-            th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }}
-            td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}
-        </style>
-    </head>
-    <body>
-        <h1>CounselScope CRM - Student Leads Report</h1>
-        <table>
-            <thead>
-                <tr><th>ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>College</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('assigned_college','None')}</td><td>{l.get('status')}</td></tr>" for l in leads])}
-            </tbody>
-        </table>
-        <script>window.onload = function() {{ window.print(); }}</script>
-    </body>
-    </html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Student Leads Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
+    <body><h1>CounselScope CRM - Student Leads Report</h1><table><thead><tr><th>ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>College</th><th>Status</th></tr></thead><tbody>
+    {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('assigned_college','None')}</td><td>{l.get('status')}</td></tr>" for l in leads])}
+    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
     """
     resp = make_response(html)
-    resp.headers["Content-Disposition"] = "inline; filename=Student_Leads_Report.html"
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     return resp
 
@@ -909,11 +898,9 @@ def export_leads_pdf():
 def download_document(filename):
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    
     if GITHUB_REPO:
         raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
         return redirect(raw_github_url)
-    
     return "GitHub repository configuration missing.", 400
 
 
@@ -939,8 +926,8 @@ def update_status():
 
 @app.route('/api/delete-lead', methods=['POST'])
 def delete_lead():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
     data = request.json or {}
     lead_id = data.get('lead_id')
     
@@ -971,29 +958,11 @@ def restore_lead():
     return jsonify({"status": "success"})
 
 
-@app.route('/api/permanent-delete', methods=['POST'])
-def permanent_delete():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-    data = request.json or {}
-    lead_id = data.get('lead_id')
-    
-    leads = load_data(DATA_FILE)
-    leads = [l for l in leads if l['id'] != lead_id]
-    save_data(DATA_FILE, leads)
-    log_activity("Permanent Delete", f"Permanently deleted lead #{lead_id}")
-    return jsonify({"status": "success"})
-
-
 @app.route('/api/get-history', methods=['GET'])
 def get_history_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    date_filter = request.args.get('date')
-    history = load_data(HISTORY_FILE)
-    if date_filter:
-        history = [h for h in history if h.get('date') == date_filter]
-    return jsonify(history)
+    return jsonify(load_data(HISTORY_FILE))
 
 
 @app.route('/api/log-action', methods=['POST'])
@@ -1014,8 +983,8 @@ def get_colleges():
 
 @app.route('/api/add-college', methods=['POST'])
 def add_college():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
     data = request.json or {}
     colleges = load_data(COLLEGES_FILE)
     new_c = {
@@ -1289,6 +1258,11 @@ MAIN_DASHBOARD_HTML = """
                         <h1 id="timeGreeting">Good Morning {{ username | title }}</h1>
                         <p>Welcome to your CounselScope CRM. Track dynamic leads, converted students, follow-up recalls, and admissions in real-time.</p>
                     </div>
+                    <!-- RESTORED COMPLETE CRM EXPORT BUTTONS ON DASHBOARD -->
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <a href="/api/export-full-excel" style="background:#16a34a; color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; text-decoration:none; font-size:13px; display:inline-flex; align-items:center; gap:8px;"><i class="fa-solid fa-file-excel"></i> Export Complete Excel</a>
+                        <a href="/api/export-full-pdf" target="_blank" style="background:#dc2626; color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; text-decoration:none; font-size:13px; display:inline-flex; align-items:center; gap:8px;"><i class="fa-solid fa-file-pdf"></i> Export Complete PDF</a>
+                    </div>
                 </div>
 
                 <div class="metrics-grid" style="margin-bottom: 25px;">
@@ -1330,7 +1304,7 @@ MAIN_DASHBOARD_HTML = """
                                         <th>Email</th>
                                         <th>ID Doc</th>
                                         <th>Status</th>
-                                        <th>Action</th>
+                                        {% if role == 'Admin' %}<th>Action</th>{% endif %}
                                     </tr>
                                 </thead>
                                 <tbody id="recentLeadsTbody"></tbody>
@@ -1350,8 +1324,11 @@ MAIN_DASHBOARD_HTML = """
                     <div class="card-header">
                         <h3><i class="fa-solid fa-users"></i> All Leads Management</h3>
                     </div>
-                    <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
                         <button onclick="downloadLeadsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download Leads PDF</button>
+                        {% if role == 'Admin' %}
+                        <button onclick="deleteSelectedLeads()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Leads</button>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -1361,6 +1338,7 @@ MAIN_DASHBOARD_HTML = """
                         <table>
                             <thead>
                                 <tr>
+                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('leads', this)"></th>{% endif %}
                                     <th>#ID</th>
                                     <th>Student Name</th>
                                     <th>Contact</th>
@@ -1381,7 +1359,12 @@ MAIN_DASHBOARD_HTML = """
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header">
                         <h3><i class="fa-solid fa-user-graduate"></i> Registered Students Tab</h3>
-                        <p style="font-size: 13px; color: var(--text-muted);">Students who have successfully transitioned from leads.</p>
+                    </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                        <button onclick="downloadStudentsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download Students PDF</button>
+                        {% if role == 'Admin' %}
+                        <button onclick="deleteSelectedStudents()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Students</button>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="card">
@@ -1390,6 +1373,7 @@ MAIN_DASHBOARD_HTML = """
                         <table>
                             <thead>
                                 <tr>
+                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('students', this)"></th>{% endif %}
                                     <th>#ID</th>
                                     <th>Student Name</th>
                                     <th>Contact</th>
@@ -1400,7 +1384,7 @@ MAIN_DASHBOARD_HTML = """
                                 </tr>
                             </thead>
                             <tbody id="studentsTbody">
-                                <tr><td colspan="7" style="text-align:center; color:#94a3b8;">No registered students yet. Convert leads from All Leads tab.</td></tr>
+                                <tr><td colspan="8" style="text-align:center; color:#94a3b8;">No registered students yet. Convert leads from All Leads tab.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -1409,15 +1393,24 @@ MAIN_DASHBOARD_HTML = """
 
             <!-- WORK HISTORY TAB -->
             <div id="history-tab" class="tab-section">
-                <div class="card">
+                <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header">
                         <h3><i class="fa-solid fa-clock-rotate-left"></i> Synchronized Activity Logs & Work History</h3>
-                        <button onclick="downloadHistoryPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download PDF Report</button>
                     </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                        <button onclick="downloadHistoryPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download Work History PDF</button>
+                        {% if role == 'Admin' %}
+                        <button onclick="deleteSelectedHistory()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Work History</button>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3>Activity Records</h3></div>
                     <div style="overflow-x: auto;">
                         <table>
                             <thead>
                                 <tr>
+                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('history', this)"></th>{% endif %}
                                     <th>User</th>
                                     <th>Role</th>
                                     <th>Date & Time</th>
@@ -1446,18 +1439,38 @@ MAIN_DASHBOARD_HTML = """
                 </div>
                 {% endif %}
 
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header"><h3>College Directory Export & Management</h3></div>
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                        <button onclick="downloadCollegePDF()" style="background: #dc2626; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download College PDF</button>
+                        {% if role == 'Admin' %}
+                        <button onclick="deleteSelectedColleges()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Colleges</button>
+                        {% endif %}
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header"><h3>Partner Colleges List</h3></div>
                     <div style="overflow-x: auto;">
                         <table>
-                            <thead><tr><th>#ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th>{% if role == 'Admin' %}<th>Action</th>{% endif %}</tr></thead>
+                            <thead>
+                                <tr>
+                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('colleges', this)"></th>{% endif %}
+                                    <th>#ID</th>
+                                    <th>College Name</th>
+                                    <th>Location</th>
+                                    <th>Courses Offered</th>
+                                    <th>Avg Package</th>
+                                    {% if role == 'Admin' %}<th>Action</th>{% endif %}
+                                </tr>
+                            </thead>
                             <tbody id="collegesTbody"></tbody>
                         </table>
                     </div>
                 </div>
             </div>
 
-            <!-- TRASH BIN TAB (WITH PERMANENT DELETE AND DOWNLOAD CHECKBOXES) -->
+            <!-- TRASH BIN TAB -->
             <div id="trash-tab" class="tab-section">
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"><h3 style="color: #ef4444;"><i class="fa-solid fa-trash-can"></i> Trash Bin Management</h3></div>
@@ -1493,35 +1506,20 @@ MAIN_DASHBOARD_HTML = """
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"><h3><i class="fa-solid fa-gear"></i> System Settings & Login Activity Logs</h3></div>
                     
-                    {% if role == 'Admin' %}
-                    <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px;">
-                        <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-dark);"><i class="fa-solid fa-key"></i> Password Management (Admin Only)</h4>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 15px;">
-                            <div>
-                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Select User Account</label>
-                                <select id="targetUser" class="form-control" style="margin:0;">
-                                    <option value="admin">Admin Account</option>
-                                    <option value="client">Client Account</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">New Password</label>
-                                <input type="password" id="newPassword" placeholder="Enter new password" class="form-control" style="margin:0;">
-                            </div>
-                            <div>
-                                <label style="font-size: 11.5px; font-weight: 600; color: #475569;">Confirm New Password</label>
-                                <input type="password" id="confirmPassword" placeholder="Confirm new password" class="form-control" style="margin:0;">
-                            </div>
-                        </div>
-                        <button onclick="updatePassword()" style="background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-floppy-disk" style="margin-right: 5px;"></i> Save Updated Password</button>
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px;">
+                        <button onclick="downloadLogsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Export Activity Logs PDF</button>
+                        {% if role == 'Admin' %}
+                        <button onclick="deleteSelectedLogs()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Logs</button>
+                        <button onclick="clearAllLogs()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-dumpster"></i> Clear All Logs</button>
+                        {% endif %}
                     </div>
-                    {% endif %}
 
                     <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--text-dark);"><i class="fa-solid fa-list-check"></i> Complete Login Activity Logs</h4>
                     <div style="overflow-x: auto; max-height: 480px;">
                         <table>
                             <thead>
                                 <tr>
+                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('logs', this)"></th>{% endif %}
                                     <th>#ID</th>
                                     <th>Username</th>
                                     <th>Role</th>
@@ -1534,7 +1532,7 @@ MAIN_DASHBOARD_HTML = """
                                 </tr>
                             </thead>
                             <tbody id="settingsLogsTbody">
-                                <tr><td colspan="9" style="text-align:center; color:#94a3b8;">Loading logs...</td></tr>
+                                <tr><td colspan="10" style="text-align:center; color:#94a3b8;">Loading logs...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -1555,7 +1553,7 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
-    <!-- COMPREHENSIVE EDIT LEAD MODAL WITH "ADD COLLEGE" BUTTON -->
+    <!-- COMPREHENSIVE EDIT LEAD MODAL -->
     <div id="editModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 680px;">
             <span class="close-modal" onclick="closeEditModal()">&times;</span>
@@ -1625,7 +1623,6 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
 
-                <!-- ADD COLLEGE BUTTON & DROPDOWN INSIDE EDIT FORM -->
                 <div style="background: #f8fafc; padding: 14px; border-radius: 10px; border: 1px solid #cbd5e1; margin-top: 15px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <label style="font-size: 13px; font-weight: 700; color: #1e293b; margin:0;"><i class="fa-solid fa-building-columns" style="color:#2563eb; margin-right:5px;"></i> College Assignment</label>
@@ -1699,6 +1696,7 @@ MAIN_DASHBOARD_HTML = """
         let rawStudentsData = [];
         let collegesData = [];
         let pieChartInstance = null;
+        const userRole = "{{ role }}";
 
         function toggleSidebar() {
             document.getElementById('sidebarNav').classList.toggle('show');
@@ -1741,6 +1739,10 @@ MAIN_DASHBOARD_HTML = """
             }
         }
 
+        function toggleSelectAll(section, masterCb) {
+            document.querySelectorAll(`.${section}-checkbox`).forEach(cb => cb.checked = masterCb.checked);
+        }
+
         async function fetchLeadsData() {
             try {
                 const res = await fetch('/api/get-leads');
@@ -1770,13 +1772,15 @@ MAIN_DASHBOARD_HTML = """
                     const logs = await res.json();
                     tbody.innerHTML = '';
                     if(logs.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#94a3b8;">No login activity logs available.</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#94a3b8;">No login activity logs available.</td></tr>`;
                         return;
                     }
                     logs.forEach(log => {
                         const statusBadge = log.status === 'Active' ? '<span class="badge-status badge-closed">Active</span>' : (log.status === 'Failed' ? '<span class="badge-status badge-rejected">Failed</span>' : '<span class="badge-status badge-contacted">Logged Out</span>');
+                        const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="logs-checkbox" value="${log.id}"></td>` : '';
                         tbody.innerHTML += `
                             <tr>
+                                ${cbHtml}
                                 <td>#${log.id}</td>
                                 <td><strong>${log.username}</strong></td>
                                 <td><span class="badge-status badge-followup">${log.role || 'N/A'}</span></td>
@@ -1791,7 +1795,7 @@ MAIN_DASHBOARD_HTML = """
                     });
                 }
             } catch(e) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#ef4444;">Failed to load logs.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#ef4444;">Failed to load logs.</td></tr>`;
             }
         }
 
@@ -1802,12 +1806,14 @@ MAIN_DASHBOARD_HTML = """
                 const tbody = document.getElementById('historyTbody');
                 tbody.innerHTML = '';
                 if(history.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#94a3b8;">No activity logged yet.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No activity logged yet.</td></tr>`;
                     return;
                 }
                 history.reverse().forEach(item => {
+                    const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="history-checkbox" value="${item.id}"></td>` : '';
                     tbody.innerHTML += `
                         <tr>
+                            ${cbHtml}
                             <td><strong>${item.username || 'Admin'}</strong></td>
                             <td><span class="badge-status badge-followup">${item.role || 'Admin'}</span></td>
                             <td><strong style="color:#2563eb;">${item.date} ${item.time}</strong></td>
@@ -1827,13 +1833,12 @@ MAIN_DASHBOARD_HTML = """
                 tbody.innerHTML = '';
                 collegesData.forEach(c => {
                     let actionHtml = '';
-                    {% if role == 'Admin' %}
-                    actionHtml = `<td><button onclick="deleteCollegeRecord(${c.id})" class="action-icon-btn trash-btn"><i class="fa-solid fa-trash-can"></i></button></td>`;
-                    {% endif %}
-                    tbody.innerHTML += `<tr><td>#${c.id}</td><td><strong>${c.college_name}</strong></td><td>${c.location}</td><td>${c.courses}</td><td>${c.package}</td>${actionHtml}</tr>`;
+                    const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="colleges-checkbox" value="${c.id}"></td>` : '';
+                    if(userRole === 'Admin') {
+                        actionHtml = `<td><button onclick="deleteCollegeRecord(${c.id})" class="action-icon-btn trash-btn"><i class="fa-solid fa-trash-can"></i></button></td>`;
+                    }
+                    tbody.innerHTML += `<tr>${cbHtml}<td>#${c.id}</td><td><strong>${c.college_name}</strong></td><td>${c.location}</td><td>${c.courses}</td><td>${c.package}</td>${actionHtml}</tr>`;
                 });
-                
-                // Populate college select dropdowns
                 populateCollegeDropdowns();
             }
         }
@@ -1875,13 +1880,13 @@ MAIN_DASHBOARD_HTML = """
 
         async function deleteCollegeRecord(id) {
             if(confirm("Are you sure you want to delete this college record?")) {
-                const res = await fetch('/api/delete-college-range', {
+                const res = await fetch('/api/delete-selected-colleges', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({college_id: id})
+                    body: JSON.stringify({college_ids: [id]})
                 });
                 if(res.ok) { alert('College deleted.'); fetchColleges(); }
-                else { alert('Unauthorized or error.'); }
+                else { alert('Unauthorized.'); }
             }
         }
 
@@ -1923,6 +1928,7 @@ MAIN_DASHBOARD_HTML = """
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
                 const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Details"><i class="fa-solid fa-eye"></i></button>`;
+                const deleteBtn = userRole === 'Admin' ? `<td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>` : '';
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
@@ -1938,7 +1944,7 @@ MAIN_DASHBOARD_HTML = """
                                 <option value="Rejected" ${lead.status==='Rejected'?'selected':''}>Rejected</option>
                             </select>
                         </td>
-                        <td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>
+                        ${deleteBtn}
                     </tr>
                 `;
             });
@@ -1954,12 +1960,14 @@ MAIN_DASHBOARD_HTML = """
             const tbody = document.getElementById('studentsTbody');
             tbody.innerHTML = '';
             if(students.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#94a3b8;">No registered students yet. Convert leads from All Leads tab.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#94a3b8;">No registered students yet. Convert leads from All Leads tab.</td></tr>`;
                 return;
             }
             students.slice().reverse().forEach(st => {
+                const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="students-checkbox" value="${st.student_id}"></td>` : '';
                 tbody.innerHTML += `
                     <tr>
+                        ${cbHtml}
                         <td>#${st.student_id}</td>
                         <td><strong>${st.student_name}</strong></td>
                         <td>${st.contact_number}</td>
@@ -1980,8 +1988,12 @@ MAIN_DASHBOARD_HTML = """
             leads.slice().reverse().forEach(lead => {
                 const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Details"><i class="fa-solid fa-eye"></i></button>`;
                 const convertBtn = `<button class="convert-btn" onclick="convertToStudent(${lead.id})"><i class="fa-solid fa-user-check"></i> Convert</button>`;
+                const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="leads-checkbox" value="${lead.id}"></td>` : '';
+                const deleteBtn = userRole === 'Admin' ? `<button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})" title="Delete Lead"><i class="fa-solid fa-trash-can"></i></button>` : '';
+                
                 allTbody.innerHTML += `
                     <tr>
+                        ${cbHtml}
                         <td>#${lead.id}</td>
                         <td><strong>${lead.student_name}</strong></td>
                         <td><a href="tel:${lead.contact_number}" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
@@ -1999,7 +2011,7 @@ MAIN_DASHBOARD_HTML = """
                         <td>
                             ${convertBtn}
                             <button class="action-icon-btn edit-btn" onclick='openEditModal(${JSON.stringify(lead)})' title="Edit All Fields"><i class="fa-solid fa-pen"></i></button>
-                            <button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})" title="Delete Lead"><i class="fa-solid fa-trash-can"></i></button>
+                            ${deleteBtn}
                         </td>
                     </tr>
                 `;
@@ -2037,7 +2049,7 @@ MAIN_DASHBOARD_HTML = """
                 alert('Please select at least one record from Trash Bin.');
                 return;
             }
-            if(confirm(`Are you sure you want to permanently delete ${selectedIds.length} selected records? This cannot be undone.`)) {
+            if(confirm(`Are you sure you want to permanently delete ${selectedIds.length} selected records?`)) {
                 const res = await fetch('/api/trash/delete-permanent', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -2047,7 +2059,7 @@ MAIN_DASHBOARD_HTML = """
                     alert('Selected records permanently deleted.');
                     fetchLeadsData();
                 } else {
-                    alert('Unauthorized or error.');
+                    alert('Unauthorized.');
                 }
             }
         }
@@ -2067,6 +2079,58 @@ MAIN_DASHBOARD_HTML = """
                 win.document.write(html);
                 win.document.close();
             });
+        }
+
+        async function deleteSelectedLeads() {
+            const selectedIds = Array.from(document.querySelectorAll('.leads-checkbox:checked')).map(cb => parseInt(cb.value));
+            if(selectedIds.length === 0) return alert('Select at least one lead.');
+            if(confirm(`Move ${selectedIds.length} leads to Trash Bin?`)) {
+                const res = await fetch('/api/delete-selected-leads', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lead_ids: selectedIds}) });
+                if(res.ok) fetchLeadsData(); else alert('Unauthorized.');
+            }
+        }
+
+        async function deleteSelectedStudents() {
+            const selectedIds = Array.from(document.querySelectorAll('.students-checkbox:checked')).map(cb => parseInt(cb.value));
+            if(selectedIds.length === 0) return alert('Select at least one student.');
+            if(confirm(`Delete ${selectedIds.length} student records?`)) {
+                const res = await fetch('/api/delete-selected-students', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({student_ids: selectedIds}) });
+                if(res.ok) fetchStudentsData(); else alert('Unauthorized.');
+            }
+        }
+
+        async function deleteSelectedColleges() {
+            const selectedIds = Array.from(document.querySelectorAll('.colleges-checkbox:checked')).map(cb => parseInt(cb.value));
+            if(selectedIds.length === 0) return alert('Select at least one college.');
+            if(confirm(`Delete ${selectedIds.length} college records?`)) {
+                const res = await fetch('/api/delete-selected-colleges', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({college_ids: selectedIds}) });
+                if(res.ok) fetchColleges(); else alert('Unauthorized.');
+            }
+        }
+
+        async function deleteSelectedHistory() {
+            const selectedIds = Array.from(document.querySelectorAll('.history-checkbox:checked')).map(cb => parseInt(cb.value));
+            if(selectedIds.length === 0) return alert('Select at least one history entry.');
+            if(confirm(`Delete ${selectedIds.length} history records?`)) {
+                const res = await fetch('/api/delete-selected-history', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({history_ids: selectedIds}) });
+                if(res.ok) fetchWorkHistory(); else alert('Unauthorized.');
+            }
+        }
+
+        async function deleteSelectedLogs() {
+            const selectedIds = Array.from(document.querySelectorAll('.logs-checkbox:checked')).map(cb => parseInt(cb.value));
+            if(selectedIds.length === 0) return alert('Select at least one log entry.');
+            if(confirm(`Delete ${selectedIds.length} login log entries?`)) {
+                const res = await fetch('/api/delete-selected-logs', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({log_ids: selectedIds}) });
+                if(res.ok) fetchSettingsLogs(); else alert('Unauthorized.');
+            }
+        }
+
+        async function clearAllLogs() {
+            if(confirm("Permanently clear all login activity logs?")) {
+                const res = await fetch('/api/clear-logs', { method: 'POST' });
+                if(res.ok) fetchSettingsLogs(); else alert('Unauthorized.');
+            }
         }
 
         async function convertToStudent(leadId) {
@@ -2214,7 +2278,10 @@ MAIN_DASHBOARD_HTML = """
         }
 
         function downloadLeadsPDF() { window.open('/api/export-leads-pdf', '_blank'); }
+        function downloadStudentsPDF() { window.open('/api/export-full-pdf', '_blank'); }
         function downloadHistoryPDF() { window.open('/api/export-history-pdf', '_blank'); }
+        function downloadCollegePDF() { window.open('/api/export-college-pdf', '_blank'); }
+        function downloadLogsPDF() { window.open('/api/export-logs-pdf', '_blank'); }
 
         function getBadgeClass(status) {
             if(status === 'New Lead') return 'badge-new';
@@ -2231,8 +2298,8 @@ MAIN_DASHBOARD_HTML = """
 
         async function deleteLead(id) {
             if(confirm("Move lead to Trash?")) {
-                await fetch('/api/delete-lead', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lead_id: id}) });
-                fetchLeadsData();
+                const res = await fetch('/api/delete-lead', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lead_id: id}) });
+                if(res.ok) fetchLeadsData(); else alert('Unauthorized.');
             }
         }
 
@@ -2269,24 +2336,6 @@ MAIN_DASHBOARD_HTML = """
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
             });
-        }
-
-        async function updatePassword() {
-            const targetUser = document.getElementById('targetUser').value;
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-            
-            if(!newPassword || newPassword !== confirmPassword) {
-                alert('Passwords do not match or are empty.');
-                return;
-            }
-            const res = await fetch('/api/change-password', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({target_user: targetUser, new_password: newPassword, confirm_password: confirmPassword})
-            });
-            if(res.ok) { alert('Password updated successfully!'); document.getElementById('newPassword').value=''; document.getElementById('confirmPassword').value=''; }
-            else { alert('Unauthorized.'); }
         }
 
         fetchLeadsData();
