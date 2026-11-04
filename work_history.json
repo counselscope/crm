@@ -226,5 +226,14 @@
         "time": "07:47:45 AM",
         "action_type": "Student Updated",
         "details": "Updated student profile for #1 (Prachi)"
+    },
+    {
+        "id": 31,
+        "username": "System",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "07:57:32 AM",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for lakaji (9874561230)"
     }
 ]
