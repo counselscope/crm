@@ -307,5 +307,14 @@
         "time": "09:14:01 AM",
         "action_type": "Moved to Trash",
         "details": "Moved lead #8 (raghav) to trash"
+    },
+    {
+        "id": 40,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "09:14:27 AM",
+        "action_type": "Delete Leads",
+        "details": "Admin moved 5 lead(s) to Trash Bin."
     }
 ]
