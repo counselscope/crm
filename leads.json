@@ -46,7 +46,7 @@
         "status": "New Lead",
         "score": 80,
         "notes": "Full Enquiry Form Submitted.",
-        "is_deleted": false,
+        "is_deleted": true,
         "created_at": "01 Nov 2026, 06:23 PM"
     },
     {
@@ -63,7 +63,7 @@
         "status": "Contacted",
         "score": 80,
         "notes": "Enquiry received with document saved.",
-        "is_deleted": false,
+        "is_deleted": true,
         "created_at": "02 Nov 2026, 05:18 AM"
     },
     {
@@ -80,7 +80,7 @@
         "status": "New Lead",
         "score": 80,
         "notes": "Enquiry received with document saved.",
-        "is_deleted": false,
+        "is_deleted": true,
         "created_at": "02 Nov 2026, 05:34 PM",
         "created_timestamp": 1793640842
     },
@@ -93,7 +93,7 @@
         "status": "Converted to Student",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
-        "is_deleted": false,
+        "is_deleted": true,
         "created_at": "03 Nov 2026, 05:20 PM",
         "created_timestamp": 1793726425.585259,
         "form_data": {
@@ -173,7 +173,7 @@
         "status": "New Lead",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
-        "is_deleted": false,
+        "is_deleted": true,
         "created_date": "2026-11-04",
         "created_at": "04 Nov 2026, 07:57 AM",
         "created_timestamp": 1793779051.389643,
