@@ -1268,7 +1268,7 @@ MAIN_DASHBOARD_HTML = """
         }
 
         @media (max-width: 900px) {
-            body { flex-direction: column; height: 100vh; overflow: hidden; }
+            body { flex-direction: column; height: 100vh; overflow-x: hidden; overflow-y: auto; }
             .sidebar { 
                 position: fixed; 
                 top: 0; 
@@ -1282,18 +1282,29 @@ MAIN_DASHBOARD_HTML = """
             }
             .sidebar.show { left: 0; }
             .menu-toggle-btn { display: block; }
-            .main-wrapper { height: 100vh; overflow-y: auto; }
-            .dashboard-grid { grid-template-columns: 1fr; }
-            .analytics-grid { grid-template-columns: 1fr; }
-            .top-header { padding: 12px 15px; flex-wrap: wrap; height: auto; gap: 10px; position: sticky; top: 0; }
-            .search-bar { width: 100%; order: 3; }
-            .content-area { padding: 15px; gap: 18px; }
-            .hero-banner { padding: 20px; flex-direction: column; align-items: flex-start; text-align: left; }
-            .modal-content { max-width: 95vw !important; padding: 18px; margin: 10px; max-height: 85vh; }
-            .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-            .metric-card { padding: 14px; gap: 10px; }
-            .m-icon { width: 38px; height: 38px; font-size: 15px; }
+            .main-wrapper { height: 100vh; overflow-x: hidden; overflow-y: auto; width: 100%; max-width: 100vw; }
+            .top-header { padding: 10px 15px; height: auto; flex-direction: column; align-items: stretch; gap: 10px; position: sticky; top: 0; width: 100%; box-sizing: border-box; }
+            .header-left { justify-content: space-between; width: 100%; }
+            .search-bar { width: 100%; max-width: 100%; box-sizing: border-box; order: 2; }
+            .content-area { padding: 12px; gap: 15px; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: hidden; }
+            .hero-banner { padding: 18px; flex-direction: column; align-items: flex-start; text-align: left; width: 100%; box-sizing: border-box; }
+            .hero-text h1 { font-size: 20px; }
+            .hero-text p { font-size: 12.5px; }
+            .hero-banner > div:last-child { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+            .hero-banner a { width: 100%; justify-content: center; text-align: center; padding: 10px; box-sizing: border-box; }
+            .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
+            .metric-card { padding: 12px; gap: 10px; width: 100%; box-sizing: border-box; }
+            .m-icon { width: 36px; height: 36px; font-size: 15px; flex-shrink: 0; }
             .m-info h3 { font-size: 18px; }
+            .m-info p { font-size: 11px; }
+            .analytics-grid { grid-template-columns: 1fr; gap: 15px; width: 100%; }
+            .dashboard-grid { grid-template-columns: 1fr; gap: 15px; width: 100%; }
+            .card { padding: 16px; width: 100%; box-sizing: border-box; overflow-x: hidden; }
+            .card-header h3 { font-size: 14px; }
+            .chart-container { height: 190px; width: 100%; max-width: 100%; }
+            table { font-size: 12px; width: 100%; }
+            th, td { padding: 8px 10px; }
+            .modal-content { max-width: 95vw !important; padding: 18px; margin: 10px; max-height: 85vh; }
         }
     </style>
 </head>
