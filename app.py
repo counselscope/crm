@@ -251,7 +251,7 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         ext = os.path.splitext(original_filename)[1].lower() or ".jpg"
-        target_filename = f"doc_{int(datetime.now().timestamp())}{ext}"
+        target_filename = f"doc_{int(datetime.now().timestamp())}_{secure_filename(original_filename)}"
         file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
         
         file_content = file_storage.read()
@@ -287,24 +287,35 @@ def upload_file_to_github(file_storage, student_name, original_filename):
 @app.route('/api/submit-lead', methods=['POST'])
 def submit_lead():
     try:
-        form_data = request.form.to_dict()
-        if not form_data:
-            return jsonify({"status": "error", "message": "No data provided"}), 400
-        
-        student_name = form_data.get('student_name') or form_data.get('name') or 'Valued Enquirer'
-        contact_number = form_data.get('contact_number') or form_data.get('phone') or 'N/A'
-        student_email = form_data.get('student_email') or form_data.get('email') or 'N/A'
+        flat_form = {}
+        for k, v in request.form.lists():
+            if len(v) == 1:
+                flat_form[k] = v[0]
+            else:
+                flat_form[k] = v
 
-        document_filename = None
-        if 'id_document' in request.files:
-            file = request.files['id_document']
-            if file and file.filename != '':
-                document_filename = upload_file_to_github(file, student_name, file.filename)
-        elif len(request.files) > 0:
+        student_name = flat_form.get('student_name') or flat_form.get('name') or 'Valued Enquirer'
+        contact_number = flat_form.get('contact_number') or flat_form.get('phone') or 'N/A'
+        student_email = flat_form.get('student_email') or flat_form.get('email') or 'N/A'
+
+        # Handle all submitted files from register.html
+        uploaded_files = {}
+        file_keys = ['id_document', 'class_10_doc', 'class_12_doc', 'aadhar_doc', 'edu_scorecard']
+        for f_key in file_keys:
+            if f_key in request.files:
+                file = request.files[f_key]
+                if file and file.filename != '':
+                    uploaded_files[f_key] = upload_file_to_github(file, student_name, file.filename)
+                else:
+                    uploaded_files[f_key] = None
+            else:
+                uploaded_files[f_key] = None
+
+        if not any(uploaded_files.values()) and len(request.files) > 0:
             for file_key in request.files:
                 file = request.files[file_key]
                 if file and file.filename != '':
-                    document_filename = upload_file_to_github(file, student_name, file.filename)
+                    uploaded_files['id_document'] = upload_file_to_github(file, student_name, file.filename)
                     break
 
         leads = load_data(DATA_FILE)
@@ -313,22 +324,44 @@ def submit_lead():
         new_lead = {
             "id": len(leads) + 1,
             "student_name": student_name,
-            "father_name": form_data.get('father_name', ''),
+            "father_name": flat_form.get('father_name', ''),
             "contact_number": contact_number,
-            "alternate_number": form_data.get('alternate_number', ''),
+            "alternate_number": flat_form.get('alternate_number', ''),
             "student_email": student_email,
-            "current_education_level": form_data.get('current_education_level', ''),
-            "qualification": form_data.get('qualification', ''),
-            "percentage_10th": form_data.get('percentage_10th', ''),
-            "percentage_12th": form_data.get('percentage_12th', ''),
-            "course_details": form_data.get('course_details', ''),
-            "budget": form_data.get('budget', ''),
-            "hostel_preference": form_data.get('hostel_preference', ''),
-            "admission_preference": form_data.get('admission_preference', ''),
-            "assigned_college": form_data.get('assigned_college', ''),
-            "state": form_data.get('state', ''),
-            "city": form_data.get('city', ''),
-            "id_document": document_filename,
+            "current_education_level": flat_form.get('current_education_level', ''),
+            "qualification": flat_form.get('qualification', ''),
+            "percentage_10th": flat_form.get('percentage_10th', ''),
+            "percentage_12th": flat_form.get('percentage_12th', ''),
+            "edu_percentage": flat_form.get('edu_percentage', ''),
+            "course_interest": flat_form.get('course_interest', ''),
+            "other_course": flat_form.get('other_course', ''),
+            "course_details": flat_form.get('course_details', '') or flat_form.get('course_interest', ''),
+            "hear_about": flat_form.get('hear_about', ''),
+            "other_source": flat_form.get('other_source', ''),
+            "preferred_time": flat_form.get('preferred_time', ''),
+            "help_with": flat_form.get('help_with', ''),
+            "annual_budget": flat_form.get('annual_budget', '') or flat_form.get('budget', ''),
+            "budget": flat_form.get('annual_budget', '') or flat_form.get('budget', ''),
+            "fee_payment_option": flat_form.get('fee_payment_option', ''),
+            "loan_assistance": flat_form.get('loan_assistance', ''),
+            "hostel_required": flat_form.get('hostel_required', '') or flat_form.get('hostel_preference', ''),
+            "hostel_preference": flat_form.get('hostel_required', '') or flat_form.get('hostel_preference', ''),
+            "contacted_college": flat_form.get('contacted_college', ''),
+            "col_name_1": flat_form.get('col_name_1', ''),
+            "col_state_1": flat_form.get('col_state_1', ''),
+            "col_name_2": flat_form.get('col_name_2', ''),
+            "col_state_2": flat_form.get('col_state_2', ''),
+            "col_name_3": flat_form.get('col_name_3', ''),
+            "col_state_3": flat_form.get('col_state_3', ''),
+            "admission_preference": flat_form.get('admission_preference', ''),
+            "assigned_college": flat_form.get('assigned_college', ''),
+            "state": flat_form.get('state', ''),
+            "city": flat_form.get('city', ''),
+            "id_document": uploaded_files.get('id_document'),
+            "class_10_doc": uploaded_files.get('class_10_doc'),
+            "class_12_doc": uploaded_files.get('class_12_doc'),
+            "aadhar_doc": uploaded_files.get('aadhar_doc'),
+            "edu_scorecard": uploaded_files.get('edu_scorecard'),
             "status": "New Lead",
             "score": 80 if contact_number != 'N/A' else 50,
             "notes": "Enquiry received via dynamic HTML form submission.",
@@ -336,7 +369,7 @@ def submit_lead():
             "created_date": now.strftime("%Y-%m-%d"),
             "created_at": now.strftime("%d %b %Y, %I:%M %p"),
             "created_timestamp": now.timestamp(),
-            "form_data": form_data
+            "form_data": flat_form
         }
         
         leads.append(new_lead)
@@ -393,13 +426,6 @@ def update_lead():
                 doc_path = upload_file_to_github(file, target_lead.get('student_name', 'Student'), file.filename)
                 if doc_path:
                     target_lead['id_document'] = doc_path
-
-        if 'form_data' not in target_lead or not isinstance(target_lead['form_data'], dict):
-            target_lead['form_data'] = {}
-        
-        for k, v in form_data.items():
-            if k != 'lead_id' and k != 'delete_doc':
-                target_lead['form_data'][k] = v
 
         save_data(DATA_FILE, leads)
         log_activity("Lead Updated", f"Updated comprehensive information for lead #{lead_id} ({target_lead['student_name']})")
@@ -651,15 +677,13 @@ def trash_download():
     return resp
 
 
-# --- ADMIN PASSWORD MANAGEMENT API ---
-
 @app.route('/api/admin/change-password', methods=['POST'])
 def admin_change_password():
     if not session.get('logged_in') or session.get('role') != 'Admin':
         return jsonify({"error": "Unauthorized. Admin access required."}), 403
     
     data = request.json or {}
-    target_user = data.get('target_user') # 'admin' or 'client'
+    target_user = data.get('target_user')
     new_password = data.get('new_password')
     
     if not target_user or not new_password:
@@ -675,8 +699,6 @@ def admin_change_password():
     return jsonify({"status": "success", "message": f"Password for {target_user} updated successfully."})
 
 
-# --- FULL CRM EXCEL & PDF EXPORT ENDPOINTS (WITH STUDENTS WORKSHEET FIXED) ---
-
 @app.route('/api/export-full-excel', methods=['GET'])
 def export_full_excel():
     if not session.get('logged_in'):
@@ -686,12 +708,11 @@ def export_full_excel():
         return "openpyxl library not installed on server.", 500
 
     wb = openpyxl.Workbook()
-    wb.remove(wb.active) # Remove default sheet
+    wb.remove(wb.active)
 
     header_fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
 
-    # 1. Dashboard Summary Sheet
     ws_dash = wb.create_sheet(title="Dashboard Summary")
     leads = load_data(DATA_FILE)
     active_leads = [l for l in leads if not l.get('is_deleted')]
@@ -713,7 +734,6 @@ def export_full_excel():
     for row in dash_data:
         ws_dash.append(row)
 
-    # 2. All Leads Sheet
     ws_leads = wb.create_sheet(title="All Leads")
     ws_leads.append(["ID", "Student Name", "Father Name", "Contact", "Email", "Assigned College", "Status", "Course Details", "Budget"])
     for cell in ws_leads[1]:
@@ -722,7 +742,6 @@ def export_full_excel():
     for l in active_leads:
         ws_leads.append([l.get('id'), l.get('student_name'), l.get('father_name',''), l.get('contact_number'), l.get('student_email'), l.get('assigned_college','None'), l.get('status'), l.get('course_details',''), l.get('budget','')])
 
-    # 3. Students Sheet (Mandatory & Fully Populated)
     ws_students = wb.create_sheet(title="Students")
     ws_students.append(["Student ID", "Original Lead ID", "Student Name", "Father Name", "Contact", "Email", "Assigned College", "Qualification", "10th %", "12th %", "Course Details", "Budget", "Admission Status", "Converted At"])
     for cell in ws_students[1]:
@@ -746,7 +765,6 @@ def export_full_excel():
             s.get('converted_at', 'N/A')
         ])
 
-    # 4. Colleges Sheet
     ws_colleges = wb.create_sheet(title="College Management")
     ws_colleges.append(["ID", "College Name", "Location", "Courses Offered", "Avg Package"])
     for cell in ws_colleges[1]:
@@ -755,7 +773,6 @@ def export_full_excel():
     for c in colleges:
         ws_colleges.append([c.get('id'), c.get('college_name'), c.get('location'), c.get('courses'), c.get('package')])
 
-    # 5. Work History Sheet
     ws_history = wb.create_sheet(title="Work History")
     ws_history.append(["ID", "Username", "Role", "Date", "Time", "Action Type", "Details"])
     for cell in ws_history[1]:
@@ -764,7 +781,6 @@ def export_full_excel():
     for h in load_data(HISTORY_FILE):
         ws_history.append([h.get('id'), h.get('username','Admin'), h.get('role','Admin'), h.get('date'), h.get('time'), h.get('action_type'), h.get('details')])
 
-    # 6. Login Activity Logs Sheet
     ws_logs = wb.create_sheet(title="Activity Logs")
     ws_logs.append(["ID", "Username", "Role", "IP Address", "Browser", "OS", "Location", "Login Time", "Logout Time", "Status"])
     for cell in ws_logs[1]:
@@ -773,7 +789,6 @@ def export_full_excel():
     for log in load_data(LOGIN_LOGS_FILE):
         ws_logs.append([log.get('id'), log.get('username'), log.get('role'), log.get('ip_address'), log.get('browser'), log.get('os'), log.get('location'), log.get('login_time'), log.get('logout_time'), log.get('status')])
 
-    # Auto adjust column widths across all sheets
     for sheet in wb.worksheets:
         for col in sheet.columns:
             max_len = max(len(str(cell.value or '')) for cell in col)
@@ -1229,7 +1244,7 @@ MAIN_DASHBOARD_HTML = """
         .tab-section.active { display: block; }
 
         .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); padding: 15px; }
-        .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 600px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 95vh; overflow-y: auto; }
+        .modal-content { background: white; padding: 25px; border-radius: 16px; max-width: 650px; width: 100%; text-align: left; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-height: 90vh; overflow-y: auto; }
         @keyframes modalPopup { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .close-modal { position: absolute; top: 15px; right: 20px; font-size: 22px; cursor: pointer; color: #64748b; transition: 0.2s; }
         .close-modal:hover { color: #0f172a; }
@@ -1304,14 +1319,12 @@ MAIN_DASHBOARD_HTML = """
                         <h1 id="timeGreeting">Good Morning {{ username | title }}</h1>
                         <p>Welcome to your CounselScope CRM. Track dynamic leads, converted students, follow-up recalls, and admissions in real-time.</p>
                     </div>
-                    <!-- RESTORED COMPLETE CRM EXPORT BUTTONS ON DASHBOARD -->
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <a href="/api/export-full-excel" style="background:#16a34a; color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; text-decoration:none; font-size:13px; display:inline-flex; align-items:center; gap:8px;"><i class="fa-solid fa-file-excel"></i> Export Complete Excel</a>
                         <a href="/api/export-full-pdf" target="_blank" style="background:#dc2626; color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; text-decoration:none; font-size:13px; display:inline-flex; align-items:center; gap:8px;"><i class="fa-solid fa-file-pdf"></i> Export Complete PDF</a>
                     </div>
                 </div>
 
-                <!-- METRICS GRID (INCLUDING REJECTED & FOLLOW-UP COUNTS) -->
                 <div class="metrics-grid" style="margin-bottom: 25px;">
                     <div class="metric-card"><div class="m-icon blue"><i class="fa-solid fa-users"></i></div><div class="m-info"><h3 id="statTotal">0</h3><p>Total Leads</p></div></div>
                     <div class="metric-card"><div class="m-icon green"><i class="fa-solid fa-user-graduate"></i></div><div class="m-info"><h3 id="statStudents">0</h3><p>Registered Students</p></div></div>
@@ -1321,7 +1334,6 @@ MAIN_DASHBOARD_HTML = """
                     <div class="metric-card"><div class="m-icon red"><i class="fa-solid fa-ban"></i></div><div class="m-info"><h3 id="statRejected">0</h3><p>Rejected Leads</p></div></div>
                 </div>
 
-                <!-- RESTORED THREE DASHBOARD PIE CHARTS (THIS WEEK, THIS MONTH, THIS YEAR) -->
                 <div class="analytics-grid" style="margin-bottom: 25px;">
                     <div class="card">
                         <div class="card-header">
@@ -1351,7 +1363,6 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
 
-                <!-- FOLLOW UP RECALL NOTIFICATION CARD -->
                 <div class="card" style="margin-bottom: 25px; border-left: 5px solid #6366f1;">
                     <div class="card-header">
                         <h3 style="color: #4338ca;"><i class="fa-solid fa-bell" style="margin-right: 8px;"></i> Immediate Follow-up & Recalls</h3>
@@ -1381,7 +1392,7 @@ MAIN_DASHBOARD_HTML = """
                                         <th>Student</th>
                                         <th>Contact</th>
                                         <th>Email</th>
-                                        <th>ID Doc</th>
+                                        <th>Details</th>
                                         <th>Status</th>
                                         {% if role == 'Admin' %}<th>Action</th>{% endif %}
                                     </tr>
@@ -1582,7 +1593,6 @@ MAIN_DASHBOARD_HTML = """
 
             <!-- SETTINGS & LOGS TAB -->
             <div id="settings-tab" class="tab-section">
-                <!-- ADMIN PASSWORD MANAGEMENT RESTORED SECTION -->
                 {% if role == 'Admin' %}
                 <div class="card" style="margin-bottom: 25px; border-left: 5px solid #2563eb;">
                     <div class="card-header">
@@ -1640,15 +1650,12 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
-    <!-- VIEW DOCUMENT MODAL -->
+    <!-- ORGANIZED STUDENT DETAILS & DOCUMENT MODAL -->
     <div id="docModal" class="modal-overlay">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 750px;">
             <span class="close-modal" onclick="closeDocModal()">&times;</span>
-            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-id-card" style="color:#2563eb; margin-right:8px;"></i> Student Document & Details</h3>
+            <h3 style="margin-bottom: 15px; color: #1e293b; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><i class="fa-solid fa-user-graduate" style="color:#2563eb; margin-right:8px;"></i> Organized Student Registration & Document View</h3>
             <div id="modalBodyContainer"></div>
-            <div style="margin-top: 20px; text-align: right;">
-                <a id="modalDownloadBtn" href="#" class="action-icon-btn doc-btn" style="padding: 10px 18px; text-decoration: none; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; width: auto; height: auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
-            </div>
         </div>
     </div>
 
@@ -2050,7 +2057,7 @@ MAIN_DASHBOARD_HTML = """
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Details"><i class="fa-solid fa-eye"></i></button>`;
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>`;
                 const deleteBtn = userRole === 'Admin' ? `<td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>` : '';
                 recentTbody.innerHTML += `
                     <tr>
@@ -2089,6 +2096,7 @@ MAIN_DASHBOARD_HTML = """
             }
             students.slice().reverse().forEach(st => {
                 const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="students-checkbox" value="${st.student_id}"></td>` : '';
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(st)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>`;
                 tbody.innerHTML += `
                     <tr>
                         ${cbHtml}
@@ -2099,6 +2107,7 @@ MAIN_DASHBOARD_HTML = """
                         <td><span class="badge-status badge-closed">${st.assigned_college || 'Not Assigned'}</span></td>
                         <td>${st.course_details || st.qualification || 'N/A'}</td>
                         <td>
+                            ${docAction}
                             <button class="action-icon-btn edit-btn" onclick='openStudentEditModal(${JSON.stringify(st)})' title="Edit Student"><i class="fa-solid fa-pen"></i></button>
                         </td>
                     </tr>
@@ -2110,7 +2119,7 @@ MAIN_DASHBOARD_HTML = """
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Details"><i class="fa-solid fa-eye"></i></button>`;
+                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>`;
                 const convertBtn = `<button class="convert-btn" onclick="convertToStudent(${lead.id})"><i class="fa-solid fa-user-check"></i> Convert</button>`;
                 const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="leads-checkbox" value="${lead.id}"></td>` : '';
                 const deleteBtn = userRole === 'Admin' ? `<button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})" title="Delete Lead"><i class="fa-solid fa-trash-can"></i></button>` : '';
@@ -2134,6 +2143,7 @@ MAIN_DASHBOARD_HTML = """
                             </select>
                         </td>
                         <td>
+                            ${docAction}
                             ${convertBtn}
                             <button class="action-icon-btn edit-btn" onclick='openEditModal(${JSON.stringify(lead)})' title="Edit All Fields"><i class="fa-solid fa-pen"></i></button>
                             ${deleteBtn}
@@ -2275,37 +2285,114 @@ MAIN_DASHBOARD_HTML = """
             }
         }
 
+        /* --- ORGANIZED STUDENT DETAILS & DOCUMENT MODAL (REQUIREMENT 4 & 5) --- */
         function openDocModal(lead) {
             const modal = document.getElementById('docModal');
             const container = document.getElementById('modalBodyContainer');
-            const downloadBtn = document.getElementById('modalDownloadBtn');
             
-            let docPreviewHtml = '';
-            if (lead.id_document) {
-                const fullUrl = `/download-doc/${lead.id_document}`;
-                downloadBtn.href = fullUrl;
-                downloadBtn.style.display = 'inline-flex';
-                docPreviewHtml = `<div style="margin-top: 15px;"><p style="color:#2563eb; font-size:13px;"><i class="fa-solid fa-file-pdf"></i> Document attached. Click download.</p></div>`;
-            } else {
-                downloadBtn.style.display = 'none';
-                docPreviewHtml = `<p style="color:#b45309; font-size:13px;">No document attached.</p>`;
-            }
+            let helpWithText = lead.help_with || 'N/A';
+            if(Array.isArray(helpWithText)) helpWithText = helpWithText.join(', ');
 
             container.innerHTML = `
-                <div style="background: #f8fafc; padding: 16px; border-radius: 10px; font-size: 13.5px; line-height: 1.6;">
-                    <p><strong>Student Name:</strong> ${lead.student_name}</p>
-                    <p><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</p>
-                    <p><strong>Contact:</strong> ${lead.contact_number}</p>
-                    <p><strong>Email:</strong> ${lead.student_email}</p>
-                    <p><strong>Assigned College:</strong> ${lead.assigned_college || 'None'}</p>
-                    <p><strong>Qualification:</strong> ${lead.qualification || 'N/A'}</p>
-                    <p><strong>10th %:</strong> ${lead.percentage_10th || 'N/A'} | <strong>12th %:</strong> ${lead.percentage_12th || 'N/A'}</p>
-                    <p><strong>Budget:</strong> ${lead.budget || 'N/A'}</p>
+                <div style="font-size: 13px; line-height: 1.6; color: #1e293b; max-height: 75vh; overflow-y: auto; padding-right: 5px;">
+                    <!-- Section 1: Personal Details -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
+                        <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-user"></i> Personal Details</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div><strong>Student Name:</strong> ${lead.student_name || 'N/A'}</div>
+                            <div><strong>Father's Name:</strong> ${lead.father_name || 'N/A'}</div>
+                            <div><strong>Email ID:</strong> ${lead.student_email || 'N/A'}</div>
+                            <div><strong>Contact Number:</strong> ${lead.contact_number || 'N/A'}</div>
+                            <div><strong>Alternate Number:</strong> ${lead.alternate_number || 'N/A'}</div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Address Details -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
+                        <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-location-dot"></i> Address Details</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div><strong>State:</strong> ${lead.state || 'N/A'}</div>
+                            <div><strong>City:</strong> ${lead.city || 'N/A'}</div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Academic Details -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
+                        <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-graduation-cap"></i> Academic Details</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div><strong>Current Education Level:</strong> ${lead.current_education_level || 'N/A'}</div>
+                            <div><strong>10th Percentage / CGPA:</strong> ${lead.percentage_10th || 'N/A'}</div>
+                            <div><strong>12th Percentage / CGPA:</strong> ${lead.percentage_12th || 'N/A'}</div>
+                            <div><strong>Scorecard %:</strong> ${lead.edu_percentage || 'N/A'}</div>
+                        </div>
+                    </div>
+
+                    <!-- Section 4: Course Preferences & Admission Details -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
+                        <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-book-open"></i> Course Preferences & Admission Details</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div><strong>Course Interest:</strong> ${lead.course_details || lead.course_interest || 'N/A'}</div>
+                            <div><strong>How did they hear:</strong> ${lead.hear_about || 'N/A'} ${lead.other_source ? '('+lead.other_source+')' : ''}</div>
+                            <div><strong>Preferred Counselling Time:</strong> ${lead.preferred_time || 'N/A'}</div>
+                            <div><strong>Annual Budget:</strong> ${lead.annual_budget || lead.budget || 'N/A'}</div>
+                            <div><strong>Fee Payment Option:</strong> ${lead.fee_payment_option || 'N/A'}</div>
+                            <div><strong>Loan Assistance:</strong> ${lead.loan_assistance || 'N/A'}</div>
+                            <div><strong>Hostel Required:</strong> ${lead.hostel_required || lead.hostel_preference || 'N/A'}</div>
+                            <div><strong>Contacted College:</strong> ${lead.contacted_college || 'N/A'}</div>
+                            <div style="grid-column: span 2;"><strong>Help With:</strong> ${helpWithText}</div>
+                            ${lead.col_name_1 ? `<div style="grid-column: span 2;"><strong>Desired College 1:</strong> ${lead.col_name_1} (${lead.col_state_1 || ''})</div>` : ''}
+                            ${lead.col_name_2 ? `<div style="grid-column: span 2;"><strong>Desired College 2:</strong> ${lead.col_name_2} (${lead.col_state_2 || ''})</div>` : ''}
+                            ${lead.col_name_3 ? `<div style="grid-column: span 2;"><strong>Desired College 3:</strong> ${lead.col_name_3} (${lead.col_state_3 || ''})</div>` : ''}
+                        </div>
+                    </div>
+
+                    <!-- Section 5: Documents & Photographs -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px;">
+                        <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-folder-open"></i> Uploaded Documents & Photographs</h4>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            ${lead.id_document ? `<button onclick="previewDocument('/download-doc/${lead.id_document}', 'Primary ID Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-id-card"></i> View ID Document</button>` : ''}
+                            ${lead.class_10_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_10_doc}', '10th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-file-lines"></i> View 10th Marksheet</button>` : ''}
+                            ${lead.class_12_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_12_doc}', '12th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-file-lines"></i> View 12th Marksheet</button>` : ''}
+                            ${lead.aadhar_doc ? `<button onclick="previewDocument('/download-doc/${lead.aadhar_doc}', 'Aadhar Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-id-card"></i> View Aadhar Document</button>` : ''}
+                            ${lead.edu_scorecard ? `<button onclick="previewDocument('/download-doc/${lead.edu_scorecard}', 'Education Scorecard')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-file-invoice"></i> View Scorecard</button>` : ''}
+                            ${!lead.id_document && !lead.class_10_doc && !lead.class_12_doc && !lead.aadhar_doc && !lead.edu_scorecard ? '<span style="color:#64748b; font-size:12.5px;">No documents uploaded.</span>' : ''}
+                        </div>
+                    </div>
                 </div>
-                ${docPreviewHtml}
             `;
             modal.style.display = 'flex';
         }
+
+        function previewDocument(url, title) {
+            const subModal = document.createElement('div');
+            subModal.id = 'docPreviewSubModal';
+            subModal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:2000; display:flex; justify-content:center; align-items:center; padding:20px;';
+            
+            let previewContent = '';
+            if(url.match(/\.(jpeg|jpg|png|gif|webp)$/i)) {
+                previewContent = `<img src="${url}" style="max-width:100%; max-height:70vh; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.5);" alt="${title}">`;
+            } else {
+                previewContent = `<iframe src="${url}" style="width:100%; max-width:800px; height:70vh; border:none; border-radius:8px; background:white;" title="${title}"></iframe>`;
+            }
+
+            subModal.innerHTML = `
+                <div style="background:#1e293b; padding:20px; border-radius:12px; width:100%; max-width:850px; text-align:center; position:relative; box-shadow:0 20px 25px rgba(0,0,0,0.5);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; color:white;">
+                        <h4 style="margin:0; font-size:16px;">${title}</h4>
+                        <button onclick="document.getElementById('docPreviewSubModal').remove()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="margin-bottom:15px; display:flex; justify-content:center;">
+                        ${previewContent}
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <a href="${url}" download class="action-icon-btn doc-btn" style="background:#16a34a; color:white; padding:8px 16px; border-radius:6px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-weight:600; width:auto; height:auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
+                        <button onclick="document.getElementById('docPreviewSubModal').remove()" style="background:#64748b; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">Close Preview</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(subModal);
+        }
+
         function closeDocModal() { document.getElementById('docModal').style.display = 'none'; }
 
         function openEditModal(lead) {
@@ -2465,8 +2552,6 @@ MAIN_DASHBOARD_HTML = """
 
         function updateTimeFilteredCharts(activeLeads) {
             const now = new Date();
-            
-            // This Week calculation (Monday to Sunday or last 7 days)
             const currentDay = now.getDay() || 7;
             const monday = new Date(now);
             monday.setDate(now.getDate() - currentDay + 1);
@@ -2477,14 +2562,12 @@ MAIN_DASHBOARD_HTML = """
                 return lDate >= monday;
             });
 
-            // This Month calculation
             const firstDayMonth = new Date(now.getFullYear(), now.getMonth(), 1);
             const monthlyLeads = activeLeads.filter(l => {
                 const lDate = l.created_timestamp ? new Date(l.created_timestamp * 1000) : new Date(l.created_date || now);
                 return lDate >= firstDayMonth;
             });
 
-            // This Year calculation
             const firstDayYear = new Date(now.getFullYear(), 0, 1);
             const yearlyLeads = activeLeads.filter(l => {
                 const lDate = l.created_timestamp ? new Date(l.created_timestamp * 1000) : new Date(l.created_date || now);
@@ -2500,7 +2583,6 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('yearRangeLabel').innerText = `Year ${now.getFullYear()}`;
             document.getElementById('yearTotalCount').innerText = yearlyLeads.length;
 
-            // Render Weekly Pie
             const getCounts = (list) => ({
                 'New': list.filter(l => l.status==='New Lead').length,
                 'Contacted': list.filter(l => l.status==='Contacted').length,
@@ -2513,7 +2595,6 @@ MAIN_DASHBOARD_HTML = """
             const mCounts = getCounts(monthlyLeads);
             const yCounts = getCounts(yearlyLeads);
 
-            // Weekly Chart
             if(weeklyPieInstance) weeklyPieInstance.destroy();
             weeklyPieInstance = new Chart(document.getElementById('weeklyPieChart').getContext('2d'), {
                 type: 'doughnut',
@@ -2524,7 +2605,6 @@ MAIN_DASHBOARD_HTML = """
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
             });
 
-            // Monthly Chart
             if(monthlyPieInstance) monthlyPieInstance.destroy();
             monthlyPieInstance = new Chart(document.getElementById('monthlyPieChart').getContext('2d'), {
                 type: 'doughnut',
@@ -2535,7 +2615,6 @@ MAIN_DASHBOARD_HTML = """
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
             });
 
-            // Yearly Chart
             if(yearlyPieInstance) yearlyPieInstance.destroy();
             yearlyPieInstance = new Chart(document.getElementById('yearlyPieChart').getContext('2d'), {
                 type: 'doughnut',
