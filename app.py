@@ -250,7 +250,6 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     
     try:
         safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        ext = os.path.splitext(original_filename)[1].lower() or ".jpg"
         target_filename = f"doc_{int(datetime.now().timestamp())}_{secure_filename(original_filename)}"
         file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
         
@@ -298,7 +297,7 @@ def submit_lead():
         contact_number = flat_form.get('contact_number') or flat_form.get('phone') or 'N/A'
         student_email = flat_form.get('student_email') or flat_form.get('email') or 'N/A'
 
-        # Handle all submitted files from register.html
+        # Handle all submitted files from registration.html
         uploaded_files = {}
         file_keys = ['id_document', 'class_10_doc', 'class_12_doc', 'aadhar_doc', 'edu_scorecard']
         for f_key in file_keys:
@@ -2285,7 +2284,7 @@ MAIN_DASHBOARD_HTML = """
             }
         }
 
-        /* --- ORGANIZED STUDENT DETAILS & DOCUMENT MODAL (REQUIREMENT 4 & 5) --- */
+        /* --- ORGANIZED STUDENT DETAILS & MULTIPLE DOCUMENT VIEW MODAL --- */
         function openDocModal(lead) {
             const modal = document.getElementById('docModal');
             const container = document.getElementById('modalBodyContainer');
@@ -2346,15 +2345,15 @@ MAIN_DASHBOARD_HTML = """
                         </div>
                     </div>
 
-                    <!-- Section 5: Documents & Photographs -->
+                    <!-- Section 5: Multiple Documents & Photographs Thumbnails -->
                     <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px;">
                         <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-folder-open"></i> Uploaded Documents & Photographs</h4>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            ${lead.id_document ? `<button onclick="previewDocument('/download-doc/${lead.id_document}', 'Primary ID Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-id-card"></i> View ID Document</button>` : ''}
-                            ${lead.class_10_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_10_doc}', '10th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-file-lines"></i> View 10th Marksheet</button>` : ''}
-                            ${lead.class_12_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_12_doc}', '12th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-file-lines"></i> View 12th Marksheet</button>` : ''}
-                            ${lead.aadhar_doc ? `<button onclick="previewDocument('/download-doc/${lead.aadhar_doc}', 'Aadhar Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-id-card"></i> View Aadhar Document</button>` : ''}
-                            ${lead.edu_scorecard ? `<button onclick="previewDocument('/download-doc/${lead.edu_scorecard}', 'Education Scorecard')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-file-invoice"></i> View Scorecard</button>` : ''}
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            ${lead.id_document ? `<button onclick="previewDocument('/download-doc/${lead.id_document}', 'Primary ID Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-id-card"></i> View ID Document</button>` : ''}
+                            ${lead.class_10_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_10_doc}', '10th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-file-lines"></i> View 10th Marksheet</button>` : ''}
+                            ${lead.class_12_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_12_doc}', '12th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-file-lines"></i> View 12th Marksheet</button>` : ''}
+                            ${lead.aadhar_doc ? `<button onclick="previewDocument('/download-doc/${lead.aadhar_doc}', 'Aadhar Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-id-card"></i> View Aadhar Document</button>` : ''}
+                            ${lead.edu_scorecard ? `<button onclick="previewDocument('/download-doc/${lead.edu_scorecard}', 'Education Scorecard')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-file-invoice"></i> View Scorecard</button>` : ''}
                             ${!lead.id_document && !lead.class_10_doc && !lead.class_12_doc && !lead.aadhar_doc && !lead.edu_scorecard ? '<span style="color:#64748b; font-size:12.5px;">No documents uploaded.</span>' : ''}
                         </div>
                     </div>
