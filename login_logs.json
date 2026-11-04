@@ -226,11 +226,11 @@
         "login_date": "2026-11-04",
         "login_time": "04 Nov 2026, 11:14 AM",
         "login_timestamp": 1793790879.396386,
-        "logout_date": "N/A",
-        "logout_time": "N/A",
-        "logout_timestamp": null,
+        "logout_date": "2026-11-04",
+        "logout_time": "04 Nov 2026, 12:51 PM",
+        "logout_timestamp": 1793796669.561091,
         "location": "Unknown",
-        "status": "Active",
+        "status": "Logged Out",
         "session_info": "Session ID: 6202863644718809413"
     }
 ]
