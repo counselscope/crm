@@ -124,5 +124,23 @@
         "location": "Unknown",
         "status": "Logged Out",
         "session_info": "Session ID: 8516973726960383740"
+    },
+    {
+        "id": 8,
+        "username": "admin",
+        "role": "Admin",
+        "ip_address": "223.191.95.45",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "login_date": "2026-11-04",
+        "login_time": "04 Nov 2026, 07:46 AM",
+        "login_timestamp": 1793778380.618342,
+        "logout_date": "N/A",
+        "logout_time": "N/A",
+        "logout_timestamp": null,
+        "location": "Unknown",
+        "status": "Active",
+        "session_info": "Session ID: 1000418473586518964"
     }
 ]
