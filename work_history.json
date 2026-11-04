@@ -334,5 +334,14 @@
         "time": "09:20:47 AM",
         "action_type": "Restored Lead",
         "details": "Restored lead #7 (lakaji) from trash"
+    },
+    {
+        "id": 43,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "09:21:25 AM",
+        "action_type": "Permanent Delete",
+        "details": "Admin permanently deleted 6 records from Trash Bin."
     }
 ]
