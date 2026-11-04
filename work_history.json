@@ -298,5 +298,14 @@
         "time": "09:12:36 AM",
         "action_type": "User Login",
         "details": "User admin (Admin) logged in successfully from IP 223.191.95.45"
+    },
+    {
+        "id": 39,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "09:14:01 AM",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #8 (raghav) to trash"
     }
 ]
