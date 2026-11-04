@@ -66,7 +66,7 @@
         "login_timestamp": 1793775189.549019,
         "logout_date": "2026-11-04",
         "logout_time": "04 Nov 2026, 07:28 AM",
-        "logout_timestamp": 1793777309.432766,
+        "logout_timestamp": 1793777335.907109,
         "location": "Unknown",
         "status": "Logged Out",
         "session_info": "Session ID: 8903094589943947935"
@@ -106,23 +106,5 @@
         "location": "Unknown",
         "status": "Logged Out",
         "session_info": "Session ID: 2696211550127327203"
-    },
-    {
-        "id": 7,
-        "username": "client",
-        "role": "Client",
-        "ip_address": "223.191.95.45",
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-        "browser": "Google Chrome (156.0.0.0)",
-        "os": "Windows",
-        "login_date": "2026-11-04",
-        "login_time": "04 Nov 2026, 07:28 AM",
-        "login_timestamp": 1793777309.432766,
-        "logout_date": "N/A",
-        "logout_time": "N/A",
-        "logout_timestamp": null,
-        "location": "Unknown",
-        "status": "Active",
-        "session_info": "Session ID: 394346352613278222"
     }
 ]
