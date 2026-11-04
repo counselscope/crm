@@ -151,8 +151,8 @@
         "username": "admin",
         "role": "Admin",
         "date": "2026-11-04",
-        "time": "07:07:46 AM",
-        "action_type": "User Login",
-        "details": "User admin (Admin) logged in successfully from IP 223.191.95.45"
+        "time": "07:08:44 AM",
+        "action_type": "Student Converted",
+        "details": "Converted lead #5 (Prachi) into a registered Student."
     }
 ]
