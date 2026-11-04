@@ -193,5 +193,46 @@
             "budget": "00",
             "hostel_preference": "Yes"
         }
+    },
+    {
+        "id": 8,
+        "student_name": "raghav",
+        "father_name": "raghu",
+        "contact_number": "1234567890",
+        "alternate_number": "1234567890",
+        "student_email": "b83348325@gmail.com",
+        "current_education_level": "12th Pass",
+        "qualification": "",
+        "percentage_10th": "12",
+        "percentage_12th": "56",
+        "course_details": "FYJC / Class 11",
+        "budget": "",
+        "hostel_preference": "",
+        "admission_preference": "",
+        "assigned_college": "",
+        "state": "Maharashtra",
+        "city": "mumbai",
+        "id_document": "student_documents/raghav/doc_1793782647.png",
+        "status": "New Lead",
+        "score": 80,
+        "notes": "Enquiry received via dynamic HTML form submission.",
+        "is_deleted": false,
+        "created_date": "2026-11-04",
+        "created_at": "04 Nov 2026, 08:57 AM",
+        "created_timestamp": 1793782648.948348,
+        "form_data": {
+            "student_name": "raghav",
+            "father_name": "raghu",
+            "contact_number": "1234567890",
+            "alternate_number": "1234567890",
+            "student_email": "b83348325@gmail.com",
+            "current_education_level": "12th Pass",
+            "state": "Maharashtra",
+            "city": "mumbai",
+            "percentage_10th": "12",
+            "percentage_12th": "56",
+            "course_details": "FYJC / Class 11",
+            "course_interest": "FYJC / Class 11"
+        }
     }
 ]
