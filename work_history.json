@@ -280,5 +280,14 @@
         "time": "08:57:30 AM",
         "action_type": "Lead Created",
         "details": "New dynamic enquiry received for raghav (1234567890)"
+    },
+    {
+        "id": 37,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "09:04:56 AM",
+        "action_type": "User Logout",
+        "details": "User admin logged out."
     }
 ]
