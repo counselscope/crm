@@ -23,6 +23,19 @@
         },
         "student_id": 1,
         "original_lead_id": 5,
-        "converted_at": "04 Nov 2026, 07:08 AM"
+        "converted_at": "04 Nov 2026, 07:08 AM",
+        "father_name": "",
+        "alternate_number": "",
+        "current_education_level": "",
+        "qualification": "",
+        "percentage_10th": "",
+        "percentage_12th": "",
+        "course_details": "12",
+        "budget": "00",
+        "hostel_preference": "",
+        "admission_preference": "",
+        "assigned_college": "",
+        "state": "",
+        "city": ""
     }
 ]
