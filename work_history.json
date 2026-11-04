@@ -145,5 +145,14 @@
         "time": "08:35:44 PM",
         "action_type": "Moved to Trash",
         "details": "Moved lead #6 (Jesita) to trash"
+    },
+    {
+        "id": 22,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "07:07:46 AM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 223.191.95.45"
     }
 ]
