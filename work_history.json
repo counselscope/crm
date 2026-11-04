@@ -370,5 +370,14 @@
         "time": "09:34:23 AM",
         "action_type": "Lead Created",
         "details": "New dynamic enquiry received for Shivam  (9874563232)"
+    },
+    {
+        "id": 47,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "11:14:41 AM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 223.191.92.146"
     }
 ]
