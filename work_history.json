@@ -163,5 +163,14 @@
         "time": "07:10:03 AM",
         "action_type": "Lead Updated",
         "details": "Updated comprehensive information for lead #5 (Prachi)"
+    },
+    {
+        "id": 24,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-04",
+        "time": "07:23:25 AM",
+        "action_type": "User Logout",
+        "details": "User admin logged out."
     }
 ]
