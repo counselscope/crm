@@ -484,8 +484,8 @@
         "username": "admin",
         "role": "Admin",
         "date": "2026-11-05",
-        "time": "10:04:10 AM",
-        "action_type": "Student Updated",
-        "details": "Updated student profile for #1 (Prachi)"
+        "time": "10:05:06 AM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 223.191.90.118"
     }
 ]
