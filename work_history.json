@@ -487,5 +487,14 @@
         "time": "10:05:06 AM",
         "action_type": "User Login",
         "details": "User admin (Admin) logged in successfully from IP 223.191.90.118"
+    },
+    {
+        "id": 60,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-05",
+        "time": "10:05:16 AM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Follow Up' for student Shivam "
     }
 ]
