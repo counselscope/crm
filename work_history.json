@@ -469,5 +469,14 @@
         "time": "10:02:39 AM",
         "action_type": "Status Change",
         "details": "Status changed to 'Closed' for student Ritika"
+    },
+    {
+        "id": 58,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-05",
+        "time": "10:02:45 AM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Rejected' for student Ritika"
     }
 ]
