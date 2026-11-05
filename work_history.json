@@ -424,5 +424,14 @@
         "time": "09:55:31 AM",
         "action_type": "User Login",
         "details": "User admin (Admin) logged in successfully from IP 223.191.90.118"
+    },
+    {
+        "id": 53,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-05",
+        "time": "09:57:27 AM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Converted to Student' for student Ritika"
     }
 ]
