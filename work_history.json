@@ -478,5 +478,14 @@
         "time": "10:02:45 AM",
         "action_type": "Status Change",
         "details": "Status changed to 'Rejected' for student Ritika"
+    },
+    {
+        "id": 59,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-05",
+        "time": "10:04:10 AM",
+        "action_type": "Student Updated",
+        "details": "Updated student profile for #1 (Prachi)"
     }
 ]
