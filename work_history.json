@@ -451,5 +451,14 @@
         "time": "10:02:22 AM",
         "action_type": "Status Change",
         "details": "Status changed to 'Contacted' for student Ritika"
+    },
+    {
+        "id": 56,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-05",
+        "time": "10:02:31 AM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Follow Up' for student Ritika"
     }
 ]
