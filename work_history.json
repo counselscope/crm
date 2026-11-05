@@ -502,8 +502,8 @@
         "username": "admin",
         "role": "Admin",
         "date": "2026-11-05",
-        "time": "11:09:29 AM",
-        "action_type": "User Login",
-        "details": "User admin (Admin) logged in successfully from IP 223.191.90.118"
+        "time": "11:11:10 AM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Closed' for student raghav"
     }
 ]
