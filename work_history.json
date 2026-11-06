@@ -505,5 +505,14 @@
         "time": "11:11:10 AM",
         "action_type": "Status Change",
         "details": "Status changed to 'Closed' for student raghav"
+    },
+    {
+        "id": 62,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-06",
+        "time": "12:55:48 PM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 223.191.93.85"
     }
 ]
