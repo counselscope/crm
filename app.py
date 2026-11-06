@@ -532,6 +532,112 @@ def update_lead():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+def _lead_creation_date(lead):
+    """Return a lead creation date as YYYY-MM-DD, supporting legacy records."""
+    raw = str(lead.get('created_date') or '').strip()
+    if raw:
+        try:
+            return datetime.strptime(raw[:10], '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    raw = str(lead.get('created_at') or '').strip()
+    for fmt in ('%d %b %Y, %I:%M %p', '%d %B %Y, %I:%M %p',
+                '%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _filtered_active_leads(statuses=None, start_date='', end_date=''):
+    statuses = statuses or []
+    start_obj = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
+    end_obj = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
+    if start_obj and end_obj and start_obj > end_obj:
+        raise ValueError('Start date cannot be after end date.')
+
+    selected = []
+    for lead in load_data(DATA_FILE):
+        if lead.get('is_deleted'):
+            continue
+        if statuses:
+            status = str(lead.get('status') or '').strip()
+            # "Contact" is the UI label for the CRM's existing "Contacted" value.
+            if status not in statuses and not (status == 'Contacted' and 'Contact' in statuses):
+                continue
+        if start_obj or end_obj:
+            created = _lead_creation_date(lead)
+            if not created or (start_obj and created < start_obj) or (end_obj and created > end_obj):
+                continue
+        selected.append(lead)
+    return selected
+
+
+@app.route('/api/all-leads/export-csv', methods=['GET'])
+def export_filtered_leads_csv():
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        statuses = request.args.getlist('status')
+        start_date = (request.args.get('start_date') or '').strip()
+        end_date = (request.args.get('end_date') or '').strip()
+        leads = _filtered_active_leads(statuses, start_date, end_date)
+        # Preserve every existing lead field, including fields added dynamically.
+        fieldnames = []
+        for lead in leads:
+            for key in lead.keys():
+                if key not in fieldnames:
+                    fieldnames.append(key)
+        if not fieldnames:
+            fieldnames = ['id', 'student_name', 'contact_number', 'student_email',
+                          'status', 'created_date', 'created_at']
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for lead in leads:
+            writer.writerow({
+                key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
+                for key, value in lead.items()
+            })
+        response = make_response('\ufeff' + output.getvalue())
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = 'attachment; filename=All_Leads_Filtered.csv'
+        return response
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+
+@app.route('/api/all-leads/delete-filtered', methods=['POST'])
+def delete_filtered_leads():
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    data = request.json or {}
+    statuses = data.get('statuses') or []
+    start_date = (data.get('start_date') or '').strip()
+    end_date = (data.get('end_date') or '').strip()
+    try:
+        # Recalculate the exact matching set on the server; never trust client row counts.
+        matching = _filtered_active_leads(statuses, start_date, end_date)
+        if not matching:
+            return jsonify({"status": "success", "deleted_count": 0,
+                            "message": "No matching active leads were found."})
+        matching_ids = {lead.get('id') for lead in matching}
+        all_leads = load_data(DATA_FILE)
+        deleted_names = []
+        for lead in all_leads:
+            if not lead.get('is_deleted') and lead.get('id') in matching_ids:
+                lead['is_deleted'] = True
+                deleted_names.append(str(lead.get('student_name') or lead.get('id')))
+        save_data(DATA_FILE, all_leads)
+        log_activity("Delete Filtered Leads",
+                     f"Admin moved {len(deleted_names)} filtered lead(s) to Trash Bin.")
+        return jsonify({"status": "success", "deleted_count": len(deleted_names),
+                        "message": f"{len(deleted_names)} matching lead(s) moved to Trash Bin."})
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+
 @app.route('/api/get-leads', methods=['GET'])
 def get_leads_api():
     if not session.get('logged_in'):
@@ -1662,6 +1768,37 @@ MAIN_DASHBOARD_HTML = """
                         <button onclick="deleteSelectedLeads()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Leads</button>
                         {% endif %}
                     </div>
+                    <div style="background:#f8fafc; padding:15px; border:1px solid var(--border-color); border-radius:10px; margin-top:12px;">
+                        <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
+                            <div style="min-width:220px; flex:1;">
+                                <label for="leadStatusFilter" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Lead Status (select multiple)</label>
+                                <select id="leadStatusFilter" class="form-control" multiple size="5" onchange="applyAllLeadsFilters()" style="min-height:112px;">
+                                    <option value="Contacted">Contact</option>
+                                    <option value="Follow Up">Follow Up</option>
+                                    <option value="Rejected">Rejected</option>
+                                    <option value="Closed">Closed</option>
+                                    <option value="New Lead">New Lead</option>
+                                </select>
+                                <small style="color:#64748b;">Use Ctrl (Windows) / Command (Mac) to select multiple statuses.</small>
+                            </div>
+                            <div style="min-width:155px;">
+                                <label for="leadStartDate" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Start Date</label>
+                                <input type="date" id="leadStartDate" class="form-control" onchange="applyAllLeadsFilters()">
+                            </div>
+                            <div style="min-width:155px;">
+                                <label for="leadEndDate" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">End Date</label>
+                                <input type="date" id="leadEndDate" class="form-control" onchange="applyAllLeadsFilters()">
+                            </div>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <button onclick="resetAllLeadsFilters()" style="background:#64748b; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-rotate-left"></i> Clear Filters</button>
+                                <button onclick="downloadFilteredLeadsCSV()" style="background:#16a34a; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-file-csv"></i> Download CSV</button>
+                                {% if role == 'Admin' %}
+                                <button onclick="deleteFilteredLeads()" style="background:#b91c1c; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-trash-can"></i> Delete Filtered Leads</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div id="allLeadsFilterSummary" style="margin-top:10px; color:#475569; font-size:12px; font-weight:600;">Showing all active leads.</div>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -2355,6 +2492,117 @@ MAIN_DASHBOARD_HTML = """
             }
         }
 
+        function getAllLeadsFilterValues() {
+            const statusSelect = document.getElementById('leadStatusFilter');
+            const statuses = statusSelect
+                ? Array.from(statusSelect.selectedOptions).map(option => option.value)
+                : [];
+            return {
+                statuses,
+                start_date: document.getElementById('leadStartDate')?.value || '',
+                end_date: document.getElementById('leadEndDate')?.value || ''
+            };
+        }
+
+        function getLeadCreatedDateValue(lead) {
+            const raw = String(lead.created_date || '').trim();
+            if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;
+            const createdAt = String(lead.created_at || '').trim();
+            const parsed = new Date(createdAt);
+            if (!Number.isNaN(parsed.getTime())) {
+                const y = parsed.getFullYear();
+                const m = String(parsed.getMonth() + 1).padStart(2, '0');
+                const d = String(parsed.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            const match = createdAt.match(/^(\\d{1,2})\\s+([A-Za-z]{3})\\s+(\\d{4})/);
+            if (match) {
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const month = months.findIndex(v => v.toLowerCase() === match[2].toLowerCase()) + 1;
+                if (month > 0) return `${match[3]}-${String(month).padStart(2,'0')}-${String(Number(match[1])).padStart(2,'0')}`;
+            }
+            return '';
+        }
+
+        function getFilteredAllLeads() {
+            const filters = getAllLeadsFilterValues();
+            const active = rawLeadsData.filter(lead => !lead.is_deleted);
+            return active.filter(lead => {
+                if (filters.statuses.length && !filters.statuses.includes(lead.status)) return false;
+                const created = getLeadCreatedDateValue(lead);
+                if (filters.start_date && (!created || created < filters.start_date)) return false;
+                if (filters.end_date && (!created || created > filters.end_date)) return false;
+                return true;
+            });
+        }
+
+        function applyAllLeadsFilters() {
+            const start = document.getElementById('leadStartDate')?.value || '';
+            const end = document.getElementById('leadEndDate')?.value || '';
+            if (start && end && start > end) {
+                alert('Start date cannot be after end date.');
+                document.getElementById('leadEndDate').value = '';
+            }
+            const filtered = getFilteredAllLeads();
+            populateAllLeadsTable(filtered);
+            const summary = document.getElementById('allLeadsFilterSummary');
+            if (summary) {
+                const filters = getAllLeadsFilterValues();
+                const parts = [];
+                if (filters.statuses.length) parts.push(`Statuses: ${filters.statuses.map(v => v === 'Contacted' ? 'Contact' : v).join(', ')}`);
+                if (filters.start_date || filters.end_date) parts.push(`Dates: ${filters.start_date || 'Any'} to ${filters.end_date || 'Any'}`);
+                summary.textContent = `Showing ${filtered.length} of ${rawLeadsData.filter(l => !l.is_deleted).length} active leads${parts.length ? ' • ' + parts.join(' • ') : ' • No filters applied'}.`;
+            }
+            const master = document.querySelector('#leads-tab thead input[type="checkbox"]');
+            if (master) master.checked = false;
+            filterLeadsTable();
+        }
+
+        function resetAllLeadsFilters() {
+            const statusSelect = document.getElementById('leadStatusFilter');
+            if (statusSelect) Array.from(statusSelect.options).forEach(option => option.selected = false);
+            const start = document.getElementById('leadStartDate');
+            const end = document.getElementById('leadEndDate');
+            if (start) start.value = '';
+            if (end) end.value = '';
+            applyAllLeadsFilters();
+        }
+
+        function downloadFilteredLeadsCSV() {
+            const filters = getAllLeadsFilterValues();
+            const params = new URLSearchParams();
+            filters.statuses.forEach(status => params.append('status', status));
+            if (filters.start_date) params.set('start_date', filters.start_date);
+            if (filters.end_date) params.set('end_date', filters.end_date);
+            window.location.href = `/api/all-leads/export-csv?${params.toString()}`;
+        }
+
+        async function deleteFilteredLeads() {
+            if (userRole !== 'Admin') return alert('Unauthorized. Admin access required.');
+            const filters = getAllLeadsFilterValues();
+            if (!filters.statuses.length && !filters.start_date && !filters.end_date) {
+                const total = rawLeadsData.filter(lead => !lead.is_deleted).length;
+                if (!confirm(`No filters are applied. This will move ALL ${total} active leads to the Trash Bin. Continue?`)) return;
+            } else {
+                const count = getFilteredAllLeads().length;
+                if (!count) return alert('There are no matching leads to delete.');
+                if (!confirm(`You are about to move ${count} lead(s) matching the current filters to the Trash Bin. Unmatched leads will remain untouched. Continue?`)) return;
+            }
+            const res = await fetch('/api/all-leads/delete-filtered', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(filters)
+            });
+            const result = await res.json().catch(() => ({}));
+            if (res.ok && result.status === 'success') {
+                alert(result.message || `${result.deleted_count || 0} lead(s) moved to Trash Bin.`);
+                await fetchLeadsData();
+                applyAllLeadsFilters();
+            } else {
+                alert(result.message || result.error || 'Unable to delete matching leads.');
+            }
+        }
+
         function renderUI(dataList) {
             const activeLeads = dataList.filter(l => !l.is_deleted);
             const trashLeads = dataList.filter(l => l.is_deleted);
@@ -2416,8 +2664,8 @@ MAIN_DASHBOARD_HTML = """
                 `;
             });
             
-            populateAllLeadsTable(activeLeads);
             populateTrashTable(trashLeads);
+            applyAllLeadsFilters();
             updatePieChart(activeLeads);
             updateTimeFilteredCharts(activeLeads);
             fetchStudentsData();
