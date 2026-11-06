@@ -649,5 +649,14 @@
         "time": "05:50:37 PM",
         "action_type": "Status Change",
         "details": "Status changed to 'Follow Up' for student Jay"
+    },
+    {
+        "id": 78,
+        "username": "client",
+        "role": "Client",
+        "date": "2026-11-06",
+        "time": "05:50:50 PM",
+        "action_type": "User Logout",
+        "details": "User client logged out."
     }
 ]
