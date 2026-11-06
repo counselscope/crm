@@ -1,0 +1,18 @@
+{
+    "id": 1,
+    "college_name": "khasala",
+    "location": "matunga",
+    "address": "matunga",
+    "phone": "1234567890",
+    "email": "counselscope@gmail.com",
+    "description": "aa",
+    "courses": "",
+    "package": "N/A",
+    "document": {
+        "stored_name": "student/college/khasala/college_6481980f2a3644d4832cf29c7eead0ac.jpeg",
+        "github_path": "student/college/khasala/college_6481980f2a3644d4832cf29c7eead0ac.jpeg",
+        "original_name": "WhatsApp_Image_2026-11-04_at_6.33.48_PM.jpeg",
+        "extension": ".jpeg"
+    },
+    "github_record_path": "student/college/khasala/college.json"
+}
