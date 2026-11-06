@@ -484,5 +484,23 @@
         "location": "Unknown",
         "status": "Active",
         "session_info": "Session ID: 6644759688567421391"
+    },
+    {
+        "id": 28,
+        "username": "client",
+        "role": "Client",
+        "ip_address": "223.191.90.128",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "login_date": "2026-11-06",
+        "login_time": "06 Nov 2026, 05:49 PM",
+        "login_timestamp": 1793987341.216612,
+        "logout_date": "N/A",
+        "logout_time": "N/A",
+        "logout_timestamp": null,
+        "location": "Unknown",
+        "status": "Active",
+        "session_info": "Session ID: 5015985920472888256"
     }
 ]
