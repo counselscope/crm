@@ -550,5 +550,14 @@
         "time": "02:05:08 PM",
         "action_type": "College Added",
         "details": "Added new college: khasala"
+    },
+    {
+        "id": 67,
+        "username": "System",
+        "role": "Admin",
+        "date": "2026-11-06",
+        "time": "02:08:54 PM",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for Jay (7021889494)"
     }
 ]
