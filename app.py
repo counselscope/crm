@@ -3,6 +3,7 @@ import json
 import csv
 import io
 import base64
+import uuid
 import requests
 from datetime import datetime, timedelta
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response, send_file
@@ -1040,19 +1041,105 @@ def get_colleges():
 def add_college():
     if not session.get('logged_in') or session.get('role') != 'Admin':
         return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
+    try:
+        data = request.form
+        name = (data.get('college_name') or '').strip()
+        if not name:
+            return jsonify({"status": "error", "message": "College name is required."}), 400
+
+        colleges = load_data(COLLEGES_FILE)
+        upload = request.files.get('college_file')
+        file_info = None
+        if upload and upload.filename:
+            ext = os.path.splitext(secure_filename(upload.filename))[1].lower()
+            if ext not in ('.jpg', '.jpeg', '.png', '.pdf'):
+                return jsonify({"status": "error", "message": "Only JPG, JPEG, PNG and PDF files are allowed."}), 400
+            upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
+            os.makedirs(upload_dir, exist_ok=True)
+            stored_name = f"college_{uuid.uuid4().hex}{ext}"
+            upload.save(os.path.join(upload_dir, stored_name))
+            file_info = {"stored_name": stored_name, "original_name": secure_filename(upload.filename), "extension": ext}
+
+        existing_ids = [int(c.get('id', 0)) for c in colleges if str(c.get('id', '')).isdigit()]
+        new_c = {
+            "id": max(existing_ids, default=0) + 1,
+            "college_name": name,
+            "location": (data.get('address') or '').strip(),
+            "address": (data.get('address') or '').strip(),
+            "phone": (data.get('phone') or '').strip(),
+            "email": (data.get('email') or '').strip(),
+            "description": (data.get('description') or '').strip(),
+            "courses": "",
+            "package": "N/A",
+            "document": file_info
+        }
+        colleges.append(new_c)
+        save_data(COLLEGES_FILE, colleges)
+        log_activity("College Added", f"Added new college: {name}")
+        return jsonify({"status": "success", "message": "College added successfully.", "college": new_c})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/update-college/<int:college_id>', methods=['POST'])
+def update_college(college_id):
+    if not session.get('logged_in') or session.get('role') != 'Admin':
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    try:
+        colleges = load_data(COLLEGES_FILE)
+        target = next((c for c in colleges if c.get('id') == college_id), None)
+        if not target:
+            return jsonify({"status": "error", "message": "College not found."}), 404
+
+        data = request.form
+        name = (data.get('college_name') or target.get('college_name') or '').strip()
+        if not name:
+            return jsonify({"status": "error", "message": "College name is required."}), 400
+        address = data.get('address')
+        if address is not None:
+            target['address'] = address.strip()
+            target['location'] = address.strip()  # Keep legacy college dropdown/report compatibility.
+        for field in ('phone', 'email', 'description'):
+            if field in data:
+                target[field] = data.get(field, '').strip()
+        target['college_name'] = name
+
+        upload = request.files.get('college_file')
+        if upload and upload.filename:
+            ext = os.path.splitext(secure_filename(upload.filename))[1].lower()
+            if ext not in ('.jpg', '.jpeg', '.png', '.pdf'):
+                return jsonify({"status": "error", "message": "Only JPG, JPEG, PNG and PDF files are allowed."}), 400
+            upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
+            os.makedirs(upload_dir, exist_ok=True)
+            stored_name = f"college_{uuid.uuid4().hex}{ext}"
+            upload.save(os.path.join(upload_dir, stored_name))
+            target['document'] = {"stored_name": stored_name, "original_name": secure_filename(upload.filename), "extension": ext}
+
+        save_data(COLLEGES_FILE, colleges)
+        log_activity("College Updated", f"Updated college #{college_id}: {name}")
+        return jsonify({"status": "success", "message": "College updated successfully.", "college": target})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/college-file/<int:college_id>', methods=['GET'])
+def college_file(college_id):
+    if not session.get('logged_in'):
+        return jsonify({"error": "Unauthorized"}), 401
     colleges = load_data(COLLEGES_FILE)
-    new_c = {
-        "id": len(colleges) + 1,
-        "college_name": data.get('college_name'),
-        "location": data.get('location'),
-        "courses": data.get('courses'),
-        "package": data.get('package', 'N/A')
-    }
-    colleges.append(new_c)
-    save_data(COLLEGES_FILE, colleges)
-    log_activity("College Added", f"Added new college tie-up: {data.get('college_name')}")
-    return jsonify({"status": "success"})
+    target = next((c for c in colleges if c.get('id') == college_id), None)
+    document = target.get('document') if target else None
+    if not document or not document.get('stored_name'):
+        return jsonify({"error": "No document found for this college."}), 404
+    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
+    stored_name = os.path.basename(document['stored_name'])
+    file_path = os.path.join(upload_dir, stored_name)
+    if not os.path.isfile(file_path):
+        return jsonify({"error": "The stored college document is unavailable on this server."}), 404
+    ext = os.path.splitext(stored_name)[1].lower()
+    mimetype = 'application/pdf' if ext == '.pdf' else ('image/png' if ext == '.png' else 'image/jpeg')
+    return send_file(file_path, mimetype=mimetype, as_attachment=request.args.get('download') == '1',
+                     download_name=document.get('original_name') or stored_name, conditional=True)
 
 
 # --- ROUTING & VIEWS ---
@@ -1561,39 +1648,50 @@ MAIN_DASHBOARD_HTML = """
             <div id="colleges-tab" class="tab-section">
                 {% if role == 'Admin' %}
                 <div class="card" style="margin-bottom: 20px;">
-                    <h3>Add New College / Tie-up</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 15px;">
-                        <input type="text" id="colName" placeholder="College Name" class="form-control" style="margin:0;">
-                        <input type="text" id="colLoc" placeholder="Location" class="form-control" style="margin:0;">
-                        <input type="text" id="colCourses" placeholder="Courses" class="form-control" style="margin:0;">
-                        <input type="text" id="colPackage" placeholder="Avg Package" class="form-control" style="margin:0;">
-                        <button onclick="addNewCollege()" style="background:#2563eb; color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer; padding:10px;">Save College</button>
-                    </div>
+                    <h3 id="collegeFormHeading">Add New College</h3>
+                    <form id="collegeForm" onsubmit="saveCollege(event)" enctype="multipart/form-data">
+                        <input type="hidden" id="collegeEditId" value="">
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-top:15px;">
+                            <div><label for="colName">College Name *</label><input type="text" id="colName" class="form-control" required placeholder="College Name" style="margin:0;"></div>
+                            <div><label for="colLoc">Address</label><input type="text" id="colLoc" class="form-control" placeholder="Full address" style="margin:0;"></div>
+                            <div><label for="colPhone">Phone Number</label><input type="tel" id="colPhone" class="form-control" placeholder="Phone number" style="margin:0;"></div>
+                            <div><label for="colEmail">Email Address</label><input type="email" id="colEmail" class="form-control" placeholder="Email address" style="margin:0;"></div>
+                        </div>
+                        <div style="margin-top:14px;">
+                            <label for="colDescription">Description</label>
+                            <textarea id="colDescription" class="form-control" rows="4" placeholder="College description" style="width:100%; resize:vertical;"></textarea>
+                        </div>
+                        <div style="margin-top:14px;">
+                            <label for="colFile">Upload Document / Image (JPG, JPEG, PNG, PDF)</label>
+                            <input type="file" id="colFile" class="form-control" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" style="margin:0;">
+                            <small id="collegeCurrentFile" style="display:block;color:#64748b;margin-top:6px;"></small>
+                        </div>
+                        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
+                            <button type="submit" id="collegeSaveBtn" style="background:#2563eb;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;padding:10px 20px;">Save College</button>
+                            <button type="button" id="collegeCancelEdit" onclick="resetCollegeForm()" style="display:none;background:#64748b;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;padding:10px 20px;">Cancel Edit</button>
+                        </div>
+                    </form>
                 </div>
                 {% endif %}
 
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"><h3>College Directory Export & Management</h3></div>
-                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                        <button onclick="downloadCollegePDF()" style="background: #dc2626; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download College PDF</button>
+                    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                        <button onclick="downloadCollegePDF()" style="background:#dc2626;color:white;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;"><i class="fa-solid fa-file-pdf"></i> Download College PDF</button>
                         {% if role == 'Admin' %}
-                        <button onclick="deleteSelectedColleges()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Colleges</button>
+                        <button onclick="deleteSelectedColleges()" style="background:#ef4444;color:white;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Colleges</button>
                         {% endif %}
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header"><h3>Partner Colleges List</h3></div>
-                    <div style="overflow-x: auto;">
+                    <div style="overflow-x:auto;">
                         <table>
                             <thead>
                                 <tr>
                                     {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('colleges', this)"></th>{% endif %}
-                                    <th>#ID</th>
-                                    <th>College Name</th>
-                                    <th>Location</th>
-                                    <th>Courses Offered</th>
-                                    <th>Avg Package</th>
+                                    <th>#ID</th><th>College Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Description</th><th>Document</th>
                                     {% if role == 'Admin' %}<th>Action</th>{% endif %}
                                 </tr>
                             </thead>
@@ -1603,7 +1701,21 @@ MAIN_DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- TRASH BIN TAB -->
+            <!-- College document preview modal (Colleges Manager only) -->
+            <div id="collegePreviewModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.72);z-index:9999;align-items:center;justify-content:center;padding:18px;" onclick="if(event.target===this) closeCollegePreview();">
+                <div style="background:#fff;width:min(850px,96vw);height:min(650px,90vh);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e2e8f0;">
+                        <strong id="collegePreviewTitle" style="color:#0f172a;">College Document</strong>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <a id="collegePreviewDownload" href="#" download style="display:none;background:#2563eb;color:#fff;padding:8px 12px;border-radius:7px;text-decoration:none;font-size:13px;">Download</a>
+                            <button type="button" onclick="closeCollegePreview()" style="background:#64748b;color:white;border:0;border-radius:7px;padding:8px 12px;cursor:pointer;">Close</button>
+                        </div>
+                    </div>
+                    <div id="collegePreviewBody" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#f1f5f9;padding:10px;overflow:auto;"></div>
+                </div>
+            </div>
+
+                        <!-- TRASH BIN TAB -->
             <div id="trash-tab" class="tab-section">
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"><h3 style="color: #ef4444;"><i class="fa-solid fa-trash-can"></i> Trash Bin Management</h3></div>
@@ -2005,15 +2117,94 @@ MAIN_DASHBOARD_HTML = """
                 const tbody = document.getElementById('collegesTbody');
                 tbody.innerHTML = '';
                 collegesData.forEach(c => {
-                    let actionHtml = '';
                     const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="colleges-checkbox" value="${c.id}"></td>` : '';
-                    if(userRole === 'Admin') {
-                        actionHtml = `<td><button onclick="deleteCollegeRecord(${c.id})" class="action-icon-btn trash-btn"><i class="fa-solid fa-trash-can"></i></button></td>`;
-                    }
-                    tbody.innerHTML += `<tr>${cbHtml}<td>#${c.id}</td><td><strong>${c.college_name}</strong></td><td>${c.location}</td><td>${c.courses}</td><td>${c.package}</td>${actionHtml}</tr>`;
+                    const doc = c.document || null;
+                    const fileHtml = doc ? `<button type="button" onclick="openCollegePreview(${c.id})" style="border:0;background:#e0edff;color:#1d4ed8;padding:6px 10px;border-radius:7px;cursor:pointer;"> <i class="fa-solid fa-eye"></i> View</button>` : '<span style="color:#94a3b8;">No file</span>';
+                    const actionHtml = userRole === 'Admin' ? `<td><button type="button" onclick="editCollegeRecord(${c.id})" class="action-icon-btn" title="Edit" style="color:#2563eb;"><i class="fa-solid fa-pen-to-square"></i></button> <button type="button" onclick="deleteCollegeRecord(${c.id})" class="action-icon-btn trash-btn" title="Delete"><i class="fa-solid fa-trash-can"></i></button></td>` : '';
+                    const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+                    tbody.innerHTML += `<tr>${cbHtml}<td>#${c.id}</td><td><strong>${esc(c.college_name)}</strong></td><td>${esc(c.address ?? c.location ?? '')}</td><td>${esc(c.phone || '')}</td><td>${esc(c.email || '')}</td><td style="max-width:240px;white-space:normal;">${esc(c.description || '')}</td><td>${fileHtml}</td>${actionHtml}</tr>`;
                 });
                 populateCollegeDropdowns();
             }
+        }
+
+        function resetCollegeForm() {
+            const form = document.getElementById('collegeForm');
+            if(form) form.reset();
+            document.getElementById('collegeEditId').value = '';
+            document.getElementById('collegeFormHeading').textContent = 'Add New College';
+            document.getElementById('collegeSaveBtn').textContent = 'Save College';
+            document.getElementById('collegeCancelEdit').style.display = 'none';
+            document.getElementById('collegeCurrentFile').textContent = '';
+        }
+
+        function editCollegeRecord(id) {
+            const c = collegesData.find(item => item.id === id);
+            if(!c) return;
+            document.getElementById('collegeEditId').value = c.id;
+            document.getElementById('colName').value = c.college_name || '';
+            document.getElementById('colLoc').value = c.address ?? c.location ?? '';
+            document.getElementById('colPhone').value = c.phone || '';
+            document.getElementById('colEmail').value = c.email || '';
+            document.getElementById('colDescription').value = c.description || '';
+            document.getElementById('colFile').value = '';
+            document.getElementById('collegeCurrentFile').textContent = c.document ? 'Current file: ' + (c.document.original_name || 'Uploaded file') + ' (choose a file only to replace it)' : 'No file currently uploaded.';
+            document.getElementById('collegeFormHeading').textContent = 'Edit College #' + c.id;
+            document.getElementById('collegeSaveBtn').textContent = 'Update College';
+            document.getElementById('collegeCancelEdit').style.display = 'inline-block';
+            document.getElementById('collegeForm').scrollIntoView({behavior:'smooth',block:'center'});
+        }
+
+        async function saveCollege(event) {
+            event.preventDefault();
+            const id = document.getElementById('collegeEditId').value;
+            const formData = new FormData();
+            formData.append('college_name', document.getElementById('colName').value.trim());
+            formData.append('address', document.getElementById('colLoc').value);
+            formData.append('phone', document.getElementById('colPhone').value);
+            formData.append('email', document.getElementById('colEmail').value);
+            formData.append('description', document.getElementById('colDescription').value);
+            const file = document.getElementById('colFile').files[0];
+            if(file) formData.append('college_file', file);
+            const endpoint = id ? `/api/update-college/${id}` : '/api/add-college';
+            const res = await fetch(endpoint, {method:'POST', body:formData});
+            const result = await res.json();
+            if(!res.ok) { alert(result.message || result.error || 'Unable to save college.'); return; }
+            resetCollegeForm();
+            await fetchColleges();
+            alert(result.message || 'College saved successfully.');
+        }
+
+        function openCollegePreview(id) {
+            const college = collegesData.find(item => item.id === id);
+            if(!college || !college.document) return;
+            const ext = (college.document.extension || '').toLowerCase();
+            const url = `/api/college-file/${id}`;
+            const body = document.getElementById('collegePreviewBody');
+            body.innerHTML = '';
+            document.getElementById('collegePreviewTitle').textContent = college.document.original_name || college.college_name;
+            const download = document.getElementById('collegePreviewDownload');
+            download.href = url + '?download=1';
+            download.style.display = 'inline-block';
+            if(ext === '.pdf') {
+                const frame = document.createElement('iframe');
+                frame.src = url;
+                frame.title = 'College PDF preview';
+                frame.style.cssText = 'width:100%;height:100%;border:0;background:white;';
+                body.appendChild(frame);
+            } else {
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = college.document.original_name || college.college_name;
+                image.style.cssText = 'max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;';
+                body.appendChild(image);
+            }
+            document.getElementById('collegePreviewModal').style.display = 'flex';
+        }
+
+        function closeCollegePreview() {
+            document.getElementById('collegePreviewModal').style.display = 'none';
+            document.getElementById('collegePreviewBody').innerHTML = '';
         }
 
         function populateCollegeDropdowns() {
@@ -2036,19 +2227,8 @@ MAIN_DASHBOARD_HTML = """
         }
 
         async function addNewCollege() {
-            const data = {
-                college_name: document.getElementById('colName').value,
-                location: document.getElementById('colLoc').value,
-                courses: document.getElementById('colCourses').value,
-                package: document.getElementById('colPackage').value
-            };
-            await fetch('/api/add-college', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            fetchColleges();
-            alert('College added successfully!');
+            const form = document.getElementById('collegeForm');
+            if(form) return form.requestSubmit();
         }
 
         async function deleteCollegeRecord(id) {
