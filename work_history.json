@@ -586,5 +586,14 @@
         "time": "04:14:35 PM",
         "action_type": "User Logout",
         "details": "User admin logged out."
+    },
+    {
+        "id": 71,
+        "username": "System",
+        "role": "Admin",
+        "date": "2026-11-06",
+        "time": "04:40:11 PM",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for Mayank (9874563232)"
     }
 ]
