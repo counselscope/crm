@@ -622,5 +622,14 @@
         "time": "05:01:58 PM",
         "action_type": "Status Change",
         "details": "Status changed to 'Follow Up' for student Mayank"
+    },
+    {
+        "id": 75,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-06",
+        "time": "05:46:27 PM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 223.191.90.128"
     }
 ]
