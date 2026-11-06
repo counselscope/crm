@@ -282,6 +282,104 @@ def upload_file_to_github(file_storage, student_name, original_filename):
     
     return None
 
+
+# College Manager GitHub storage helpers.
+# These helpers are intentionally separate from upload_file_to_github(),
+# because student documents must keep their existing student_documents/ path.
+def college_github_headers(raw=False):
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        raise RuntimeError("GitHub is not configured. Set GITHUB_TOKEN and GITHUB_REPO environment variables.")
+    return {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.raw" if raw else "application/vnd.github+json"
+    }
+
+
+def safe_college_folder_name(college_name):
+    name = (college_name or "College").strip()
+    safe = "".join(ch if ch.isalnum() or ch in (" ", "_", "-") else "_" for ch in name)
+    safe = "_".join(safe.split()).strip("_.-")
+    return safe or "College"
+
+
+def upload_college_content_to_github(repo_path, content, commit_message):
+    """Create/update a file in the College Manager's own GitHub folder."""
+    headers = college_github_headers()
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_path}"
+    check = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=30)
+    sha = None
+    if check.status_code == 200:
+        sha = check.json().get("sha")
+    elif check.status_code != 404:
+        raise RuntimeError(f"GitHub could not check {repo_path}: {check.status_code} {check.text[:300]}")
+
+    payload = {
+        "message": commit_message,
+        "content": base64.b64encode(content).decode("utf-8"),
+        "branch": GITHUB_BRANCH
+    }
+    if sha:
+        payload["sha"] = sha
+    response = requests.put(url, headers=headers, json=payload, timeout=60)
+    if response.status_code not in (200, 201):
+        raise RuntimeError(f"GitHub upload failed for {repo_path}: {response.status_code} {response.text[:500]}")
+    return repo_path
+
+
+def save_college_record_to_github(college):
+    folder = safe_college_folder_name(college.get("college_name"))
+    # Add the record ID only if another college already uses the same folder name.
+    all_colleges = load_data(COLLEGES_FILE)
+    same_name = [c for c in all_colleges if safe_college_folder_name(c.get("college_name")) == folder]
+    if len(same_name) > 1:
+        folder = f"{folder}_{college.get('id')}"
+    repo_path = f"student/college/{folder}/college.json"
+    college["github_record_path"] = repo_path
+    payload = json.dumps(college, ensure_ascii=False, indent=4).encode("utf-8")
+    upload_college_content_to_github(repo_path, payload, f"Update college record: {college.get('college_name', 'College')}")
+    return repo_path
+
+
+def upload_college_document_to_github(upload, college_name, college_id):
+    if not upload or not upload.filename:
+        return None
+    original_name = secure_filename(upload.filename)
+    ext = os.path.splitext(original_name)[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".pdf"):
+        raise ValueError("Only JPG, JPEG, PNG and PDF files are allowed.")
+    content = upload.read()
+    if not content:
+        raise ValueError("The selected college file is empty.")
+    # GitHub's Contents API is limited to files up to 1 MB.
+    if len(content) > 1_000_000:
+        raise ValueError("College files must be 1 MB or smaller for this GitHub upload method.")
+    folder = safe_college_folder_name(college_name)
+    all_colleges = load_data(COLLEGES_FILE)
+    same_name = [c for c in all_colleges if safe_college_folder_name(c.get("college_name")) == folder]
+    if any(int(c.get("id", -1)) != int(college_id) for c in same_name):
+        folder = f"{folder}_{college_id}"
+    stored_name = f"college_{uuid.uuid4().hex}{ext}"
+    repo_path = f"student/college/{folder}/{stored_name}"
+    upload_college_content_to_github(repo_path, content, f"Upload college document: {college_name}")
+    return {
+        "stored_name": repo_path,
+        "github_path": repo_path,
+        "original_name": original_name,
+        "extension": ext
+    }
+
+
+def get_college_file_from_github(repo_path):
+    headers = college_github_headers()
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_path}"
+    response = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=30)
+    if response.status_code != 200:
+        raise RuntimeError(f"GitHub file retrieval failed: {response.status_code}")
+    result = response.json()
+    if result.get("encoding") != "base64" or not result.get("content"):
+        raise RuntimeError("GitHub did not return the file content in base64 format.")
+    return base64.b64decode(result["content"])
+
 # --- API ENDPOINTS ---
 
 @app.route('/api/submit-lead', methods=['POST'])
@@ -1042,24 +1140,15 @@ def add_college():
     if not session.get('logged_in') or session.get('role') != 'Admin':
         return jsonify({"error": "Unauthorized. Admin access required."}), 403
     try:
+        if not GITHUB_TOKEN or not GITHUB_REPO:
+            return jsonify({"status": "error", "message": "GitHub storage is not configured. Set GITHUB_TOKEN and GITHUB_REPO before adding colleges."}), 503
+
         data = request.form
         name = (data.get('college_name') or '').strip()
         if not name:
             return jsonify({"status": "error", "message": "College name is required."}), 400
 
         colleges = load_data(COLLEGES_FILE)
-        upload = request.files.get('college_file')
-        file_info = None
-        if upload and upload.filename:
-            ext = os.path.splitext(secure_filename(upload.filename))[1].lower()
-            if ext not in ('.jpg', '.jpeg', '.png', '.pdf'):
-                return jsonify({"status": "error", "message": "Only JPG, JPEG, PNG and PDF files are allowed."}), 400
-            upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
-            os.makedirs(upload_dir, exist_ok=True)
-            stored_name = f"college_{uuid.uuid4().hex}{ext}"
-            upload.save(os.path.join(upload_dir, stored_name))
-            file_info = {"stored_name": stored_name, "original_name": secure_filename(upload.filename), "extension": ext}
-
         existing_ids = [int(c.get('id', 0)) for c in colleges if str(c.get('id', '')).isdigit()]
         new_c = {
             "id": max(existing_ids, default=0) + 1,
@@ -1071,12 +1160,21 @@ def add_college():
             "description": (data.get('description') or '').strip(),
             "courses": "",
             "package": "N/A",
-            "document": file_info
+            "document": None
         }
+
+        upload = request.files.get('college_file')
+        if upload and upload.filename:
+            new_c['document'] = upload_college_document_to_github(upload, name, new_c['id'])
+
+        # Per-college JSON and any uploaded document live in this college's folder.
+        new_c['github_record_path'] = save_college_record_to_github(new_c)
         colleges.append(new_c)
-        save_data(COLLEGES_FILE, colleges)
+        save_data(COLLEGES_FILE, colleges)  # Keep the existing CRM-wide index for current UI/report compatibility.
         log_activity("College Added", f"Added new college: {name}")
-        return jsonify({"status": "success", "message": "College added successfully.", "college": new_c})
+        return jsonify({"status": "success", "message": "College added and saved to GitHub successfully.", "college": new_c})
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -1086,6 +1184,9 @@ def update_college(college_id):
     if not session.get('logged_in') or session.get('role') != 'Admin':
         return jsonify({"error": "Unauthorized. Admin access required."}), 403
     try:
+        if not GITHUB_TOKEN or not GITHUB_REPO:
+            return jsonify({"status": "error", "message": "GitHub storage is not configured. Set GITHUB_TOKEN and GITHUB_REPO before updating colleges."}), 503
+
         colleges = load_data(COLLEGES_FILE)
         target = next((c for c in colleges if c.get('id') == college_id), None)
         if not target:
@@ -1106,18 +1207,15 @@ def update_college(college_id):
 
         upload = request.files.get('college_file')
         if upload and upload.filename:
-            ext = os.path.splitext(secure_filename(upload.filename))[1].lower()
-            if ext not in ('.jpg', '.jpeg', '.png', '.pdf'):
-                return jsonify({"status": "error", "message": "Only JPG, JPEG, PNG and PDF files are allowed."}), 400
-            upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
-            os.makedirs(upload_dir, exist_ok=True)
-            stored_name = f"college_{uuid.uuid4().hex}{ext}"
-            upload.save(os.path.join(upload_dir, stored_name))
-            target['document'] = {"stored_name": stored_name, "original_name": secure_filename(upload.filename), "extension": ext}
+            target['document'] = upload_college_document_to_github(upload, name, college_id)
 
+        # No replacement file? Existing document metadata remains unchanged.
+        target['github_record_path'] = save_college_record_to_github(target)
         save_data(COLLEGES_FILE, colleges)
         log_activity("College Updated", f"Updated college #{college_id}: {name}")
-        return jsonify({"status": "success", "message": "College updated successfully.", "college": target})
+        return jsonify({"status": "success", "message": "College updated and saved to GitHub successfully.", "college": target})
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -1131,15 +1229,29 @@ def college_file(college_id):
     document = target.get('document') if target else None
     if not document or not document.get('stored_name'):
         return jsonify({"error": "No document found for this college."}), 404
-    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
-    stored_name = os.path.basename(document['stored_name'])
-    file_path = os.path.join(upload_dir, stored_name)
-    if not os.path.isfile(file_path):
-        return jsonify({"error": "The stored college document is unavailable on this server."}), 404
-    ext = os.path.splitext(stored_name)[1].lower()
+
+    stored_name = document.get('stored_name', '')
+    github_path = document.get('github_path') or (stored_name if stored_name.startswith('student/college/') else None)
+    ext = (document.get('extension') or os.path.splitext(stored_name)[1]).lower()
     mimetype = 'application/pdf' if ext == '.pdf' else ('image/png' if ext == '.png' else 'image/jpeg')
-    return send_file(file_path, mimetype=mimetype, as_attachment=request.args.get('download') == '1',
-                     download_name=document.get('original_name') or stored_name, conditional=True)
+
+    if github_path:
+        try:
+            file_bytes = get_college_file_from_github(github_path)
+            return send_file(io.BytesIO(file_bytes), mimetype=mimetype,
+                             as_attachment=request.args.get('download') == '1',
+                             download_name=document.get('original_name') or os.path.basename(github_path))
+        except Exception as e:
+            return jsonify({"error": str(e)}), 502
+
+    # Backward compatibility: files uploaded by the older local-storage version.
+    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
+    legacy_path = os.path.join(upload_dir, os.path.basename(stored_name))
+    if os.path.isfile(legacy_path):
+        return send_file(legacy_path, mimetype=mimetype,
+                         as_attachment=request.args.get('download') == '1',
+                         download_name=document.get('original_name') or os.path.basename(stored_name), conditional=True)
+    return jsonify({"error": "The stored college document was not found in GitHub or on this server."}), 404
 
 
 # --- ROUTING & VIEWS ---
