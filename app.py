@@ -568,11 +568,19 @@ def submit_lead():
         # Handle every uploaded registration attachment, including optional photo/image fields.
         uploaded_files = {}
         attachment_records = []
-        known_file_keys = ['id_document', 'class_10_doc', 'class_12_doc', 'aadhar_doc', 'edu_scorecard']
+        known_file_keys = ['id_document', 'class_10_doc', 'class_12_doc', 'aadhar_doc', 'edu_scorecard', 'passport_photo']
         for f_key, file_list in request.files.lists():
             for file in file_list:
                 if file and file.filename:
                     original_name = secure_filename(file.filename)
+                    if f_key == 'passport_photo':
+                        ext = os.path.splitext(original_name)[1].lower()
+                        if ext not in ('.jpg', '.jpeg', '.png'):
+                            return jsonify({"status":"error","message":"Passport photograph must be JPG, JPEG or PNG."}), 400
+                        content = file.read()
+                        if not content or len(content) > 1_000_000:
+                            return jsonify({"status":"error","message":"Passport photograph must be non-empty and no larger than 1 MB."}), 400
+                        file.stream.seek(0)
                     stored_path = upload_file_to_github(file, student_name, file.filename)
                     if f_key not in uploaded_files or not uploaded_files.get(f_key):
                         uploaded_files[f_key] = stored_path
@@ -611,6 +619,8 @@ def submit_lead():
             "annual_budget": flat_form.get('annual_budget', '') or flat_form.get('budget', ''),
             "budget": flat_form.get('annual_budget', '') or flat_form.get('budget', ''),
             "fee_payment_option": flat_form.get('fee_payment_option', ''),
+            "payment_mode": flat_form.get('payment_mode', ''),
+            "installment_duration": flat_form.get('installment_duration', '') if flat_form.get('payment_mode') == 'Installment' else '',
             "loan_assistance": flat_form.get('loan_assistance', ''),
             "hostel_required": flat_form.get('hostel_required', '') or flat_form.get('hostel_preference', ''),
             "hostel_preference": flat_form.get('hostel_required', '') or flat_form.get('hostel_preference', ''),
@@ -939,7 +949,7 @@ def update_student():
                 raise ValueError('Student data must be a JSON object.')
             protected = {'student_id', 'original_lead_id'}
             for key, value in submitted.items():
-                if key not in protected and key not in ('id_document','class_10_doc','class_12_doc','aadhar_doc','edu_scorecard'):
+                if key not in protected and key not in ('id_document','class_10_doc','class_12_doc','aadhar_doc','edu_scorecard','passport_photo'):
                     target_student[key] = value
             if isinstance(submitted.get('form_data'), dict):
                 target_student['form_data'] = submitted['form_data']
@@ -955,6 +965,7 @@ def update_student():
             'other_source': ('other_source',), 'preferred_time': ('preferred_time',),
             'help_with': ('help_with',), 'annual_budget': ('annual_budget','budget'),
             'budget': ('budget','annual_budget'), 'fee_payment_option': ('fee_payment_option',),
+            'payment_mode': ('payment_mode',), 'installment_duration': ('installment_duration',),
             'loan_assistance': ('loan_assistance',), 'hostel_required': ('hostel_required','hostel_preference'),
             'hostel_preference': ('hostel_preference','hostel_required'), 'contacted_college': ('contacted_college',),
             'col_name_1': ('col_name_1',), 'col_state_1': ('col_state_1',),
@@ -976,7 +987,7 @@ def update_student():
                         'current_education_level','qualification','percentage_10th','percentage_12th',
                         'edu_percentage','course_interest','other_course','course_details','hear_about',
                         'other_source','preferred_time','help_with','annual_budget','budget',
-                        'fee_payment_option','loan_assistance','hostel_required','hostel_preference',
+                        'fee_payment_option','payment_mode','installment_duration','loan_assistance','hostel_required','hostel_preference',
                         'contacted_college','col_name_1','col_state_1','col_name_2','col_state_2',
                         'col_name_3','col_state_3','admission_preference','assigned_college','state','city'):
                 if key in target_student:
@@ -1905,6 +1916,27 @@ def manage_student_document(student_id, field):
     top_level=bool(old_path and student.get(field)==old_path)
     form_data_ref=bool(old_path and isinstance(student.get('form_data'),dict) and student['form_data'].get(field)==old_path)
     action=request.form.get('action') or payload.get('action')
+    if action == 'upload':
+        upload=request.files.get('file')
+        if not upload or not upload.filename:
+            return jsonify({"error":"Select a document to upload."}),400
+        ext=os.path.splitext(secure_filename(upload.filename))[1].lower()
+        if ext not in ('.pdf','.jpg','.jpeg','.png'):
+            return jsonify({"error":"Only PDF, JPG, JPEG and PNG files are allowed."}),400
+        new_path=upload_file_to_github(upload,student.get('student_name','Student'),upload.filename)
+        if not new_path:
+            return jsonify({"error":"Unable to upload document. Check GitHub configuration."}),502
+        new_field="additional_document_"+uuid.uuid4().hex[:10]
+        student[new_field]=new_path
+        student.setdefault('attachments',[]).append({
+            'field':new_field,'stored_name':new_path,
+            'original_name':secure_filename(upload.filename),'extension':ext
+        })
+        if isinstance(student.get('form_data'),dict):
+            student['form_data'][new_field]=new_path
+        save_data(STUDENTS_FILE,students)
+        log_activity("Student Document Uploaded",f"Uploaded additional document for student #{student_id}.")
+        return jsonify({"status":"success","message":"Document uploaded successfully."})
     if action == 'delete':
         if not old_path:
             return jsonify({"error":"Selected document was not found."}),404
@@ -2834,6 +2866,13 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
                 <div id="studentStructuredFields" style="margin-top:14px;"></div>
+                <div style="margin-top:14px;border:1px solid #e2e8f0;border-radius:9px;padding:12px;">
+                    <h4 style="margin:0 0 8px;color:#2563eb;font-size:13px;">Student Documents</h4>
+                    <div id="studentEditDocumentControls" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;"></div>
+                    <label style="font-size:12px;font-weight:600;">Upload New Document</label>
+                    <input type="file" id="studentNewDocumentFile" accept=".pdf,.jpg,.jpeg,.png" style="width:100%;margin-top:5px;">
+                    <button type="button" onclick="uploadNewStudentDocument()" style="margin-top:8px;background:#2563eb;color:#fff;border:0;padding:7px 10px;border-radius:6px;cursor:pointer;">Upload Document</button>
+                </div>
                 <div style="margin-top:14px;">
                     <button type="button" onclick="document.getElementById('studentAdvancedFields').style.display=document.getElementById('studentAdvancedFields').style.display==='none'?'block':'none';" style="background:#64748b;color:white;border:0;padding:7px 10px;border-radius:6px;cursor:pointer;">Show / Hide Advanced Registration Data</button>
                     <div id="studentAdvancedFields" style="display:none;margin-top:8px;">
@@ -3603,6 +3642,8 @@ MAIN_DASHBOARD_HTML = """
                             <div><strong>Preferred Counselling Time:</strong> ${lead.preferred_time || 'N/A'}</div>
                             <div><strong>Annual Budget:</strong> ${lead.annual_budget || lead.budget || 'N/A'}</div>
                             <div><strong>Fee Payment Option:</strong> ${lead.fee_payment_option || 'N/A'}</div>
+                            <div><strong>Payment Mode:</strong> ${lead.payment_mode || 'N/A'}</div>
+                            ${lead.payment_mode === 'Installment' ? `<div><strong>Installment Duration:</strong> ${lead.installment_duration || 'N/A'}</div>` : ''}
                             <div><strong>Loan Assistance:</strong> ${lead.loan_assistance || 'N/A'}</div>
                             <div><strong>Hostel Required:</strong> ${lead.hostel_required || lead.hostel_preference || 'N/A'}</div>
                             <div><strong>Contacted College:</strong> ${lead.contacted_college || 'N/A'}</div>
@@ -3616,6 +3657,7 @@ MAIN_DASHBOARD_HTML = """
                     <!-- Section 5: Multiple Documents & Photographs -->
                     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:15px;">
                         <h4 style="color:#2563eb;margin-bottom:10px;font-size:14px;border-bottom:1px solid #cbd5e1;padding-bottom:5px;"><i class="fa-solid fa-folder-open"></i> Uploaded Documents & Photographs</h4>
+                        ${lead.passport_photo ? `<div style="margin:8px 0;"><strong>Passport Size Photograph</strong><br><img src="/download-doc/${encodeURIComponent(lead.passport_photo).replace(/%2F/g,'/')}" alt="Student passport photograph" style="max-width:110px;max-height:140px;object-fit:cover;border:1px solid #cbd5e1;border-radius:6px;"></div>` : ''}
                         <div id="studentDocumentControls" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
                     </div>
                 </div>
@@ -3628,8 +3670,8 @@ MAIN_DASHBOARD_HTML = """
             modal.style.display = 'flex';
         }
 
-        function renderStudentDocumentControls(student) {
-            const host=document.getElementById('studentDocumentControls');
+        function renderStudentDocumentControls(student, hostId='studentDocumentControls') {
+            const host=document.getElementById(hostId);
             if(!host) return;
             const docs=[]; const seen=new Set();
             Object.entries(student||{}).forEach(([field,value])=>{
@@ -3660,6 +3702,22 @@ MAIN_DASHBOARD_HTML = """
                     </div></div>`;
             }).join('');
         }
+        async function uploadNewStudentDocument() {
+            const studentId = document.getElementById('student_edit_id').value;
+            const input = document.getElementById('studentNewDocumentFile');
+            if (!input || !input.files.length) { alert('Please select a document first.'); return; }
+            const fd = new FormData();
+            fd.append('action','upload');
+            fd.append('file',input.files[0]);
+            const res = await fetch(`/api/student-document/${studentId}/additional_document`, {method:'POST',body:fd});
+            const data = await res.json();
+            if (res.ok) {
+                alert(data.message || 'Document uploaded.');
+                input.value = '';
+                fetchStudentsData();
+            } else alert(data.error || 'Unable to upload document.');
+        }
+
         function replaceStudentDocument(studentId, token) {
             const input=document.getElementById('replaceDoc_'+token); if(input) input.click();
         }
@@ -3817,6 +3875,11 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('s_edit_budget').value = st.budget || '';
             document.getElementById('student_all_data_json').value = JSON.stringify(st, null, 2);
             renderStructuredStudentEditor(st);
+            const editDocHost = document.getElementById('studentEditDocumentControls');
+            if (editDocHost) {
+                editDocHost.innerHTML = '';
+                renderStudentDocumentControls(st, 'studentEditDocumentControls');
+            }
             document.getElementById('studentEditModal').style.display = 'flex';
         }
         function closeStudentEditModal() { document.getElementById('studentEditModal').style.display = 'none'; }
