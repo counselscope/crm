@@ -70,5 +70,23 @@
         "deleted_date": "2026-11-07",
         "deleted_at": "07 Nov 2026, 07:06 AM",
         "deleted_timestamp": 1794035190.037343
+    },
+    {
+        "trash_id": "d0139fc1bd9249aa9163fc5cbea69a0f",
+        "category": "Work History",
+        "source_file": "work_history.json",
+        "source_id": 2,
+        "record": {
+            "id": 2,
+            "username": "System",
+            "role": "Admin",
+            "date": "2026-11-07",
+            "time": "06:22:49 AM",
+            "action_type": "Lead Created",
+            "details": "New dynamic enquiry received for Mukesh (9874563232)"
+        },
+        "deleted_date": "2026-11-07",
+        "deleted_at": "07 Nov 2026, 07:06 AM",
+        "deleted_timestamp": 1794035191.184508
     }
 ]
