@@ -1067,7 +1067,14 @@ def export_full_excel():
         for col in sheet.columns:
             max_len = max(len(str(cell.value or '')) for cell in col)
             col_letter = get_column_letter(col[0].column)
-            sheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            sheet.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 60)
+        # Excel cells cannot store Python dictionaries/lists. Convert nested CRM fields to JSON text.
+        for row in sheet.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, (dict, list, tuple, set)):
+                    cell.value = json.dumps(cell.value, ensure_ascii=False, default=str)
+                elif cell.value is not None and not isinstance(cell.value, (str, int, float, bool)):
+                    cell.value = str(cell.value)
 
     output = io.BytesIO()
     wb.save(output)
@@ -1251,14 +1258,23 @@ def _build_report_pdf(title,entities,entity_label,attachment_getter=None):
     from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle,PageBreak,Image as RLImage
-    from pypdf import PdfReader,PdfWriter
+    # pypdf is optional: ordinary report PDFs must still work when it is unavailable.
+    try:
+        from pypdf import PdfReader, PdfWriter
+        PYPDF_AVAILABLE = True
+    except ImportError:
+        PdfReader = PdfWriter = None
+        PYPDF_AVAILABLE = False
     styles=getSampleStyleSheet()
     title_style=ParagraphStyle('ReportTitle',parent=styles['Title'],textColor=colors.HexColor('#0f172a'),alignment=TA_CENTER,spaceAfter=12)
     heading=ParagraphStyle('EntityHeading',parent=styles['Heading2'],textColor=colors.HexColor('#1d4ed8'),spaceBefore=8,spaceAfter=8)
     normal=ParagraphStyle('SmallBody',parent=styles['BodyText'],fontSize=8.5,leading=11,wordWrap='CJK')
     def esc(v):
         if isinstance(v,(dict,list)): v=json.dumps(v,ensure_ascii=False,default=str)
-        return str(v if v is not None else '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('\n','<br/>')
+        raw = str(v if v is not None else '')
+        # Remove XML-invalid control characters before passing text to ReportLab Paragraph.
+        raw = ''.join(ch for ch in raw if ch in ('\n','\r','\t') or ord(ch) >= 32)
+        return raw.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('\n','<br/>').replace('\r','')
     story=[Paragraph(esc(title),title_style),Paragraph('Generated: '+datetime.now().strftime('%d %b %Y, %I:%M %p'),normal),Spacer(1,8)]
     pdf_attachments=[]
     for idx,entity in enumerate(entities,1):
@@ -1291,12 +1307,37 @@ def _build_report_pdf(title,entities,entity_label,attachment_getter=None):
                 story.append(Paragraph('PDF attachment included after record sections: '+esc(label),normal))
             else: story.append(Paragraph('Unsupported attachment type: '+esc(label),normal))
         if idx<len(entities): story.append(PageBreak())
-    base=io.BytesIO(); SimpleDocTemplate(base,pagesize=A4,rightMargin=18*mm,leftMargin=18*mm,topMargin=16*mm,bottomMargin=16*mm,title=title).build(story); base.seek(0)
-    writer=PdfWriter(); writer.append(PdfReader(base))
-    for owner,label,data in pdf_attachments:
-        cover=io.BytesIO(); SimpleDocTemplate(cover,pagesize=A4).build([Paragraph(esc(title),title_style),Spacer(1,20),Paragraph('Attachment for: '+esc(owner),heading),Paragraph(esc(label),normal)]); cover.seek(0)
-        writer.append(PdfReader(cover)); writer.append(PdfReader(io.BytesIO(data)))
-    final=io.BytesIO(); writer.write(final); final.seek(0); return final
+    base=io.BytesIO()
+    SimpleDocTemplate(base,pagesize=A4,rightMargin=18*mm,leftMargin=18*mm,topMargin=16*mm,bottomMargin=16*mm,title=title).build(story)
+    base.seek(0)
+
+    # Merge attached PDFs only when pypdf is installed. The main report remains downloadable
+    # even if optional PDF-merging support is unavailable or an attachment is damaged.
+    if pdf_attachments and PYPDF_AVAILABLE:
+        try:
+            writer=PdfWriter()
+            writer.append(PdfReader(base))
+            for owner,label,data in pdf_attachments:
+                try:
+                    cover=io.BytesIO()
+                    SimpleDocTemplate(cover,pagesize=A4).build([
+                        Paragraph(esc(title),title_style), Spacer(1,20),
+                        Paragraph('Attachment for: '+esc(owner),heading), Paragraph(esc(label),normal)
+                    ])
+                    cover.seek(0)
+                    writer.append(PdfReader(cover))
+                    writer.append(PdfReader(io.BytesIO(data)))
+                except Exception as attachment_error:
+                    print('PDF attachment merge skipped:', attachment_error)
+            final=io.BytesIO()
+            writer.write(final)
+            final.seek(0)
+            return final
+        except Exception as merge_error:
+            print('PDF merge failed; returning main report only:', merge_error)
+
+    base.seek(0)
+    return base
 
 
 @app.route('/api/export-filtered-logs-pdf', methods=['GET'])
@@ -1325,6 +1366,9 @@ def export_filtered_logs_pdf():
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Security_Logs_Filtered.pdf')
     except ValueError as e:
         return jsonify({'error':str(e)}), 400
+    except Exception as e:
+        app.logger.exception('Security log PDF export failed')
+        return jsonify({'error':f'Security log PDF export failed: {e}'}), 500
 
 
 @app.route('/api/export-filtered-history-pdf', methods=['GET'])
@@ -1337,6 +1381,9 @@ def export_filtered_history_pdf():
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Work_History_Filtered.pdf')
     except ValueError as e:
         return jsonify({'error':str(e)}), 400
+    except Exception as e:
+        app.logger.exception('Work history PDF export failed')
+        return jsonify({'error':f'Work history PDF export failed: {e}'}), 500
 
 
 @app.route('/api/export-filtered-trash-pdf', methods=['GET'])
@@ -1350,6 +1397,9 @@ def export_filtered_trash_pdf():
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Trash_Bin_Filtered.pdf')
     except ValueError as e:
         return jsonify({'error':str(e)}), 400
+    except Exception as e:
+        app.logger.exception('Trash PDF export failed')
+        return jsonify({'error':f'Trash PDF export failed: {e}'}), 500
 
 
 @app.route('/api/export-students-pdf', methods=['GET'])
@@ -1426,10 +1476,23 @@ def export_leads_pdf():
 def download_document(filename):
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    if GITHUB_REPO:
-        raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
-        return redirect(raw_github_url)
-    return "GitHub repository configuration missing.", 400
+    if not GITHUB_REPO:
+        return jsonify({"error": "GitHub repository configuration is missing. Set GITHUB_REPO."}), 503
+    safe_path = str(filename or '').lstrip('/')
+    if '..' in safe_path.split('/'):
+        return jsonify({"error": "Invalid document path."}), 400
+    raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
+    try:
+        download_headers = {'Authorization': f'Bearer {GITHUB_TOKEN}'} if GITHUB_TOKEN else {}
+        upstream = requests.get(raw_github_url, headers=download_headers, timeout=30, stream=True)
+        if upstream.status_code != 200:
+            return jsonify({"error": f"Document not found in GitHub (HTTP {upstream.status_code})."}), 404
+        content = upstream.content
+        mimetype = upstream.headers.get('Content-Type') or mimetypes.guess_type(safe_path)[0] or 'application/octet-stream'
+        return send_file(io.BytesIO(content), mimetype=mimetype, as_attachment=request.args.get('download') == '1', download_name=os.path.basename(safe_path))
+    except requests.RequestException as e:
+        app.logger.exception('GitHub document download failed')
+        return jsonify({"error": f"Unable to retrieve document from GitHub: {e}"}), 502
 
 
 @app.route('/api/update-status', methods=['POST'])
