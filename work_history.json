@@ -7,5 +7,14 @@
         "time": "07:06:46 AM",
         "action_type": "Delete Work History",
         "details": "Admin moved 1 history record(s) to Trash Bin."
+    },
+    {
+        "id": 2,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "07:58:26 AM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 42.108.74.130"
     }
 ]
