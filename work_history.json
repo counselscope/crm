@@ -16,5 +16,14 @@
         "time": "06:22:49 AM",
         "action_type": "Lead Created",
         "details": "New dynamic enquiry received for Mukesh (9874563232)"
+    },
+    {
+        "id": 3,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "06:26:45 AM",
+        "action_type": "Student Converted",
+        "details": "Converted lead #7 (lakaji) into a registered Student."
     }
 ]
