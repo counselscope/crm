@@ -31,8 +31,8 @@
         "username": "admin",
         "role": "Admin",
         "date": "2026-11-07",
-        "time": "06:36:29 AM",
-        "action_type": "User Login",
-        "details": "User admin (Admin) logged in successfully from IP 223.191.92.144"
+        "time": "06:37:31 AM",
+        "action_type": "Clear Logs",
+        "details": "Admin admin cleared all login activity logs."
     }
 ]
