@@ -1,11 +1,1 @@
-[
-    {
-        "id": 1,
-        "username": "admin",
-        "role": "Admin",
-        "date": "2026-11-07",
-        "time": "07:06:42 AM",
-        "action_type": "Delete Work History",
-        "details": "Admin moved 10 history record(s) to Trash Bin."
-    }
-]
+[]
