@@ -25,5 +25,23 @@
         "time": "07:59:00 AM",
         "action_type": "Delete Leads",
         "details": "Admin moved 7 lead(s) to Trash Bin."
+    },
+    {
+        "id": 4,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "07:59:01 AM",
+        "action_type": "Delete Filtered Leads",
+        "details": "Admin moved 7 filtered lead(s) to Trash Bin."
+    },
+    {
+        "id": 5,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "07:59:13 AM",
+        "action_type": "Delete Students",
+        "details": "Admin moved 1 student record(s) to Trash Bin."
     }
 ]
