@@ -52,5 +52,23 @@
         "deleted_date": "2026-11-07",
         "deleted_at": "07 Nov 2026, 07:06 AM",
         "deleted_timestamp": 1794035171.339473
+    },
+    {
+        "trash_id": "cff6e5e5edb6411fa218331a89efae54",
+        "category": "Work History",
+        "source_file": "work_history.json",
+        "source_id": 1,
+        "record": {
+            "id": 1,
+            "username": "admin",
+            "role": "Admin",
+            "date": "2026-11-07",
+            "time": "06:19:43 AM",
+            "action_type": "Delete Work History",
+            "details": "Admin deleted 88 work history entry/entries."
+        },
+        "deleted_date": "2026-11-07",
+        "deleted_at": "07 Nov 2026, 07:06 AM",
+        "deleted_timestamp": 1794035190.037343
     }
 ]
