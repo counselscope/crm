@@ -18,7 +18,7 @@
         "state": "Kerala",
         "city": "mumbai",
         "id_document": "student_documents/lakaji/doc_1793779050.png",
-        "status": "New Lead",
+        "status": "Converted to Student",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
         "is_deleted": false,
