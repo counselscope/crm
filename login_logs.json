@@ -1,1 +1,20 @@
-[]
+[
+    {
+        "id": 1,
+        "username": "admin",
+        "role": "Admin",
+        "ip_address": "42.108.74.130",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "login_date": "2026-11-07",
+        "login_time": "07 Nov 2026, 07:58 AM",
+        "login_timestamp": 1794038305.641878,
+        "logout_date": "N/A",
+        "logout_time": "N/A",
+        "logout_timestamp": null,
+        "location": "Unknown",
+        "status": "Active",
+        "session_info": "Session ID: 2980534371042970614"
+    }
+]
