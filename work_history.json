@@ -7,5 +7,14 @@
         "time": "06:19:43 AM",
         "action_type": "Delete Work History",
         "details": "Admin deleted 88 work history entry/entries."
+    },
+    {
+        "id": 2,
+        "username": "System",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "06:22:49 AM",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for Mukesh (9874563232)"
     }
 ]
