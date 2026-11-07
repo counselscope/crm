@@ -5,6 +5,7 @@ import io
 import base64
 import uuid
 import requests
+import mimetypes
 from datetime import datetime, timedelta
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response, send_file
 from flask_cors import CORS
@@ -396,25 +397,26 @@ def submit_lead():
         contact_number = flat_form.get('contact_number') or flat_form.get('phone') or 'N/A'
         student_email = flat_form.get('student_email') or flat_form.get('email') or 'N/A'
 
-        # Handle all submitted files from registration.html
+        # Handle every uploaded registration attachment, including optional photo/image fields.
         uploaded_files = {}
-        file_keys = ['id_document', 'class_10_doc', 'class_12_doc', 'aadhar_doc', 'edu_scorecard']
-        for f_key in file_keys:
-            if f_key in request.files:
-                file = request.files[f_key]
-                if file and file.filename != '':
-                    uploaded_files[f_key] = upload_file_to_github(file, student_name, file.filename)
-                else:
-                    uploaded_files[f_key] = None
-            else:
-                uploaded_files[f_key] = None
-
-        if not any(uploaded_files.values()) and len(request.files) > 0:
-            for file_key in request.files:
-                file = request.files[file_key]
-                if file and file.filename != '':
-                    uploaded_files['id_document'] = upload_file_to_github(file, student_name, file.filename)
-                    break
+        attachment_records = []
+        known_file_keys = ['id_document', 'class_10_doc', 'class_12_doc', 'aadhar_doc', 'edu_scorecard']
+        for f_key, file_list in request.files.lists():
+            for file in file_list:
+                if file and file.filename:
+                    original_name = secure_filename(file.filename)
+                    stored_path = upload_file_to_github(file, student_name, file.filename)
+                    if f_key not in uploaded_files or not uploaded_files.get(f_key):
+                        uploaded_files[f_key] = stored_path
+                    if stored_path:
+                        attachment_records.append({
+                            'field': f_key,
+                            'stored_name': stored_path,
+                            'original_name': original_name,
+                            'extension': os.path.splitext(original_name)[1].lower()
+                        })
+        for f_key in known_file_keys:
+            uploaded_files.setdefault(f_key, None)
 
         leads = load_data(DATA_FILE)
         now = datetime.now()
@@ -460,6 +462,7 @@ def submit_lead():
             "class_12_doc": uploaded_files.get('class_12_doc'),
             "aadhar_doc": uploaded_files.get('aadhar_doc'),
             "edu_scorecard": uploaded_files.get('edu_scorecard'),
+            "attachments": attachment_records,
             "status": "New Lead",
             "score": 80 if contact_number != 'N/A' else 50,
             "notes": "Enquiry received via dynamic HTML form submission.",
@@ -470,6 +473,9 @@ def submit_lead():
             "form_data": flat_form
         }
         
+        for upload_key, stored_path in uploaded_files.items():
+            if upload_key not in new_lead and stored_path:
+                new_lead[upload_key] = stored_path
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
         log_activity("Lead Created", f"New dynamic enquiry received for {student_name} ({contact_number})")
@@ -628,6 +634,9 @@ def delete_filtered_leads():
         for lead in all_leads:
             if not lead.get('is_deleted') and lead.get('id') in matching_ids:
                 lead['is_deleted'] = True
+                lead['deleted_date'] = datetime.now().strftime('%Y-%m-%d')
+                lead['deleted_at'] = datetime.now().strftime('%d %b %Y, %I:%M %p')
+                lead['deleted_timestamp'] = datetime.now().timestamp()
                 deleted_names.append(str(lead.get('student_name') or lead.get('id')))
         save_data(DATA_FILE, all_leads)
         log_activity("Delete Filtered Leads",
@@ -645,11 +654,38 @@ def get_leads_api():
     return jsonify(load_data(DATA_FILE))
 
 
+def _enrich_registration_record(record):
+    """Expose submitted registration values at top level while retaining original form_data."""
+    if not isinstance(record, dict):
+        return record
+    form = record.get('form_data')
+    if not isinstance(form, dict):
+        return record
+    for key, value in form.items():
+        if value not in (None, '', [], {}) and record.get(key) in (None, '', [], {}):
+            record[key] = value
+    aliases = {
+        'student_name': ('name',), 'contact_number': ('phone', 'mobile', 'contact'),
+        'student_email': ('email',), 'annual_budget': ('budget',),
+        'budget': ('annual_budget',), 'hostel_required': ('hostel_preference',),
+        'hostel_preference': ('hostel_required',), 'course_details': ('course_interest', 'course'),
+        'state': ('permanent_state',), 'city': ('permanent_city',)
+    }
+    for target, sources in aliases.items():
+        if record.get(target) in (None, '', [], {}):
+            for source in sources:
+                value = form.get(source)
+                if value not in (None, '', [], {}):
+                    record[target] = value
+                    break
+    return record
+
+
 @app.route('/api/get-students', methods=['GET'])
 def get_students_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    return jsonify(load_data(STUDENTS_FILE))
+    return jsonify([_enrich_registration_record(dict(student)) for student in load_data(STUDENTS_FILE)])
 
 
 @app.route('/api/convert-to-student', methods=['POST'])
@@ -674,7 +710,7 @@ def convert_to_student():
         if s.get('original_lead_id') == lead_id:
             return jsonify({"status": "success", "message": "Lead is already converted to student."})
             
-    new_student = dict(target_lead)
+    new_student = _enrich_registration_record(dict(target_lead))
     new_student['student_id'] = len(students) + 1
     new_student['original_lead_id'] = lead_id
     new_student['converted_at'] = datetime.now().strftime("%d %b %Y, %I:%M %p")
@@ -696,43 +732,74 @@ def update_student():
     try:
         form_data = request.form.to_dict()
         student_id = int(form_data.get('student_id'))
-        
         students = load_data(STUDENTS_FILE)
-        target_student = None
-        for s in students:
-            if s.get('student_id') == student_id:
-                target_student = s
-                break
-                
+        target_student = next((s for s in students if str(s.get('student_id')) == str(student_id)), None)
         if not target_student:
             return jsonify({"status": "error", "message": "Student not found"}), 404
-            
-        target_student['student_name'] = form_data.get('student_name', target_student.get('student_name'))
-        target_student['father_name'] = form_data.get('father_name', target_student.get('father_name', ''))
-        target_student['contact_number'] = form_data.get('contact_number', target_student.get('contact_number'))
-        target_student['alternate_number'] = form_data.get('alternate_number', target_student.get('alternate_number', ''))
-        target_student['student_email'] = form_data.get('student_email', target_student.get('student_email'))
-        target_student['current_education_level'] = form_data.get('current_education_level', target_student.get('current_education_level', ''))
-        target_student['qualification'] = form_data.get('qualification', target_student.get('qualification', ''))
-        target_student['percentage_10th'] = form_data.get('percentage_10th', target_student.get('percentage_10th', ''))
-        target_student['percentage_12th'] = form_data.get('percentage_12th', target_student.get('percentage_12th', ''))
-        target_student['course_details'] = form_data.get('course_details', target_student.get('course_details', ''))
-        target_student['budget'] = form_data.get('budget', target_student.get('budget', ''))
-        target_student['hostel_preference'] = form_data.get('hostel_preference', target_student.get('hostel_preference', ''))
-        target_student['admission_preference'] = form_data.get('admission_preference', target_student.get('admission_preference', ''))
-        target_student['assigned_college'] = form_data.get('assigned_college', target_student.get('assigned_college', ''))
-        target_student['state'] = form_data.get('state', target_student.get('state', ''))
-        target_student['city'] = form_data.get('city', target_student.get('city', ''))
-        
-        if 'id_document' in request.files:
-            file = request.files['id_document']
-            if file and file.filename != '':
-                doc_path = upload_file_to_github(file, target_student.get('student_name', 'Student'), file.filename)
-                if doc_path:
-                    target_student['id_document'] = doc_path
-                    
+
+        # Merge arbitrary submitted fields without dropping any existing registration data.
+        raw_record = form_data.get('student_data_json')
+        if raw_record:
+            submitted = json.loads(raw_record)
+            if not isinstance(submitted, dict):
+                raise ValueError('Student data must be a JSON object.')
+            protected = {'student_id', 'original_lead_id'}
+            for key, value in submitted.items():
+                if key not in protected and key not in ('id_document','class_10_doc','class_12_doc','aadhar_doc','edu_scorecard'):
+                    target_student[key] = value
+            if isinstance(submitted.get('form_data'), dict):
+                target_student['form_data'] = submitted['form_data']
+        # Existing named form fields remain supported and take precedence when supplied.
+        for field, aliases in {
+            'student_name': ('student_name',), 'father_name': ('father_name',),
+            'contact_number': ('contact_number',), 'alternate_number': ('alternate_number',),
+            'student_email': ('student_email',), 'current_education_level': ('current_education_level',),
+            'qualification': ('qualification',), 'percentage_10th': ('percentage_10th',),
+            'percentage_12th': ('percentage_12th',), 'edu_percentage': ('edu_percentage',),
+            'course_interest': ('course_interest',), 'other_course': ('other_course',),
+            'course_details': ('course_details',), 'hear_about': ('hear_about',),
+            'other_source': ('other_source',), 'preferred_time': ('preferred_time',),
+            'help_with': ('help_with',), 'annual_budget': ('annual_budget','budget'),
+            'budget': ('budget','annual_budget'), 'fee_payment_option': ('fee_payment_option',),
+            'loan_assistance': ('loan_assistance',), 'hostel_required': ('hostel_required','hostel_preference'),
+            'hostel_preference': ('hostel_preference','hostel_required'), 'contacted_college': ('contacted_college',),
+            'col_name_1': ('col_name_1',), 'col_state_1': ('col_state_1',),
+            'col_name_2': ('col_name_2',), 'col_state_2': ('col_state_2',),
+            'col_name_3': ('col_name_3',), 'col_state_3': ('col_state_3',),
+            'admission_preference': ('admission_preference',), 'assigned_college': ('assigned_college',),
+            'state': ('state',), 'city': ('city',)
+        }.items():
+            for alias in aliases:
+                if alias in form_data:
+                    target_student[field] = form_data[alias]
+                    break
+        # Keep the original registration payload in sync for fields edited through the JSON editor.
+        if isinstance(target_student.get('form_data'), dict):
+            for key, value in form_data.items():
+                if key not in ('student_id','student_data_json'):
+                    target_student['form_data'][key] = value
+            for key in ('student_name','father_name','contact_number','alternate_number','student_email',
+                        'current_education_level','qualification','percentage_10th','percentage_12th',
+                        'edu_percentage','course_interest','other_course','course_details','hear_about',
+                        'other_source','preferred_time','help_with','annual_budget','budget',
+                        'fee_payment_option','loan_assistance','hostel_required','hostel_preference',
+                        'contacted_college','col_name_1','col_state_1','col_name_2','col_state_2',
+                        'col_name_3','col_state_3','admission_preference','assigned_college','state','city'):
+                if key in target_student:
+                    target_student['form_data'][key] = target_student[key]
+        for file_key, upload_list in request.files.lists():
+            for upload in upload_list:
+                if upload and upload.filename:
+                    path = upload_file_to_github(upload, target_student.get('student_name', 'Student'), upload.filename)
+                    if path:
+                        target_student[file_key] = path
+                        target_student.setdefault('attachments', []).append({
+                            'field': file_key, 'stored_name': path,
+                            'original_name': secure_filename(upload.filename),
+                            'extension': os.path.splitext(upload.filename)[1].lower()
+                        })
         save_data(STUDENTS_FILE, students)
-        log_activity("Student Updated", f"Updated student profile for #{student_id} ({target_student['student_name']})")
+        log_activity("Student Updated", f"Updated complete student profile for #{student_id} ({target_student.get('student_name','Student')})")
         return jsonify({"status": "success", "message": "Student updated successfully!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -761,6 +828,9 @@ def delete_selected_leads():
     for l in leads:
         if l.get('id') in ids:
             l['is_deleted'] = True
+            l['deleted_date'] = datetime.now().strftime('%Y-%m-%d')
+            l['deleted_at'] = datetime.now().strftime('%d %b %Y, %I:%M %p')
+            l['deleted_timestamp'] = datetime.now().timestamp()
     save_data(DATA_FILE, leads)
     log_activity("Delete Leads", f"Admin moved {len(ids)} lead(s) to Trash Bin.")
     return jsonify({"status": "success", "message": "Selected leads moved to Trash Bin."})
@@ -1092,34 +1162,230 @@ def export_full_pdf():
 
 @app.route('/api/export-logs-pdf', methods=['GET'])
 def export_logs_pdf():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-    logs = load_data(LOGIN_LOGS_FILE)
-    html = f"""
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Login Activity Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
-    <body><h1>CounselScope CRM - Login Activity Report</h1><table><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>IP Address</th><th>Browser / OS</th><th>Location</th><th>Login Time</th><th>Logout Time</th><th>Status</th></tr></thead><tbody>
-    {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('username')}</strong></td><td>{l.get('role')}</td><td>{l.get('ip_address')}</td><td>{l.get('browser')} / {l.get('os')}</td><td>{l.get('location')}</td><td>{l.get('login_time')}</td><td>{l.get('logout_time')}</td><td>{l.get('status')}</td></tr>" for l in logs])}
-    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
-    """
-    resp = make_response(html)
-    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-    return resp
+    return export_filtered_logs_pdf()
 
 
 @app.route('/api/export-history-pdf', methods=['GET'])
 def export_history_pdf():
+    return export_filtered_history_pdf()
+
+
+def _parse_flexible_date(value):
+    raw = str(value or '').strip()
+    if not raw: return None
+    for fmt in ('%Y-%m-%d','%d %b %Y, %I:%M %p','%d %B %Y, %I:%M %p','%d-%m-%Y','%d/%m/%Y'):
+        try: return datetime.strptime(raw[:25],fmt).date()
+        except ValueError: pass
+    try: return datetime.fromtimestamp(float(raw)).date()
+    except (ValueError,TypeError,OSError): return None
+
+
+def _filter_date_range(records,start_date='',end_date='',date_getter=None):
+    start=_parse_flexible_date(start_date); end=_parse_flexible_date(end_date)
+    if start and end and start>end: raise ValueError('Start date cannot be after End date.')
+    if not start and not end: return records
+    out=[]
+    for item in records:
+        d=_parse_flexible_date(date_getter(item) if date_getter else item.get('date'))
+        if d and (not start or d>=start) and (not end or d<=end): out.append(item)
+    return out
+
+
+def _trash_record_date(lead):
+    return lead.get('deleted_date') or lead.get('deleted_at') or lead.get('created_date') or lead.get('created_at')
+
+
+def _history_record_date(item):
+    return item.get('date') or item.get('timestamp') or item.get('created_at')
+
+
+def _log_record_in_range(log,start_date='',end_date=''):
+    start=_parse_flexible_date(start_date); end=_parse_flexible_date(end_date)
+    if start and end and start>end: raise ValueError('Start date cannot be after End date.')
+    if not start and not end: return True
+    vals=[log.get('login_date') or log.get('login_time'),log.get('logout_date') or log.get('logout_time'),log.get('login_timestamp'),log.get('logout_timestamp')]
+    return any((d:=_parse_flexible_date(v)) and (not start or d>=start) and (not end or d<=end) for v in vals)
+
+
+def _get_attachment_bytes(reference,college=False):
+    if not reference: return None
+    if isinstance(reference,dict):
+        path=reference.get('github_path') or reference.get('stored_name') or reference.get('path') or reference.get('url')
+        if path and str(path).startswith('data:'):
+            try: return base64.b64decode(str(path).split(',',1)[1])
+            except Exception: return None
+        if path: reference=path
+        else:
+            encoded=reference.get('content_base64') or reference.get('base64')
+            if encoded:
+                try: return base64.b64decode(encoded)
+                except Exception: return None
+            return None
+    path=str(reference)
+    if path.startswith('data:'):
+        try: return base64.b64decode(path.split(',',1)[1])
+        except Exception: return None
+    if os.path.isfile(path):
+        try:
+            with open(path,'rb') as f: return f.read()
+        except OSError: return None
+    if not GITHUB_REPO: return None
+    if college and path.startswith('student/college/'):
+        try: return get_college_file_from_github(path)
+        except Exception: pass
+    try:
+        url=f'https://api.github.com/repos/{GITHUB_REPO}/contents/{path}'
+        headers={'Authorization':f'Bearer {GITHUB_TOKEN}','Accept':'application/vnd.github+json'} if GITHUB_TOKEN else {'Accept':'application/vnd.github+json'}
+        response=requests.get(url,headers=headers,params={'ref':GITHUB_BRANCH},timeout=30)
+        if response.status_code==200:
+            payload=response.json()
+            if payload.get('encoding')=='base64' and payload.get('content'): return base64.b64decode(payload['content'])
+    except Exception as exc: print('Attachment retrieval error:',exc)
+    return None
+
+
+def _build_report_pdf(title,entities,entity_label,attachment_getter=None):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle,PageBreak,Image as RLImage
+    from pypdf import PdfReader,PdfWriter
+    styles=getSampleStyleSheet()
+    title_style=ParagraphStyle('ReportTitle',parent=styles['Title'],textColor=colors.HexColor('#0f172a'),alignment=TA_CENTER,spaceAfter=12)
+    heading=ParagraphStyle('EntityHeading',parent=styles['Heading2'],textColor=colors.HexColor('#1d4ed8'),spaceBefore=8,spaceAfter=8)
+    normal=ParagraphStyle('SmallBody',parent=styles['BodyText'],fontSize=8.5,leading=11,wordWrap='CJK')
+    def esc(v):
+        if isinstance(v,(dict,list)): v=json.dumps(v,ensure_ascii=False,default=str)
+        return str(v if v is not None else '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('\n','<br/>')
+    story=[Paragraph(esc(title),title_style),Paragraph('Generated: '+datetime.now().strftime('%d %b %Y, %I:%M %p'),normal),Spacer(1,8)]
+    pdf_attachments=[]
+    for idx,entity in enumerate(entities,1):
+        name=entity.get('college_name') if entity_label=='College' else entity.get('student_name') or entity.get('username')
+        story.append(Paragraph(f'{entity_label} {idx}: {esc(name or "Unnamed")}',heading))
+        pairs=[]
+        for key,value in entity.items():
+            if key in ('document','attachments','form_data') or value in (None,'',[],{}): continue
+            pairs.append([Paragraph('<b>'+esc(str(key).replace('_',' ').title())+'</b>',normal),Paragraph(esc(value),normal)])
+        if isinstance(entity.get('form_data'),dict):
+            for key,value in entity['form_data'].items():
+                if value not in (None,'',[],{}): pairs.append([Paragraph('<b>Registration: '+esc(str(key).replace('_',' ').title())+'</b>',normal),Paragraph(esc(value),normal)])
+        if pairs:
+            table=Table(pairs,colWidths=[48*mm,125*mm])
+            table.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),colors.HexColor('#eff6ff')),('GRID',(0,0),(-1,-1),.35,colors.HexColor('#cbd5e1')),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
+            story.append(table)
+        refs=attachment_getter(entity) if attachment_getter else []
+        for label,item in refs or []:
+            data=_get_attachment_bytes(item,college=(entity_label=='College'))
+            if not data:
+                story.append(Paragraph('Attachment unavailable: '+esc(label),normal)); continue
+            rawname=item.get('original_name','') if isinstance(item,dict) else str(item)
+            ext=(os.path.splitext(rawname)[1] or (item.get('extension','') if isinstance(item,dict) else '')).lower()
+            if ext in ('.jpg','.jpeg','.png','.gif','.webp') or data.startswith(b'\x89PNG\r\n\x1a\n') or data.startswith(b'\xff\xd8\xff'):
+                story.append(Paragraph('Image Attachment: '+esc(label),heading))
+                try: story.append(RLImage(io.BytesIO(data),width=150*mm,height=105*mm,kind='proportional')); story.append(Spacer(1,8))
+                except Exception: story.append(Paragraph('Image could not be embedded: '+esc(label),normal))
+            elif ext=='.pdf' or data.startswith(b'%PDF-'):
+                pdf_attachments.append((name or f'{entity_label} {idx}',label,data))
+                story.append(Paragraph('PDF attachment included after record sections: '+esc(label),normal))
+            else: story.append(Paragraph('Unsupported attachment type: '+esc(label),normal))
+        if idx<len(entities): story.append(PageBreak())
+    base=io.BytesIO(); SimpleDocTemplate(base,pagesize=A4,rightMargin=18*mm,leftMargin=18*mm,topMargin=16*mm,bottomMargin=16*mm,title=title).build(story); base.seek(0)
+    writer=PdfWriter(); writer.append(PdfReader(base))
+    for owner,label,data in pdf_attachments:
+        cover=io.BytesIO(); SimpleDocTemplate(cover,pagesize=A4).build([Paragraph(esc(title),title_style),Spacer(1,20),Paragraph('Attachment for: '+esc(owner),heading),Paragraph(esc(label),normal)]); cover.seek(0)
+        writer.append(PdfReader(cover)); writer.append(PdfReader(io.BytesIO(data)))
+    final=io.BytesIO(); writer.write(final); final.seek(0); return final
+
+
+@app.route('/api/export-filtered-logs-pdf', methods=['GET'])
+def export_filtered_logs_pdf():
     if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-    history = load_data(HISTORY_FILE)
-    html = f"""
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Work History Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
-    <body><h1>CounselScope CRM - Work History Report</h1><table><thead><tr><th>ID</th><th>User</th><th>Role</th><th>Date / Time</th><th>Action Type</th><th>Details</th></tr></thead><tbody>
-    {''.join([f"<tr><td>#{h.get('id')}</td><td>{h.get('username','Admin')}</td><td>{h.get('role','Admin')}</td><td>{h.get('date')} {h.get('time')}</td><td><strong>{h.get('action_type')}</strong></td><td>{h.get('details')}</td></tr>" for h in history])}
-    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
-    """
-    resp = make_response(html)
-    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-    return resp
+        return jsonify({'error':'Unauthorized'}), 401
+    try:
+        start_date = request.args.get('start_date','').strip(); end_date = request.args.get('end_date','').strip()
+        user_type = request.args.get('user_type','All Users').strip()
+        logs = load_data(LOGIN_LOGS_FILE)
+        if user_type in ('Admin','Client'):
+            logs = [l for l in logs if str(l.get('role','')).lower() == user_type.lower()]
+        logs = [l for l in logs if _log_record_in_range(l, start_date, end_date)]
+        html_rows = []
+        for l in logs:
+            for label, date_value, time_value, timestamp in [('Login',l.get('login_date'),l.get('login_time'),l.get('login_timestamp')),('Logout',l.get('logout_date'),l.get('logout_time'),l.get('logout_timestamp'))]:
+                if date_value not in (None,'','N/A') or time_value not in (None,'','N/A'):
+                    if start_date or end_date:
+                        event_date = date_value or timestamp
+                        parsed_event_date = _parse_flexible_date(event_date)
+                        start_obj = _parse_flexible_date(start_date); end_obj = _parse_flexible_date(end_date)
+                        if not parsed_event_date or (start_obj and parsed_event_date < start_obj) or (end_obj and parsed_event_date > end_obj):
+                            continue
+                    html_rows.append({'id':l.get('id'),'username':l.get('username'),'role':l.get('role'),'activity':label,'date':date_value,'time':time_value,'ip':l.get('ip_address'),'browser':l.get('browser'),'os':l.get('os'),'location':l.get('location'),'status':l.get('status'),'session_info':l.get('session_info'),'user_agent':l.get('user_agent')})
+        pdf = _build_report_pdf('CounselScope CRM - Filtered Security & Login Logs', html_rows, 'Log')
+        return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Security_Logs_Filtered.pdf')
+    except ValueError as e:
+        return jsonify({'error':str(e)}), 400
+
+
+@app.route('/api/export-filtered-history-pdf', methods=['GET'])
+def export_filtered_history_pdf():
+    if not session.get('logged_in'):
+        return jsonify({'error':'Unauthorized'}), 401
+    try:
+        history = _filter_date_range(load_data(HISTORY_FILE), request.args.get('start_date',''), request.args.get('end_date',''), _history_record_date)
+        pdf = _build_report_pdf('CounselScope CRM - Work History', history, 'Work History')
+        return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Work_History_Filtered.pdf')
+    except ValueError as e:
+        return jsonify({'error':str(e)}), 400
+
+
+@app.route('/api/export-filtered-trash-pdf', methods=['GET'])
+def export_filtered_trash_pdf():
+    if not session.get('logged_in'):
+        return jsonify({'error':'Unauthorized'}), 401
+    try:
+        trash = [l for l in load_data(DATA_FILE) if l.get('is_deleted')]
+        trash = _filter_date_range(trash, request.args.get('start_date',''), request.args.get('end_date',''), _trash_record_date)
+        pdf = _build_report_pdf('CounselScope CRM - Trash Bin Report', trash, 'Deleted Lead')
+        return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Trash_Bin_Filtered.pdf')
+    except ValueError as e:
+        return jsonify({'error':str(e)}), 400
+
+
+@app.route('/api/export-students-pdf', methods=['GET'])
+def export_students_consolidated_pdf():
+    if not session.get('logged_in'):
+        return jsonify({'error':'Unauthorized'}), 401
+    students = [_enrich_registration_record(dict(student)) for student in load_data(STUDENTS_FILE)]
+    def student_attachments(student):
+        found=[]
+        seen=set()
+        def attachment_marker(item):
+            if isinstance(item,dict):
+                return str(item.get('github_path') or item.get('stored_name') or item.get('path') or item.get('url') or json.dumps(item,sort_keys=True,default=str))
+            return str(item)
+        for key, value in student.items():
+            low=str(key).lower()
+            if key != 'attachments' and value and any(token in low for token in ('photo','image','document','attachment','file','scorecard','marksheet','aadhar')):
+                values=value if isinstance(value,list) else [value]
+                for sub_idx, sub_value in enumerate(values):
+                    marker=attachment_marker(sub_value)
+                    if marker not in seen: found.append((key.replace('_',' ').title() + (f' {sub_idx+1}' if len(values)>1 else ''),sub_value)); seen.add(marker)
+        for idx, item in enumerate(student.get('attachments') or []):
+            marker=attachment_marker(item)
+            if marker not in seen: found.append((f'Attachment {idx+1}',item)); seen.add(marker)
+        if isinstance(student.get('form_data'), dict):
+            for key, item in student['form_data'].items():
+                low=str(key).lower()
+                if item and any(token in low for token in ('photo','image','document','attachment','file','scorecard','marksheet','aadhar')):
+                    marker=json.dumps(item,sort_keys=True,default=str)
+                    if marker not in seen: found.append((key.replace('_',' ').title(),item)); seen.add(marker)
+        return found
+    try:
+        pdf = _build_report_pdf('CounselScope CRM - Complete Registered Students', students, 'Student', student_attachments)
+        return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='All_Students_With_Attachments.pdf')
+    except Exception as e:
+        return jsonify({'error':f'Unable to generate student PDF: {e}'}), 500
 
 
 @app.route('/api/export-college-pdf', methods=['GET'])
@@ -1127,15 +1393,17 @@ def export_college_pdf():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
     colleges = load_data(COLLEGES_FILE)
-    html = f"""
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>College Directory Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
-    <body><h1>CounselScope CRM - College Directory Report</h1><table><thead><tr><th>ID</th><th>College Name</th><th>Location</th><th>Courses Offered</th><th>Avg Package</th></tr></thead><tbody>
-    {''.join([f"<tr><td>#{c.get('id')}</td><td><strong>{c.get('college_name')}</strong></td><td>{c.get('location')}</td><td>{c.get('courses')}</td><td>{c.get('package')}</td></tr>" for c in colleges])}
-    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
-    """
-    resp = make_response(html)
-    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-    return resp
+    def college_attachments(college):
+        found=[]
+        doc = college.get('document')
+        if doc: found.append((doc.get('original_name','College Document') if isinstance(doc,dict) else 'College Document', doc))
+        for idx, item in enumerate(college.get('attachments') or []): found.append((f'Attachment {idx+1}',item))
+        return found
+    try:
+        pdf = _build_report_pdf('CounselScope CRM - Complete College Directory', colleges, 'College', college_attachments)
+        return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='All_Colleges_With_Attachments.pdf')
+    except Exception as e:
+        return jsonify({'error':f'Unable to generate college PDF: {e}'}), 500
 
 
 @app.route('/api/export-leads-pdf', methods=['GET'])
@@ -1195,6 +1463,9 @@ def delete_lead():
     for lead in leads:
         if lead['id'] == lead_id:
             lead['is_deleted'] = True
+            lead['deleted_date'] = datetime.now().strftime('%Y-%m-%d')
+            lead['deleted_at'] = datetime.now().strftime('%d %b %Y, %I:%M %p')
+            lead['deleted_timestamp'] = datetime.now().timestamp()
             log_activity("Moved to Trash", f"Moved lead #{lead_id} ({lead['student_name']}) to trash")
             break
     save_data(DATA_FILE, leads)
@@ -1867,6 +2138,11 @@ MAIN_DASHBOARD_HTML = """
                         <h3><i class="fa-solid fa-clock-rotate-left"></i> Synchronized Activity Logs & Work History</h3>
                     </div>
                     <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                        <label>Particular Date <input type="date" id="historySingleDate" class="form-control" onchange="setSingleDateFilter('history')"></label>
+                        <label>Start Date <input type="date" id="historyStartDate" class="form-control" onchange="applyHistoryFilters()"></label>
+                        <label>End Date <input type="date" id="historyEndDate" class="form-control" onchange="applyHistoryFilters()"></label>
+                        <button onclick="resetHistoryFilters()" style="background:#64748b;color:white;border:0;padding:10px 14px;border-radius:8px;">Clear Filters</button>
+                        <span id="historyFilterSummary" style="font-size:12px;font-weight:600;color:#475569;"></span>
                         <button onclick="downloadHistoryPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download Work History PDF</button>
                         {% if role == 'Admin' %}
                         <button onclick="deleteSelectedHistory()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Work History</button>
@@ -1969,6 +2245,11 @@ MAIN_DASHBOARD_HTML = """
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header"><h3 style="color: #ef4444;"><i class="fa-solid fa-trash-can"></i> Trash Bin Management</h3></div>
                     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                        <label>Particular Date <input type="date" id="trashSingleDate" class="form-control" onchange="setSingleDateFilter('trash')"></label>
+                        <label>Start Date <input type="date" id="trashStartDate" class="form-control" onchange="applyTrashFilters()"></label>
+                        <label>End Date <input type="date" id="trashEndDate" class="form-control" onchange="applyTrashFilters()"></label>
+                        <button onclick="resetTrashFilters()" style="background:#64748b;color:white;border:0;padding:10px 14px;border-radius:8px;">Clear Filters</button>
+                        <button onclick="downloadAllFilteredTrash()" style="background:#2563eb;color:white;border:0;padding:10px 14px;border-radius:8px;">Download Filtered PDF</button>
                         {% if role == 'Admin' %}
                         <button onclick="trashSelectedDelete()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash"></i> Permanently Delete Selected</button>
                         {% endif %}
@@ -1986,6 +2267,7 @@ MAIN_DASHBOARD_HTML = """
                                     <th>Student Name</th>
                                     <th>Contact</th>
                                     <th>Email</th>
+                                    <th>Deleted Date</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -2020,6 +2302,11 @@ MAIN_DASHBOARD_HTML = """
                     <div class="card-header"><h3><i class="fa-solid fa-gear"></i> System Settings & Login Activity Logs</h3></div>
                     
                     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px;">
+                        <label>Particular Date <input type="date" id="logsSingleDate" class="form-control" onchange="setSingleDateFilter('logs')"></label>
+                        <label>Start Date <input type="date" id="logsStartDate" class="form-control" onchange="applyLogsFilters()"></label>
+                        <label>End Date <input type="date" id="logsEndDate" class="form-control" onchange="applyLogsFilters()"></label>
+                        <label>User Type <select id="logsUserType" class="form-control" onchange="applyLogsFilters()"><option>All Users</option><option>Admin</option><option>Client</option></select></label>
+                        <button onclick="resetLogsFilters()" style="background:#64748b;color:white;border:0;padding:10px 14px;border-radius:8px;">Clear Filters</button>
                         <button onclick="downloadLogsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Export Activity Logs PDF</button>
                         {% if role == 'Admin' %}
                         <button onclick="deleteSelectedLogs()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Logs</button>
@@ -2194,6 +2481,11 @@ MAIN_DASHBOARD_HTML = """
                         <input type="text" id="s_edit_budget" name="budget" class="form-control">
                     </div>
                 </div>
+                <div style="margin-top:14px;">
+                    <label style="font-size:12px;font-weight:700;">All Saved Registration Fields (advanced editor)</label>
+                    <textarea id="student_all_data_json" class="form-control" rows="12" style="width:100%;font-family:monospace;font-size:12px;white-space:pre;" spellcheck="false"></textarea>
+                    <small style="color:#64748b;">All original fields, including additional registration form fields and nested form_data, are retained. Edit the JSON values without changing student_id.</small>
+                </div>
                 <div style="margin-top: 20px; text-align: right;">
                     <button type="submit" style="background:#16a34a; color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:600; cursor:pointer;">Update Student</button>
                 </div>
@@ -2279,40 +2571,31 @@ MAIN_DASHBOARD_HTML = """
         }
 
         async function fetchSettingsLogs() {
-            const tbody = document.getElementById('settingsLogsTbody');
-            if(!tbody) return;
-            try {
-                const res = await fetch('/api/get-logs');
-                if(res.ok) {
-                    const logs = await res.json();
-                    tbody.innerHTML = '';
-                    if(logs.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#94a3b8;">No login activity logs available.</td></tr>`;
-                        return;
-                    }
-                    logs.forEach(log => {
-                        const statusBadge = log.status === 'Active' ? '<span class="badge-status badge-closed">Active</span>' : (log.status === 'Failed' ? '<span class="badge-status badge-rejected">Failed</span>' : '<span class="badge-status badge-contacted">Logged Out</span>');
-                        const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="logs-checkbox" value="${log.id}"></td>` : '';
-                        tbody.innerHTML += `
-                            <tr>
-                                ${cbHtml}
-                                <td>#${log.id}</td>
-                                <td><strong>${log.username}</strong></td>
-                                <td><span class="badge-status badge-followup">${log.role || 'N/A'}</span></td>
-                                <td><code>${log.ip_address}</code></td>
-                                <td>${log.browser || 'Unknown'} / ${log.os || 'Unknown'}</td>
-                                <td><small>${log.location || 'Unknown'}</small></td>
-                                <td>${log.login_time}</td>
-                                <td>${log.logout_time}</td>
-                                <td>${statusBadge}</td>
-                            </tr>
-                        `;
-                    });
-                }
-            } catch(e) {
-                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#ef4444;">Failed to load logs.</td></tr>`;
-            }
+            const tbody = document.getElementById('settingsLogsTbody'); if(!tbody) return;
+            try { const res=await fetch('/api/get-logs'); if(res.ok){rawLogsData=await res.json();applyLogsFilters();} }
+            catch(e){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:#ef4444;">Failed to load logs.</td></tr>';}
         }
+
+
+        let rawHistoryData = [];
+        let rawTrashData = [];
+        let rawLogsData = [];
+        function setSingleDateFilter(kind) {
+            const date=document.getElementById(kind+'SingleDate').value;
+            document.getElementById(kind+'StartDate').value=date;
+            document.getElementById(kind+'EndDate').value=date;
+            if(kind==='history') applyHistoryFilters(); else if(kind==='trash') applyTrashFilters(); else applyLogsFilters();
+        }
+        function dateInRange(value,start,end){const raw=String(value||'').trim();let d=/^\\d{4}-\\d{2}-\\d{2}/.test(raw)?raw.slice(0,10):'';if(!d){const m=raw.match(/^(\\d{1,2})\\s+([A-Za-z]{3})\\s+(\\d{4})/);if(m){const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];const month=months.findIndex(x=>x.toLowerCase()===m[2].toLowerCase())+1;if(month)d=`${m[3]}-${String(month).padStart(2,'0')}-${String(Number(m[1])).padStart(2,'0')}`;}}return !!d&&(!start||d>=start)&&(!end||d<=end);}
+        function applyHistoryFilters(){const start=document.getElementById('historyStartDate').value,end=document.getElementById('historyEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const rows=rawHistoryData.filter(x=>!start&&!end||dateInRange(x.date||x.created_date||x.created_at,start,end));renderHistoryRows(rows);document.getElementById('historyFilterSummary').textContent=`Showing ${rows.length} of ${rawHistoryData.length} work history records.`;}
+        function resetHistoryFilters(){['historySingleDate','historyStartDate','historyEndDate'].forEach(id=>document.getElementById(id).value='');applyHistoryFilters();}
+        function applyTrashFilters(){const start=document.getElementById('trashStartDate').value,end=document.getElementById('trashEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const rows=rawTrashData.filter(x=>!start&&!end||dateInRange(x.deleted_date||x.deleted_at||x.created_date||x.created_at,start,end));populateTrashTable(rows);}
+        function resetTrashFilters(){['trashSingleDate','trashStartDate','trashEndDate'].forEach(id=>document.getElementById(id).value='');applyTrashFilters();}
+        function applyLogsFilters(){const start=document.getElementById('logsStartDate').value,end=document.getElementById('logsEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const role=document.getElementById('logsUserType').value;const rows=rawLogsData.filter(x=>(role==='All Users'||String(x.role||'').toLowerCase()===role.toLowerCase())&&(!start&&!end||[x.login_date,x.logout_date].some(v=>dateInRange(v,start,end))));renderLoginLogRows(rows);}
+        function resetLogsFilters(){['logsSingleDate','logsStartDate','logsEndDate'].forEach(id=>document.getElementById(id).value='');document.getElementById('logsUserType').value='All Users';applyLogsFilters();}
+        function downloadAllFilteredTrash(){const q=new URLSearchParams();const a=document.getElementById('trashStartDate').value,b=document.getElementById('trashEndDate').value;if(a)q.set('start_date',a);if(b)q.set('end_date',b);window.open('/api/export-filtered-trash-pdf?'+q.toString(),'_blank');}
+        function renderLoginLogRows(logs){const tbody=document.getElementById('settingsLogsTbody');tbody.innerHTML='';if(!logs.length){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:#94a3b8;">No matching login activity logs.</td></tr>';return;}logs.forEach(log=>{const badge=log.status==='Active'?'<span class="badge-status badge-closed">Active</span>':(log.status==='Failed'?'<span class="badge-status badge-rejected">Failed</span>':'<span class="badge-status badge-contacted">Logged Out</span>');const cb=userRole==='Admin'?`<td><input type="checkbox" class="logs-checkbox" value="${log.id}"></td>`:'';tbody.innerHTML+=`<tr>${cb}<td>#${log.id}</td><td><strong>${log.username||''}</strong></td><td><span class="badge-status badge-followup">${log.role||'N/A'}</span></td><td><code>${log.ip_address||''}</code></td><td>${log.browser||'Unknown'} / ${log.os||'Unknown'}</td><td><small>${log.location||'Unknown'}</small></td><td>${log.login_time||'N/A'}</td><td>${log.logout_time||'N/A'}</td><td>${badge}</td></tr>`;});}
+        function renderHistoryRows(history){const tbody=document.getElementById('historyTbody');tbody.innerHTML='';if(!history.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#94a3b8;">No matching activity logged.</td></tr>';return;}history.slice().reverse().forEach(item=>{const cb=userRole==='Admin'?`<td><input type="checkbox" class="history-checkbox" value="${item.id}"></td>`:'';tbody.innerHTML+=`<tr>${cb}<td><strong>${item.username||'Admin'}</strong></td><td><span class="badge-status badge-followup">${item.role||'Admin'}</span></td><td><strong style="color:#2563eb;">${item.date||''} ${item.time||''}</strong></td><td><span class="badge-status badge-new">${item.action_type||''}</span></td><td>${item.details||''}</td></tr>`;});}
 
         async function handleAdminPasswordChange(e) {
             e.preventDefault();
@@ -2334,30 +2617,10 @@ MAIN_DASHBOARD_HTML = """
         }
 
         async function fetchWorkHistory() {
-            const res = await fetch('/api/get-history');
-            if(res.ok) {
-                const history = await res.json();
-                const tbody = document.getElementById('historyTbody');
-                tbody.innerHTML = '';
-                if(history.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">No activity logged yet.</td></tr>`;
-                    return;
-                }
-                history.reverse().forEach(item => {
-                    const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="history-checkbox" value="${item.id}"></td>` : '';
-                    tbody.innerHTML += `
-                        <tr>
-                            ${cbHtml}
-                            <td><strong>${item.username || 'Admin'}</strong></td>
-                            <td><span class="badge-status badge-followup">${item.role || 'Admin'}</span></td>
-                            <td><strong style="color:#2563eb;">${item.date} ${item.time}</strong></td>
-                            <td><span class="badge-status badge-new">${item.action_type}</span></td>
-                            <td>${item.details}</td>
-                        </tr>
-                    `;
-                });
-            }
+            const res=await fetch('/api/get-history');
+            if(res.ok){rawHistoryData=await res.json();applyHistoryFilters();}
         }
+
 
         async function fetchColleges() {
             const res = await fetch('/api/get-colleges');
@@ -2606,6 +2869,7 @@ MAIN_DASHBOARD_HTML = """
         function renderUI(dataList) {
             const activeLeads = dataList.filter(l => !l.is_deleted);
             const trashLeads = dataList.filter(l => l.is_deleted);
+            rawTrashData = trashLeads.slice();
             
             document.getElementById('statTotal').innerText = activeLeads.length;
             document.getElementById('statContacted').innerText = activeLeads.filter(l => l.status === 'Contacted').length;
@@ -2664,7 +2928,7 @@ MAIN_DASHBOARD_HTML = """
                 `;
             });
             
-            populateTrashTable(trashLeads);
+            applyTrashFilters();
             applyAllLeadsFilters();
             updatePieChart(activeLeads);
             updateTimeFilteredCharts(activeLeads);
@@ -2742,7 +3006,7 @@ MAIN_DASHBOARD_HTML = """
             const trashTbody = document.getElementById('trashTbody');
             trashTbody.innerHTML = '';
             if(trashLeads.length === 0) {
-                trashTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Trash bin is empty.</td></tr>`;
+                trashTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#94a3b8;">Trash bin is empty.</td></tr>`;
                 return;
             }
             trashLeads.forEach(lead => {
@@ -2753,6 +3017,7 @@ MAIN_DASHBOARD_HTML = """
                         <td><strong>${lead.student_name}</strong></td>
                         <td>${lead.contact_number}</td>
                         <td>${lead.student_email}</td>
+                        <td>${lead.deleted_at || lead.deleted_date || lead.created_at || 'N/A'}</td>
                         <td><button onclick="restoreLead(${lead.id})" style="background:#16a34a; color:white; border:none; padding:5px 10px; border-radius:6px; cursor:pointer; font-weight:600;">Restore</button></td>
                     </tr>
                 `;
@@ -2945,31 +3210,37 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
             `;
+            const allFields = Object.entries(lead || {}).filter(([k,v]) => !['document'].includes(k) && v !== null && v !== '' && typeof v !== 'undefined');
+            const genericHtml = allFields.map(([k,v]) => `<div style="padding:6px 8px;border-bottom:1px solid #e2e8f0;"><strong>${String(k).replace(/_/g,' ')}:</strong> ${typeof v==='object'?JSON.stringify(v):String(v)}</div>`).join('');
+            const extra = document.createElement('div'); extra.style.cssText='background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-top:12px;';
+            extra.innerHTML='<h4 style="color:#2563eb;margin:0 0 8px;">Complete Saved Registration Data</h4>'+genericHtml;
+            container.appendChild(extra);
             modal.style.display = 'flex';
         }
 
         function previewDocument(url, title) {
             const subModal = document.createElement('div');
             subModal.id = 'docPreviewSubModal';
-            subModal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:2000; display:flex; justify-content:center; align-items:center; padding:20px;';
+            subModal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:2000; display:flex; justify-content:center; align-items:center; padding:12px; overflow:auto;';
             
             let previewContent = '';
-            if(url.match(/\.(jpeg|jpg|png|gif|webp)$/i)) {
+            if(url.match(/\\.(jpeg|jpg|png|gif|webp)$/i)) {
                 previewContent = `<img src="${url}" style="max-width:100%; max-height:70vh; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.5);" alt="${title}">`;
             } else {
                 previewContent = `<iframe src="${url}" style="width:100%; max-width:800px; height:70vh; border:none; border-radius:8px; background:white;" title="${title}"></iframe>`;
             }
 
             subModal.innerHTML = `
-                <div style="background:#1e293b; padding:20px; border-radius:12px; width:100%; max-width:850px; text-align:center; position:relative; box-shadow:0 20px 25px rgba(0,0,0,0.5);">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; color:white;">
+                <style>@media(max-width:600px){#docPreviewSubModal .doc-preview-panel{padding:12px!important;max-height:96dvh;overflow:auto}#docPreviewSubModal .doc-preview-actions{display:flex!important;flex-direction:column!important;gap:10px!important;align-items:stretch!important}#docPreviewSubModal .doc-preview-actions a,#docPreviewSubModal .doc-preview-actions button{width:100%!important;min-height:44px;justify-content:center;box-sizing:border-box}#docPreviewSubModal .doc-preview-heading{gap:8px;flex-wrap:wrap}#docPreviewSubModal .doc-preview-heading h4{max-width:calc(100% - 40px);overflow-wrap:anywhere}}</style>
+                <div class="doc-preview-panel" style="background:#1e293b; padding:20px; border-radius:12px; width:100%; max-width:850px; max-height:96vh; overflow:auto; text-align:center; position:relative; box-shadow:0 20px 25px rgba(0,0,0,0.5);">
+                    <div class="doc-preview-heading" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; color:white;">
                         <h4 style="margin:0; font-size:16px;">${title}</h4>
                         <button onclick="document.getElementById('docPreviewSubModal').remove()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
                     </div>
                     <div style="margin-bottom:15px; display:flex; justify-content:center;">
                         ${previewContent}
                     </div>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div class="doc-preview-actions" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
                         <a href="${url}" download class="action-icon-btn doc-btn" style="background:#16a34a; color:white; padding:8px 16px; border-radius:6px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-weight:600; width:auto; height:auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
                         <button onclick="document.getElementById('docPreviewSubModal').remove()" style="background:#64748b; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">Close Preview</button>
                     </div>
@@ -3049,6 +3320,7 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('s_edit_course').value = st.course_details || '';
             document.getElementById('s_edit_college').value = st.assigned_college || '';
             document.getElementById('s_edit_budget').value = st.budget || '';
+            document.getElementById('student_all_data_json').value = JSON.stringify(st, null, 2);
             document.getElementById('studentEditModal').style.display = 'flex';
         }
         function closeStudentEditModal() { document.getElementById('studentEditModal').style.display = 'none'; }
@@ -3057,12 +3329,17 @@ MAIN_DASHBOARD_HTML = """
             e.preventDefault();
             const formData = new FormData();
             formData.append('student_id', document.getElementById('student_edit_id').value);
-            formData.append('student_name', document.getElementById('s_edit_name').value);
-            formData.append('contact_number', document.getElementById('s_edit_contact').value);
-            formData.append('student_email', document.getElementById('s_edit_email').value);
-            formData.append('course_details', document.getElementById('s_edit_course').value);
-            formData.append('assigned_college', document.getElementById('s_edit_college').value);
-            formData.append('budget', document.getElementById('s_edit_budget').value);
+            try {
+                const fullRecord=JSON.parse(document.getElementById('student_all_data_json').value);
+                fullRecord.student_id=document.getElementById('student_edit_id').value;
+                fullRecord.student_name=document.getElementById('s_edit_name').value;
+                fullRecord.contact_number=document.getElementById('s_edit_contact').value;
+                fullRecord.student_email=document.getElementById('s_edit_email').value;
+                fullRecord.course_details=document.getElementById('s_edit_course').value;
+                fullRecord.assigned_college=document.getElementById('s_edit_college').value;
+                fullRecord.budget=document.getElementById('s_edit_budget').value;
+                formData.append('student_data_json', JSON.stringify(fullRecord));
+            } catch(err) { alert('Please correct the JSON in All Saved Registration Fields.'); return; }
 
             const res = await fetch('/api/update-student', { method: 'POST', body: formData });
             if(res.ok) {
@@ -3075,10 +3352,10 @@ MAIN_DASHBOARD_HTML = """
         }
 
         function downloadLeadsPDF() { window.open('/api/export-leads-pdf', '_blank'); }
-        function downloadStudentsPDF() { window.open('/api/export-full-pdf', '_blank'); }
-        function downloadHistoryPDF() { window.open('/api/export-history-pdf', '_blank'); }
+        function downloadStudentsPDF() { window.open('/api/export-students-pdf', '_blank'); }
+        function downloadHistoryPDF() { const q=new URLSearchParams();const a=document.getElementById('historyStartDate').value,b=document.getElementById('historyEndDate').value;if(a)q.set('start_date',a);if(b)q.set('end_date',b);window.open('/api/export-history-pdf?'+q.toString(),'_blank'); }
         function downloadCollegePDF() { window.open('/api/export-college-pdf', '_blank'); }
-        function downloadLogsPDF() { window.open('/api/export-logs-pdf', '_blank'); }
+        function downloadLogsPDF() { const q=new URLSearchParams();const a=document.getElementById('logsStartDate').value,b=document.getElementById('logsEndDate').value;if(a)q.set('start_date',a);if(b)q.set('end_date',b);q.set('user_type',document.getElementById('logsUserType').value);window.open('/api/export-logs-pdf?'+q.toString(),'_blank'); }
 
         function getBadgeClass(status) {
             if(status === 'New Lead') return 'badge-new';
