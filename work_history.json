@@ -34,5 +34,14 @@
         "time": "06:37:31 AM",
         "action_type": "Clear Logs",
         "details": "Admin admin cleared all login activity logs."
+    },
+    {
+        "id": 5,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "06:44:12 AM",
+        "action_type": "User Logout",
+        "details": "User admin logged out."
     }
 ]
