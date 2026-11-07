@@ -142,5 +142,23 @@
         "deleted_date": "2026-11-07",
         "deleted_at": "07 Nov 2026, 07:06 AM",
         "deleted_timestamp": 1794035194.804155
+    },
+    {
+        "trash_id": "8363f2e88fa7421c9e341dcebb0616f0",
+        "category": "Work History",
+        "source_file": "work_history.json",
+        "source_id": 6,
+        "record": {
+            "id": 6,
+            "username": "admin",
+            "role": "Admin",
+            "date": "2026-11-07",
+            "time": "07:01:20 AM",
+            "action_type": "User Login",
+            "details": "User admin (Admin) logged in successfully from IP 223.191.92.144"
+        },
+        "deleted_date": "2026-11-07",
+        "deleted_at": "07 Nov 2026, 07:06 AM",
+        "deleted_timestamp": 1794035195.966186
     }
 ]
