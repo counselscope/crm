@@ -334,5 +334,94 @@
             "course_details": "Study Abroad",
             "course_interest": "Study Abroad"
         }
+    },
+    {
+        "id": 7,
+        "student_name": "Mukesh",
+        "father_name": "Jsjs",
+        "contact_number": "9874563232",
+        "alternate_number": "9786432521",
+        "student_email": "singhyorocky321@gmail.com",
+        "current_education_level": "12th Pass",
+        "qualification": "",
+        "percentage_10th": "67",
+        "percentage_12th": "89",
+        "edu_percentage": "",
+        "course_interest": "LLB / BA LLB",
+        "other_course": "",
+        "course_details": "LLB / BA LLB",
+        "hear_about": "",
+        "other_source": "",
+        "preferred_time": "",
+        "help_with": "",
+        "annual_budget": "",
+        "budget": "",
+        "fee_payment_option": "",
+        "loan_assistance": "",
+        "hostel_required": "",
+        "hostel_preference": "",
+        "contacted_college": "",
+        "col_name_1": "",
+        "col_state_1": "",
+        "col_name_2": "",
+        "col_state_2": "",
+        "col_name_3": "",
+        "col_state_3": "",
+        "admission_preference": "",
+        "assigned_college": "",
+        "state": "Maharashtra",
+        "city": "Testing ",
+        "id_document": "student_documents/Mukesh/doc_1794032561_CAPITAL_RECORD_CENTRE_PVT_LTD_quotation.pdf",
+        "class_10_doc": "student_documents/Mukesh/doc_1794032563_Screenshot_20261106_220859_Chrome.jpg",
+        "class_12_doc": "student_documents/Mukesh/doc_1794032564_Screenshot_20261106_220859_Chrome.jpg",
+        "aadhar_doc": "student_documents/Mukesh/doc_1794032566_Screenshot_20261106_220859_Chrome.jpg",
+        "edu_scorecard": null,
+        "attachments": [
+            {
+                "field": "id_document",
+                "stored_name": "student_documents/Mukesh/doc_1794032561_CAPITAL_RECORD_CENTRE_PVT_LTD_quotation.pdf",
+                "original_name": "CAPITAL_RECORD_CENTRE_PVT_LTD_quotation.pdf",
+                "extension": ".pdf"
+            },
+            {
+                "field": "class_10_doc",
+                "stored_name": "student_documents/Mukesh/doc_1794032563_Screenshot_20261106_220859_Chrome.jpg",
+                "original_name": "Screenshot_20261106_220859_Chrome.jpg",
+                "extension": ".jpg"
+            },
+            {
+                "field": "class_12_doc",
+                "stored_name": "student_documents/Mukesh/doc_1794032564_Screenshot_20261106_220859_Chrome.jpg",
+                "original_name": "Screenshot_20261106_220859_Chrome.jpg",
+                "extension": ".jpg"
+            },
+            {
+                "field": "aadhar_doc",
+                "stored_name": "student_documents/Mukesh/doc_1794032566_Screenshot_20261106_220859_Chrome.jpg",
+                "original_name": "Screenshot_20261106_220859_Chrome.jpg",
+                "extension": ".jpg"
+            }
+        ],
+        "status": "New Lead",
+        "score": 80,
+        "notes": "Enquiry received via dynamic HTML form submission.",
+        "is_deleted": false,
+        "created_date": "2026-11-07",
+        "created_at": "07 Nov 2026, 06:22 AM",
+        "created_timestamp": 1794032567.478377,
+        "form_data": {
+            "student_name": "Mukesh",
+            "father_name": "Jsjs",
+            "contact_number": "9874563232",
+            "alternate_number": "9786432521",
+            "student_email": "singhyorocky321@gmail.com",
+            "current_education_level": "12th Pass",
+            "state": "Maharashtra",
+            "city": "Testing ",
+            "percentage_10th": "67",
+            "percentage_12th": "89",
+            "course_details": "LLB / BA LLB",
+            "course_interest": "LLB / BA LLB"
+        }
     }
 ]
