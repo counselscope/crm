@@ -25,5 +25,14 @@
         "time": "08:02:38 AM",
         "action_type": "Lead Created",
         "details": "New dynamic enquiry received for Vyom (9874563232)"
+    },
+    {
+        "id": 4,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "08:08:27 AM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 42.108.74.130"
     }
 ]
