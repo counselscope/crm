@@ -124,7 +124,14 @@
             "col_state_2": "",
             "col_name_3": "",
             "col_state_3": "",
-            "course_details": "MBBS / BDS"
+            "course_details": "MBBS / BDS",
+            "lead_id": "1",
+            "qualification": "",
+            "budget": "Under \u20b91 Lakhs",
+            "hostel_preference": "Yes",
+            "admission_preference": "",
+            "assigned_college": "",
+            "delete_doc": "false"
         },
         "passport_photo": "student_documents/Vyom/doc_1794038548_1000349510.jpg"
     }
