@@ -79,5 +79,14 @@
         "time": "07:04:18 AM",
         "action_type": "User Login",
         "details": "User admin (Admin) logged in successfully from IP 223.191.92.144"
+    },
+    {
+        "id": 10,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "07:06:13 AM",
+        "action_type": "Clear Logs",
+        "details": "Admin admin moved all login activity logs to Trash Bin."
     }
 ]
