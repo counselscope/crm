@@ -31,6 +31,7 @@ COLLEGES_FILE = "colleges.json"
 HISTORY_FILE = "work_history.json"
 USERS_FILE = "users.json"
 STUDENTS_FILE = "students.json"
+TRASH_FILE = "trash.json"
 
 # GitHub API Configuration from Environment Variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -143,8 +144,175 @@ def save_data(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
     
-    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGIN_LOGS_FILE, USERS_FILE, STUDENTS_FILE]:
+    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGIN_LOGS_FILE, USERS_FILE, STUDENTS_FILE, TRASH_FILE]:
         commit_json_to_github(filename)
+
+
+def _trash_category_for_file(filename):
+    return {DATA_FILE:"Leads", STUDENTS_FILE:"Students", COLLEGES_FILE:"Colleges",
+            HISTORY_FILE:"Work History", LOGIN_LOGS_FILE:"Logs"}.get(filename, "Other")
+
+
+def _archive_record(filename, record, record_id=None, category=None, extra=None):
+    if not isinstance(record, dict):
+        return None
+    trash = load_data(TRASH_FILE)
+    source_id = record_id if record_id is not None else record.get("student_id" if filename == STUDENTS_FILE else "id")
+    cat = category or _trash_category_for_file(filename)
+    existing = next((x for x in trash if x.get("source_file")==filename and
+                     str(x.get("source_id"))==str(source_id) and x.get("category")==cat), None)
+    if existing:
+        return existing
+    now=datetime.now()
+    item={"trash_id":uuid.uuid4().hex,"category":cat,"source_file":filename,"source_id":source_id,
+          "record":record,"deleted_date":now.strftime("%Y-%m-%d"),
+          "deleted_at":now.strftime("%d %b %Y, %I:%M %p"),"deleted_timestamp":now.timestamp()}
+    if extra: item["extra"]=extra
+    trash.append(item); save_data(TRASH_FILE,trash)
+    return item
+
+
+def _restore_trash_item(item):
+    source=item.get("source_file"); source_id=item.get("source_id"); record=item.get("record")
+    if not isinstance(record,dict): raise ValueError("Trash record snapshot is missing.")
+    if source == "student_document":
+        extra=item.get("extra") or {}
+        if extra.get("parent_type") == "lead":
+            leads=load_data(DATA_FILE)
+            parent=next((x for x in leads if str(x.get("id"))==str(extra.get("lead_id"))),None)
+            if parent:
+                field=extra.get("field") or "id_document"
+                parent[field]=record.get("stored_name")
+                if isinstance(parent.get("form_data"),dict): parent["form_data"][field]=record.get("stored_name")
+                save_data(DATA_FILE,leads)
+            else:
+                trash_records=load_data(TRASH_FILE)
+                archived=next((x for x in trash_records if x.get("source_file")==DATA_FILE and
+                               str(x.get("source_id"))==str(extra.get("lead_id"))),None)
+                if not archived or not isinstance(archived.get("record"),dict):
+                    raise ValueError("The associated lead is not available to restore the document.")
+                field=extra.get("field") or "id_document"
+                archived["record"][field]=record.get("stored_name")
+                if isinstance(archived["record"].get("form_data"),dict): archived["record"]["form_data"][field]=record.get("stored_name")
+                save_data(TRASH_FILE,trash_records)
+        else:
+            students=load_data(STUDENTS_FILE)
+            student=next((x for x in students if str(x.get("student_id"))==str(extra.get("student_id"))),None)
+            target=student
+            if target is None:
+                trash_records=load_data(TRASH_FILE)
+                parent=next((x for x in trash_records if x.get("source_file")==STUDENTS_FILE and
+                             str(x.get("source_id"))==str(extra.get("student_id"))),None)
+                if parent and isinstance(parent.get("record"),dict): target=parent["record"]
+            if target:
+                field=extra.get("field")
+                if field and extra.get("top_level", True):
+                    target[field]=record.get("stored_name")
+                if field and extra.get("form_data_ref") and isinstance(target.get("form_data"),dict):
+                    target["form_data"][field]=record.get("stored_name")
+                attachment=record.get("attachment")
+                if attachment:
+                    arr=target.setdefault("attachments",[])
+                    if not any(isinstance(x,dict) and x.get("stored_name")==attachment.get("stored_name") for x in arr): arr.append(attachment)
+                if student is not None: save_data(STUDENTS_FILE,students)
+                else: save_data(TRASH_FILE,trash_records)
+            else:
+                raise ValueError("The associated student is not available to restore the document.")
+    elif source in (DATA_FILE,STUDENTS_FILE,COLLEGES_FILE,HISTORY_FILE,LOGIN_LOGS_FILE):
+        records=load_data(source); key="student_id" if source==STUDENTS_FILE else "id"
+        existing=next((x for x in records if str(x.get(key))==str(source_id)),None)
+        restored=dict(record)
+        if source==DATA_FILE:
+            restored["is_deleted"]=False
+            for k in ("deleted_date","deleted_at","deleted_timestamp"): restored.pop(k,None)
+        if existing: existing.update(restored)
+        else: records.append(restored)
+        save_data(source,records)
+    else: raise ValueError("Unsupported Trash Bin source.")
+    trash=load_data(TRASH_FILE); save_data(TRASH_FILE,[x for x in trash if x.get("trash_id")!=item.get("trash_id")])
+
+
+def _find_github_document_paths(value):
+    found=set()
+    if isinstance(value,dict):
+        for key,child in value.items():
+            if isinstance(child,str) and child.startswith(("student_documents/","student/college/")):
+                found.add(child)
+            else: found.update(_find_github_document_paths(child))
+    elif isinstance(value,list):
+        for child in value: found.update(_find_github_document_paths(child))
+    return found
+
+
+def _delete_github_file_if_unreferenced(path, deleted_item):
+    if not path or not GITHUB_TOKEN or not GITHUB_REPO:
+        return
+    # Avoid deleting a file still referenced by another live CRM record.
+    for filename in (DATA_FILE,STUDENTS_FILE,COLLEGES_FILE):
+        for rec in load_data(filename):
+            if filename==deleted_item.get("source_file") and str(rec.get("student_id" if filename==STUDENTS_FILE else "id"))==str(deleted_item.get("source_id")):
+                continue
+            if path in _find_github_document_paths(rec):
+                return
+    for archived in load_data(TRASH_FILE):
+        if archived.get("trash_id") != deleted_item.get("trash_id") and path in _find_github_document_paths(archived.get("record") or {}):
+            return
+    url=f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    headers={"Authorization":f"Bearer {GITHUB_TOKEN}","Accept":"application/vnd.github+json"}
+    try:
+        check=requests.get(url,headers=headers,params={"ref":GITHUB_BRANCH},timeout=20)
+        if check.status_code==404: return
+        if check.status_code!=200: return
+        sha=check.json().get("sha")
+        if sha:
+            requests.delete(url,headers=headers,json={"message":f"Permanently delete CRM attachment {os.path.basename(path)}",
+                              "sha":sha,"branch":GITHUB_BRANCH},timeout=30)
+    except Exception as exc:
+        app.logger.warning("Unable to permanently remove GitHub attachment %s: %s",path,exc)
+
+
+def _permanently_delete_trash_item(item):
+    source=item.get("source_file")
+    snapshot=item.get("record") or {}
+    if source=="student_document":
+        extra=item.get("extra") or {}; field=extra.get("field")
+        if extra.get("parent_type")=="lead":
+            parent_id=extra.get("lead_id"); parent_file=DATA_FILE; key="id"
+        else:
+            parent_id=extra.get("student_id"); parent_file=STUDENTS_FILE; key="student_id"
+        live=load_data(parent_file)
+        parent=next((x for x in live if str(x.get(key))==str(parent_id)),None)
+        if parent:
+            if field and parent.get(field)==snapshot.get("stored_name"): parent[field]=None
+            if field and isinstance(parent.get("form_data"),dict) and parent["form_data"].get(field)==snapshot.get("stored_name"):
+                parent["form_data"][field]=None
+            parent["attachments"]=[a for a in parent.get("attachments",[]) if not
+                (isinstance(a,dict) and a.get("stored_name")==snapshot.get("stored_name"))]
+            save_data(parent_file,live)
+        else:
+            archived=load_data(TRASH_FILE)
+            parent_item=next((x for x in archived if x.get("source_file")==parent_file and str(x.get("source_id"))==str(parent_id)),None)
+            if parent_item and isinstance(parent_item.get("record"),dict):
+                if field and parent_item["record"].get(field)==snapshot.get("stored_name"): parent_item["record"][field]=None
+                if field and isinstance(parent_item["record"].get("form_data"),dict) and parent_item["record"]["form_data"].get(field)==snapshot.get("stored_name"):
+                    parent_item["record"]["form_data"][field]=None
+                parent_item["record"]["attachments"]=[a for a in parent_item["record"].get("attachments",[]) if not
+                    (isinstance(a,dict) and a.get("stored_name")==snapshot.get("stored_name"))]
+                save_data(TRASH_FILE,archived)
+    for path in _find_github_document_paths(snapshot):
+        _delete_github_file_if_unreferenced(path,item)
+    if source in (DATA_FILE,STUDENTS_FILE,COLLEGES_FILE,HISTORY_FILE,LOGIN_LOGS_FILE):
+        key="student_id" if source==STUDENTS_FILE else "id"
+        records=load_data(source)
+        save_data(source,[x for x in records if str(x.get(key))!=str(item.get("source_id"))])
+    trash=load_data(TRASH_FILE)
+    save_data(TRASH_FILE,[x for x in trash if x.get("trash_id")!=item.get("trash_id")])
+
+
+def _migrate_legacy_deleted_leads():
+    for lead in load_data(DATA_FILE):
+        if lead.get("is_deleted"):
+            _archive_record(DATA_FILE,lead,lead.get("id"),"Leads")
 
 def log_activity(action_type, details, username=None, role=None):
     history = load_data(HISTORY_FILE)
@@ -433,9 +601,9 @@ def submit_lead():
             "percentage_10th": flat_form.get('percentage_10th', ''),
             "percentage_12th": flat_form.get('percentage_12th', ''),
             "edu_percentage": flat_form.get('edu_percentage', ''),
-            "course_interest": flat_form.get('course_interest', ''),
+             "course_interest": flat_form.get('course_interest') or flat_form.get('Which course are you interested in?') or flat_form.get('which_course') or flat_form.get('course', ''),
             "other_course": flat_form.get('other_course', ''),
-            "course_details": flat_form.get('course_details', '') or flat_form.get('course_interest', ''),
+             "course_details": flat_form.get('course_details', '') or flat_form.get('course_interest') or flat_form.get('Which course are you interested in?') or flat_form.get('which_course') or flat_form.get('course', ''),
             "hear_about": flat_form.get('hear_about', ''),
             "other_source": flat_form.get('other_source', ''),
             "preferred_time": flat_form.get('preferred_time', ''),
@@ -512,7 +680,19 @@ def update_lead():
         target_lead['qualification'] = form_data.get('qualification', target_lead.get('qualification', ''))
         target_lead['percentage_10th'] = form_data.get('percentage_10th', target_lead.get('percentage_10th', ''))
         target_lead['percentage_12th'] = form_data.get('percentage_12th', target_lead.get('percentage_12th', ''))
-        target_lead['course_details'] = form_data.get('course_details', target_lead.get('course_details', ''))
+        target_lead['course_details'] = form_data.get('course_details', form_data.get('course_interest', target_lead.get('course_details', '')))
+        if 'course_interest' in form_data:
+            target_lead['course_interest'] = form_data.get('course_interest', '')
+        elif 'course_details' in form_data:
+            target_lead['course_interest'] = form_data.get('course_details', '')
+        else:
+            target_lead['course_interest'] = target_lead.get('course_interest') or target_lead.get('course_details', '')
+        if isinstance(target_lead.get('form_data'), dict):
+            target_lead['form_data'].update(form_data)
+            target_lead['form_data']['course_interest'] = target_lead['course_interest']
+            target_lead['form_data']['course_details'] = target_lead['course_details']
+            if 'Which course are you interested in?' in target_lead['form_data']:
+                target_lead['form_data']['Which course are you interested in?'] = target_lead['course_interest']
         target_lead['budget'] = form_data.get('budget', target_lead.get('budget', ''))
         target_lead['hostel_preference'] = form_data.get('hostel_preference', target_lead.get('hostel_preference', ''))
         target_lead['admission_preference'] = form_data.get('admission_preference', target_lead.get('admission_preference', ''))
@@ -522,7 +702,13 @@ def update_lead():
 
         delete_doc = form_data.get('delete_doc') == 'true'
         if delete_doc:
+            old_doc=target_lead.get('id_document')
+            if old_doc:
+                _archive_record("student_document",{"stored_name":old_doc,"original_name":os.path.basename(str(old_doc))},
+                                f"lead:{lead_id}:id_document:{uuid.uuid4().hex}","Student Documents",
+                                {"parent_type":"lead","lead_id":lead_id,"field":"id_document"})
             target_lead['id_document'] = None
+            if isinstance(target_lead.get('form_data'),dict): target_lead['form_data']['id_document']=None
 
         if 'id_document' in request.files:
             file = request.files['id_document']
@@ -628,17 +814,16 @@ def delete_filtered_leads():
         if not matching:
             return jsonify({"status": "success", "deleted_count": 0,
                             "message": "No matching active leads were found."})
-        matching_ids = {lead.get('id') for lead in matching}
+        matching_ids = {str(lead.get('id')) for lead in matching}
         all_leads = load_data(DATA_FILE)
-        deleted_names = []
+        kept_leads, deleted_names = [], []
         for lead in all_leads:
-            if not lead.get('is_deleted') and lead.get('id') in matching_ids:
-                lead['is_deleted'] = True
-                lead['deleted_date'] = datetime.now().strftime('%Y-%m-%d')
-                lead['deleted_at'] = datetime.now().strftime('%d %b %Y, %I:%M %p')
-                lead['deleted_timestamp'] = datetime.now().timestamp()
+            if not lead.get('is_deleted') and str(lead.get('id')) in matching_ids:
+                _archive_record(DATA_FILE, lead, lead.get('id'), "Leads")
                 deleted_names.append(str(lead.get('student_name') or lead.get('id')))
-        save_data(DATA_FILE, all_leads)
+            else:
+                kept_leads.append(lead)
+        save_data(DATA_FILE, kept_leads)
         log_activity("Delete Filtered Leads",
                      f"Admin moved {len(deleted_names)} filtered lead(s) to Trash Bin.")
         return jsonify({"status": "success", "deleted_count": len(deleted_names),
@@ -666,9 +851,9 @@ def _enrich_registration_record(record):
             record[key] = value
     aliases = {
         'student_name': ('name',), 'contact_number': ('phone', 'mobile', 'contact'),
-        'student_email': ('email',), 'annual_budget': ('budget',),
+        'student_email': ('email',), 'course_interest': ('Which course are you interested in?', 'which_course', 'course'), 'annual_budget': ('budget',),
         'budget': ('annual_budget',), 'hostel_required': ('hostel_preference',),
-        'hostel_preference': ('hostel_required',), 'course_details': ('course_interest', 'course'),
+        'hostel_preference': ('hostel_required',), 'course_details': ('course_interest', 'Which course are you interested in?', 'which_course', 'course'),
         'state': ('permanent_state',), 'city': ('permanent_city',)
     }
     for target, sources in aliases.items():
@@ -678,6 +863,13 @@ def _enrich_registration_record(record):
                 if value not in (None, '', [], {}):
                     record[target] = value
                     break
+    if record.get('course_interest') in (None, '', [], {}):
+        for key, value in form.items():
+            if str(key).strip().lower() in ('which course are you interested in?', 'which_course', 'course', 'course_interest') and value not in (None, '', [], {}):
+                record['course_interest'] = value
+                break
+    if record.get('course_details') in (None, '', [], {}) and record.get('course_interest') not in (None, '', [], {}):
+        record['course_details'] = record['course_interest']
     return record
 
 
@@ -711,6 +903,8 @@ def convert_to_student():
             return jsonify({"status": "success", "message": "Lead is already converted to student."})
             
     new_student = _enrich_registration_record(dict(target_lead))
+    new_student['course_interest'] = new_student.get('course_interest') or new_student.get('course_details') or ''
+    new_student['course_details'] = new_student.get('course_details') or new_student.get('course_interest') or ''
     new_student['student_id'] = len(students) + 1
     new_student['original_lead_id'] = lead_id
     new_student['converted_at'] = datetime.now().strftime("%d %b %Y, %I:%M %p")
@@ -792,6 +986,9 @@ def update_student():
                 if upload and upload.filename:
                     path = upload_file_to_github(upload, target_student.get('student_name', 'Student'), upload.filename)
                     if path:
+                        old_path = target_student.get(file_key)
+                        target_student['attachments'] = [a for a in target_student.get('attachments', [])
+                            if not (isinstance(a, dict) and a.get('field') == file_key and a.get('stored_name') == old_path)]
                         target_student[file_key] = path
                         target_student.setdefault('attachments', []).append({
                             'field': file_key, 'stored_name': path,
@@ -808,71 +1005,76 @@ def update_student():
 @app.route('/api/delete-selected-students', methods=['POST'])
 def delete_selected_students():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
-    ids = data.get('student_ids', [])
-    students = load_data(STUDENTS_FILE)
-    new_students = [s for s in students if s.get('student_id') not in ids]
-    save_data(STUDENTS_FILE, new_students)
-    log_activity("Delete Students", f"Admin deleted {len(ids)} student record(s).")
-    return jsonify({"status": "success", "message": "Selected student records deleted successfully."})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    ids={str(x) for x in (request.json or {}).get('student_ids',[])}
+    records=load_data(STUDENTS_FILE); kept=[]; moved=0
+    for rec in records:
+        if str(rec.get('student_id')) in ids:
+            _archive_record(STUDENTS_FILE,rec,rec.get('student_id'),"Students"); moved+=1
+        else: kept.append(rec)
+    save_data(STUDENTS_FILE,kept)
+    log_activity("Delete Students",f"Admin moved {moved} student record(s) to Trash Bin.")
+    return jsonify({"status":"success","message":f"{moved} student record(s) moved to Trash Bin."})
 
 
 @app.route('/api/delete-selected-leads', methods=['POST'])
 def delete_selected_leads():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
-    ids = data.get('lead_ids', [])
-    leads = load_data(DATA_FILE)
-    for l in leads:
-        if l.get('id') in ids:
-            l['is_deleted'] = True
-            l['deleted_date'] = datetime.now().strftime('%Y-%m-%d')
-            l['deleted_at'] = datetime.now().strftime('%d %b %Y, %I:%M %p')
-            l['deleted_timestamp'] = datetime.now().timestamp()
-    save_data(DATA_FILE, leads)
-    log_activity("Delete Leads", f"Admin moved {len(ids)} lead(s) to Trash Bin.")
-    return jsonify({"status": "success", "message": "Selected leads moved to Trash Bin."})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    ids={str(x) for x in (request.json or {}).get('lead_ids',[])}
+    records=load_data(DATA_FILE); kept=[]; moved=0
+    for rec in records:
+        if str(rec.get('id')) in ids and not rec.get('is_deleted'):
+            _archive_record(DATA_FILE,rec,rec.get('id'),"Leads"); moved+=1
+        else: kept.append(rec)
+    save_data(DATA_FILE,kept)
+    log_activity("Delete Leads",f"Admin moved {moved} lead(s) to Trash Bin.")
+    return jsonify({"status":"success","message":f"{moved} lead(s) moved to Trash Bin."})
 
 
 @app.route('/api/delete-selected-colleges', methods=['POST'])
 def delete_selected_colleges():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
-    ids = data.get('college_ids', [])
-    colleges = load_data(COLLEGES_FILE)
-    new_colleges = [c for c in colleges if c.get('id') not in ids]
-    save_data(COLLEGES_FILE, new_colleges)
-    log_activity("Delete Colleges", f"Admin deleted {len(ids)} college record(s).")
-    return jsonify({"status": "success", "message": "Selected college records deleted."})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    ids={str(x) for x in (request.json or {}).get('college_ids',[])}
+    records=load_data(COLLEGES_FILE); kept=[]; moved=0
+    for rec in records:
+        if str(rec.get('id')) in ids:
+            _archive_record(COLLEGES_FILE,rec,rec.get('id'),"Colleges"); moved+=1
+        else: kept.append(rec)
+    save_data(COLLEGES_FILE,kept)
+    log_activity("Delete Colleges",f"Admin moved {moved} college record(s) to Trash Bin.")
+    return jsonify({"status":"success","message":f"{moved} college record(s) moved to Trash Bin."})
 
 
 @app.route('/api/delete-selected-history', methods=['POST'])
 def delete_selected_history():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
-    ids = data.get('history_ids', [])
-    history = load_data(HISTORY_FILE)
-    new_hist = [h for h in history if h.get('id') not in ids]
-    save_data(HISTORY_FILE, new_hist)
-    log_activity("Delete Work History", f"Admin deleted {len(ids)} work history entry/entries.")
-    return jsonify({"status": "success", "message": "Selected work history records deleted."})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    ids={str(x) for x in (request.json or {}).get('history_ids',[])}
+    records=load_data(HISTORY_FILE); kept=[]; moved=0
+    for rec in records:
+        if str(rec.get('id')) in ids:
+            _archive_record(HISTORY_FILE,rec,rec.get('id'),"Work History"); moved+=1
+        else: kept.append(rec)
+    save_data(HISTORY_FILE,kept)
+    log_activity("Delete Work History",f"Admin moved {moved} history record(s) to Trash Bin.")
+    return jsonify({"status":"success","message":f"{moved} history record(s) moved to Trash Bin."})
 
 
 @app.route('/api/delete-selected-logs', methods=['POST'])
 def delete_selected_logs():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
-    ids = data.get('log_ids', [])
-    logs = load_data(LOGIN_LOGS_FILE)
-    new_logs = [l for l in logs if l.get('id') not in ids]
-    save_data(LOGIN_LOGS_FILE, new_logs)
-    log_activity("Delete Login Logs", f"Admin deleted {len(ids)} login log entry/entries.")
-    return jsonify({"status": "success", "message": "Selected login activity logs deleted."})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    ids={str(x) for x in (request.json or {}).get('log_ids',[])}
+    records=load_data(LOGIN_LOGS_FILE); kept=[]; moved=0
+    for rec in records:
+        if str(rec.get('id')) in ids:
+            _archive_record(LOGIN_LOGS_FILE,rec,rec.get('id'),"Logs"); moved+=1
+        else: kept.append(rec)
+    save_data(LOGIN_LOGS_FILE,kept)
+    log_activity("Delete Login Logs",f"Admin moved {moved} login log record(s) to Trash Bin.")
+    return jsonify({"status":"success","message":f"{moved} login log record(s) moved to Trash Bin."})
 
 
 @app.route('/api/get-logs', methods=['GET'])
@@ -887,23 +1089,49 @@ def get_logs_api():
 @app.route('/api/clear-logs', methods=['POST'])
 def clear_logs():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    save_data(LOGIN_LOGS_FILE, [])
-    log_activity("Clear Logs", f"Admin {session.get('username')} cleared all login activity logs.")
-    return jsonify({"status": "success", "message": "All login logs cleared successfully."})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    logs=load_data(LOGIN_LOGS_FILE)
+    for rec in logs: _archive_record(LOGIN_LOGS_FILE,rec,rec.get('id'),"Logs")
+    save_data(LOGIN_LOGS_FILE,[])
+    log_activity("Clear Logs",f"Admin {session.get('username')} moved all login activity logs to Trash Bin.")
+    return jsonify({"status":"success","message":"All login logs moved to Trash Bin."})
+
+
+@app.route('/api/get-trash', methods=['GET'])
+def get_trash_api():
+    if not session.get('logged_in'):
+        return jsonify({"error":"Unauthorized"}),401
+    _migrate_legacy_deleted_leads()
+    items=load_data(TRASH_FILE)
+    items.sort(key=lambda x:x.get('deleted_timestamp',0),reverse=True)
+    return jsonify(items)
+
+
+@app.route('/api/trash/restore', methods=['POST'])
+def trash_restore():
+    if not session.get('logged_in'):
+        return jsonify({"error":"Unauthorized"}),401
+    trash_id=str((request.json or {}).get('trash_id') or '')
+    item=next((x for x in load_data(TRASH_FILE) if str(x.get('trash_id'))==trash_id),None)
+    if not item:
+        return jsonify({"status":"error","message":"Trash record not found."}),404
+    try:
+        _restore_trash_item(item)
+        log_activity("Trash Restore",f"Restored {item.get('category')} record #{item.get('source_id')}.")
+        return jsonify({"status":"success","message":"Record restored successfully."})
+    except Exception as exc:
+        return jsonify({"status":"error","message":str(exc)}),500
 
 
 @app.route('/api/trash/delete-permanent', methods=['POST'])
 def trash_permanent_delete():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
-    lead_ids = data.get('lead_ids', [])
-    leads = load_data(DATA_FILE)
-    new_leads = [l for l in leads if l.get('id') not in lead_ids]
-    save_data(DATA_FILE, new_leads)
-    log_activity("Permanent Delete", f"Admin permanently deleted {len(lead_ids)} records from Trash Bin.")
-    return jsonify({"status": "success", "message": "Selected records permanently deleted from Trash Bin."})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    ids={str(x) for x in (request.json or {}).get('trash_ids',[])}
+    items=[x for x in load_data(TRASH_FILE) if str(x.get('trash_id')) in ids]
+    for item in items: _permanently_delete_trash_item(item)
+    log_activity("Permanent Delete",f"Admin permanently deleted {len(items)} records from Trash Bin.")
+    return jsonify({"status":"success","message":f"{len(items)} selected record(s) permanently deleted."})
 
 
 @app.route('/api/trash/download', methods=['POST'])
@@ -911,10 +1139,9 @@ def trash_download():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
     data = request.json or {}
-    lead_ids = data.get('lead_ids', [])
-    
-    leads = load_data(DATA_FILE)
-    selected_trash = [l for l in leads if l.get('is_deleted') and l.get('id') in lead_ids]
+    trash_ids = {str(x) for x in data.get('trash_ids', data.get('lead_ids', []))}
+    _migrate_legacy_deleted_leads()
+    selected_trash = [x for x in load_data(TRASH_FILE) if str(x.get('trash_id')) in trash_ids]
     
     html = f"""
     <!DOCTYPE html>
@@ -935,10 +1162,10 @@ def trash_download():
         <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
         <table>
             <thead>
-                <tr><th>ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>Created Date</th></tr>
+                <tr><th>Category</th><th>ID</th><th>Record</th><th>Contact</th><th>Email</th><th>Deleted Date</th></tr>
             </thead>
             <tbody>
-                {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('created_at')}</td></tr>" for l in selected_trash])}
+                {''.join([f"<tr><td>{x.get('category','Other')}</td><td>#{x.get('source_id')}</td><td><strong>{(x.get('record') or {}).get('student_name') or (x.get('record') or {}).get('college_name') or (x.get('record') or {}).get('username') or (x.get('record') or {}).get('action_type') or 'Record'}</strong></td><td>{(x.get('record') or {}).get('contact_number','')}</td><td>{(x.get('record') or {}).get('student_email','')}</td><td>{x.get('deleted_at','')}</td></tr>" for x in selected_trash])}
             </tbody>
         </table>
         <script>window.onload = function() {{ window.print(); }}</script>
@@ -1391,9 +1618,16 @@ def export_filtered_trash_pdf():
     if not session.get('logged_in'):
         return jsonify({'error':'Unauthorized'}), 401
     try:
-        trash = [l for l in load_data(DATA_FILE) if l.get('is_deleted')]
-        trash = _filter_date_range(trash, request.args.get('start_date',''), request.args.get('end_date',''), _trash_record_date)
-        pdf = _build_report_pdf('CounselScope CRM - Trash Bin Report', trash, 'Deleted Lead')
+        _migrate_legacy_deleted_leads()
+        trash = load_data(TRASH_FILE)
+        trash = _filter_date_range(trash, request.args.get('start_date',''), request.args.get('end_date',''), lambda x: _parse_flexible_date(x.get('deleted_date') or x.get('deleted_at')))
+        export_rows = []
+        for item in trash:
+            rec=dict(item.get('record') or {})
+            rec.update({'category':item.get('category'),'trash_id':item.get('trash_id'),
+                        'source_id':item.get('source_id'),'deleted_at':item.get('deleted_at')})
+            export_rows.append(rec)
+        pdf = _build_report_pdf('CounselScope CRM - Trash Bin Report', export_rows, 'Deleted Record')
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Trash_Bin_Filtered.pdf')
     except ValueError as e:
         return jsonify({'error':str(e)}), 400
@@ -1518,38 +1752,31 @@ def update_status():
 @app.route('/api/delete-lead', methods=['POST'])
 def delete_lead():
     if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
-    data = request.json or {}
-    lead_id = data.get('lead_id')
-    
-    leads = load_data(DATA_FILE)
-    for lead in leads:
-        if lead['id'] == lead_id:
-            lead['is_deleted'] = True
-            lead['deleted_date'] = datetime.now().strftime('%Y-%m-%d')
-            lead['deleted_at'] = datetime.now().strftime('%d %b %Y, %I:%M %p')
-            lead['deleted_timestamp'] = datetime.now().timestamp()
-            log_activity("Moved to Trash", f"Moved lead #{lead_id} ({lead['student_name']}) to trash")
-            break
-    save_data(DATA_FILE, leads)
-    return jsonify({"status": "success"})
+        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    lead_id=(request.json or {}).get('lead_id')
+    records=load_data(DATA_FILE)
+    target=next((x for x in records if str(x.get('id'))==str(lead_id)),None)
+    if not target: return jsonify({"status":"error","message":"Lead not found."}),404
+    _archive_record(DATA_FILE,target,target.get('id'),"Leads")
+    save_data(DATA_FILE,[x for x in records if str(x.get('id'))!=str(lead_id)])
+    log_activity("Moved to Trash",f"Moved lead #{lead_id} ({target.get('student_name','')}) to trash")
+    return jsonify({"status":"success","message":"Lead moved to Trash Bin."})
 
 
 @app.route('/api/restore-lead', methods=['POST'])
 def restore_lead():
     if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-    data = request.json or {}
-    lead_id = data.get('lead_id')
-    
-    leads = load_data(DATA_FILE)
-    for lead in leads:
-        if lead['id'] == lead_id:
-            lead['is_deleted'] = False
-            log_activity("Restored Lead", f"Restored lead #{lead_id} ({lead['student_name']}) from trash")
-            break
-    save_data(DATA_FILE, leads)
-    return jsonify({"status": "success"})
+        return jsonify({"error":"Unauthorized"}),401
+    lead_id=(request.json or {}).get('lead_id')
+    item=next((x for x in load_data(TRASH_FILE) if x.get('source_file')==DATA_FILE and str(x.get('source_id'))==str(lead_id)),None)
+    if item: _restore_trash_item(item)
+    else:
+        records=load_data(DATA_FILE)
+        for rec in records:
+            if str(rec.get('id'))==str(lead_id): rec['is_deleted']=False
+        save_data(DATA_FILE,records)
+    log_activity("Restored Lead",f"Restored lead #{lead_id} from trash")
+    return jsonify({"status":"success"})
 
 
 @app.route('/api/get-history', methods=['GET'])
@@ -1658,6 +1885,64 @@ def update_college(college_id):
         return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/student-document/<int:student_id>/<path:field>', methods=['POST'])
+def manage_student_document(student_id, field):
+    if not session.get('logged_in'):
+        return jsonify({"error":"Unauthorized"}),401
+    if session.get('role') != 'Admin':
+        return jsonify({"error":"Admin access required"}),403
+    students=load_data(STUDENTS_FILE)
+    student=next((x for x in students if str(x.get('student_id'))==str(student_id)),None)
+    if not student:
+        return jsonify({"error":"Student not found"}),404
+    payload=request.get_json(silent=True) or {}
+    field=request.form.get('field') or payload.get('field') or field
+    old_path=request.form.get('stored_name') or payload.get('stored_name') or student.get(field)
+    attachment=next((x for x in student.get('attachments',[]) if isinstance(x,dict)
+                     and x.get('stored_name')==old_path),None)
+    top_level=bool(old_path and student.get(field)==old_path)
+    form_data_ref=bool(old_path and isinstance(student.get('form_data'),dict) and student['form_data'].get(field)==old_path)
+    action=request.form.get('action') or payload.get('action')
+    if action == 'delete':
+        if not old_path:
+            return jsonify({"error":"Selected document was not found."}),404
+        snapshot={"stored_name":old_path,"attachment":attachment,
+                  "original_name":(attachment or {}).get('original_name') or os.path.basename(str(old_path))}
+        _archive_record("student_document",snapshot,f"{student_id}:{field}:{uuid.uuid4().hex}","Student Documents",
+                        {"student_id":student_id,"field":field,"top_level":top_level,"form_data_ref":form_data_ref})
+        if top_level: student[field]=None
+        if form_data_ref: student['form_data'][field]=None
+        student['attachments']=[x for x in student.get('attachments',[]) if not
+            (isinstance(x,dict) and x.get('stored_name')==old_path)]
+        save_data(STUDENTS_FILE,students)
+        log_activity("Student Document Deleted",f"Moved {field} document for student #{student_id} to Trash Bin.")
+        return jsonify({"status":"success","message":"Document moved to Trash Bin."})
+    if action == 'replace':
+        upload=request.files.get('file')
+        if not upload or not upload.filename:
+            return jsonify({"error":"Select a replacement file."}),400
+        ext=os.path.splitext(secure_filename(upload.filename))[1].lower()
+        if ext not in ('.pdf','.jpg','.jpeg','.png'):
+            return jsonify({"error":"Only PDF, JPG, JPEG and PNG files are allowed."}),400
+        new_path=upload_file_to_github(upload,student.get('student_name','Student'),upload.filename)
+        if not new_path:
+            return jsonify({"error":"Unable to upload replacement document. Check GitHub configuration."}),502
+        if top_level: student[field]=new_path
+        if form_data_ref: student['form_data'][field]=new_path
+        new_attachment={"field":field,"stored_name":new_path,"original_name":secure_filename(upload.filename),"extension":ext}
+        if attachment:
+            student['attachments']=[new_attachment if (isinstance(x,dict) and x.get('stored_name')==old_path) else x
+                                    for x in student.get('attachments',[])]
+        else:
+            student.setdefault('attachments',[]).append(new_attachment)
+        save_data(STUDENTS_FILE,students)
+        if old_path and old_path != new_path:
+            _delete_github_file_if_unreferenced(old_path,{"source_file":STUDENTS_FILE,"source_id":student_id})
+        log_activity("Student Document Replaced",f"Replaced {field} document for student #{student_id}.")
+        return jsonify({"status":"success","message":"Selected document replaced successfully.","document":new_attachment})
+    return jsonify({"error":"Unsupported document action."}),400
 
 
 @app.route('/api/college-file/<int:college_id>', methods=['GET'])
@@ -2074,6 +2359,7 @@ MAIN_DASHBOARD_HTML = """
                                         <th>Student</th>
                                         <th>Contact</th>
                                         <th>Email</th>
+                                        <th>Course</th>
                                         <th>Details</th>
                                         <th>Status</th>
                                         {% if role == 'Admin' %}<th>Action</th>{% endif %}
@@ -2086,6 +2372,7 @@ MAIN_DASHBOARD_HTML = """
                     <div class="card">
                         <div class="card-header"><h3>Overall Leads Overview Chart</h3></div>
                         <div class="chart-container"><canvas id="leadsPieChart"></canvas></div>
+                        <div id="leadsPieSummary" style="margin-top:12px;font-size:12px;line-height:1.8;color:var(--text-muted);"></div>
                     </div>
                 </div>
             </div>
@@ -2146,6 +2433,7 @@ MAIN_DASHBOARD_HTML = """
                                     <th>Student Name</th>
                                     <th>Contact</th>
                                     <th>Email ID</th>
+                                    <th>Course</th>
                                     <th>Assigned College</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -2326,8 +2614,9 @@ MAIN_DASHBOARD_HTML = """
                             <thead>
                                 <tr>
                                     <th><input type="checkbox" id="selectAllTrash" onclick="toggleSelectAllTrash(this)"></th>
-                                    <th>#ID</th>
-                                    <th>Student Name</th>
+                                    <th>Category</th>
+                                    <th>Record ID</th>
+                                    <th>Record Details</th>
                                     <th>Contact</th>
                                     <th>Email</th>
                                     <th>Deleted Date</th>
@@ -2544,10 +2833,14 @@ MAIN_DASHBOARD_HTML = """
                         <input type="text" id="s_edit_budget" name="budget" class="form-control">
                     </div>
                 </div>
+                <div id="studentStructuredFields" style="margin-top:14px;"></div>
                 <div style="margin-top:14px;">
-                    <label style="font-size:12px;font-weight:700;">All Saved Registration Fields (advanced editor)</label>
-                    <textarea id="student_all_data_json" class="form-control" rows="12" style="width:100%;font-family:monospace;font-size:12px;white-space:pre;" spellcheck="false"></textarea>
-                    <small style="color:#64748b;">All original fields, including additional registration form fields and nested form_data, are retained. Edit the JSON values without changing student_id.</small>
+                    <button type="button" onclick="document.getElementById('studentAdvancedFields').style.display=document.getElementById('studentAdvancedFields').style.display==='none'?'block':'none';" style="background:#64748b;color:white;border:0;padding:7px 10px;border-radius:6px;cursor:pointer;">Show / Hide Advanced Registration Data</button>
+                    <div id="studentAdvancedFields" style="display:none;margin-top:8px;">
+                        <label style="font-size:12px;font-weight:700;">Complete Saved Registration Data (JSON backup/editor)</label>
+                        <textarea id="student_all_data_json" class="form-control" rows="12" style="width:100%;font-family:monospace;font-size:12px;white-space:pre;" spellcheck="false"></textarea>
+                        <small style="color:#64748b;">All original fields and nested form_data are retained. Structured fields above are synchronized when saving.</small>
+                    </div>
                 </div>
                 <div style="margin-top: 20px; text-align: right;">
                     <button type="submit" style="background:#16a34a; color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:600; cursor:pointer;">Update Student</button>
@@ -2603,6 +2896,7 @@ MAIN_DASHBOARD_HTML = """
             if(tabId === 'history-tab') fetchWorkHistory();
             if(tabId === 'students-tab') fetchStudentsData();
             if(tabId === 'settings-tab') fetchSettingsLogs();
+            if(tabId === 'trash-tab') fetchTrashData();
             if(window.innerWidth <= 900) {
                 document.getElementById('sidebarNav').classList.remove('show');
                 document.getElementById('sidebarBackdrop').classList.remove('show');
@@ -2619,6 +2913,7 @@ MAIN_DASHBOARD_HTML = """
                 if(res.ok) {
                     rawLeadsData = await res.json();
                     renderUI(rawLeadsData);
+                    fetchTrashData();
                 }
             } catch(e) { console.error(e); }
         }
@@ -2652,7 +2947,7 @@ MAIN_DASHBOARD_HTML = """
         function dateInRange(value,start,end){const raw=String(value||'').trim();let d=/^\\d{4}-\\d{2}-\\d{2}/.test(raw)?raw.slice(0,10):'';if(!d){const m=raw.match(/^(\\d{1,2})\\s+([A-Za-z]{3})\\s+(\\d{4})/);if(m){const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];const month=months.findIndex(x=>x.toLowerCase()===m[2].toLowerCase())+1;if(month)d=`${m[3]}-${String(month).padStart(2,'0')}-${String(Number(m[1])).padStart(2,'0')}`;}}return !!d&&(!start||d>=start)&&(!end||d<=end);}
         function applyHistoryFilters(){const start=document.getElementById('historyStartDate').value,end=document.getElementById('historyEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const rows=rawHistoryData.filter(x=>!start&&!end||dateInRange(x.date||x.created_date||x.created_at,start,end));renderHistoryRows(rows);document.getElementById('historyFilterSummary').textContent=`Showing ${rows.length} of ${rawHistoryData.length} work history records.`;}
         function resetHistoryFilters(){['historySingleDate','historyStartDate','historyEndDate'].forEach(id=>document.getElementById(id).value='');applyHistoryFilters();}
-        function applyTrashFilters(){const start=document.getElementById('trashStartDate').value,end=document.getElementById('trashEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const rows=rawTrashData.filter(x=>!start&&!end||dateInRange(x.deleted_date||x.deleted_at||x.created_date||x.created_at,start,end));populateTrashTable(rows);}
+        function applyTrashFilters(){const start=document.getElementById('trashStartDate').value,end=document.getElementById('trashEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const rows=rawTrashData.filter(x=>!start&&!end||dateInRange(x.deleted_date||x.deleted_at,start,end));populateTrashTable(rows);}
         function resetTrashFilters(){['trashSingleDate','trashStartDate','trashEndDate'].forEach(id=>document.getElementById(id).value='');applyTrashFilters();}
         function applyLogsFilters(){const start=document.getElementById('logsStartDate').value,end=document.getElementById('logsEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const role=document.getElementById('logsUserType').value;const rows=rawLogsData.filter(x=>(role==='All Users'||String(x.role||'').toLowerCase()===role.toLowerCase())&&(!start&&!end||[x.login_date,x.logout_date].some(v=>dateInRange(v,start,end))));renderLoginLogRows(rows);}
         function resetLogsFilters(){['logsSingleDate','logsStartDate','logsEndDate'].forEach(id=>document.getElementById(id).value='');document.getElementById('logsUserType').value='All Users';applyLogsFilters();}
@@ -2813,7 +3108,7 @@ MAIN_DASHBOARD_HTML = """
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({college_ids: [id]})
                 });
-                if(res.ok) { alert('College deleted.'); fetchColleges(); }
+                if(res.ok) { alert('College moved to Trash Bin.'); fetchColleges(); fetchTrashData(); }
                 else { alert('Unauthorized.'); }
             }
         }
@@ -2976,6 +3271,7 @@ MAIN_DASHBOARD_HTML = """
                         <td><strong>${lead.student_name}</strong></td>
                         <td><a href="tel:${lead.contact_number}" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
                         <td><a href="mailto:${lead.student_email}" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
+                        <td>${lead.course_interest || lead.course_details || lead.other_course || (lead.form_data && (lead.form_data.course_interest || lead.form_data.course || lead.form_data.which_course || lead.form_data['Which course are you interested in?'])) || 'N/A'}</td>
                         <td>${docAction}</td>
                         <td>
                             <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
@@ -3017,7 +3313,7 @@ MAIN_DASHBOARD_HTML = """
                         <td>${st.contact_number}</td>
                         <td>${st.student_email}</td>
                         <td><span class="badge-status badge-closed">${st.assigned_college || 'Not Assigned'}</span></td>
-                        <td>${st.course_details || st.qualification || 'N/A'}</td>
+                        <td>${st.course_interest || st.course_details || st.other_course || 'N/A'}</td>
                         <td>
                             ${docAction}
                             <button class="action-icon-btn edit-btn" onclick='openStudentEditModal(${JSON.stringify(st)})' title="Edit Student"><i class="fa-solid fa-pen"></i></button>
@@ -3043,6 +3339,7 @@ MAIN_DASHBOARD_HTML = """
                         <td><strong>${lead.student_name}</strong></td>
                         <td><a href="tel:${lead.contact_number}" class="action-icon-btn call-btn"><i class="fa-solid fa-phone"></i></a> ${lead.contact_number}</td>
                         <td><a href="mailto:${lead.student_email}" class="action-icon-btn mail-btn"><i class="fa-solid fa-envelope"></i></a> ${lead.student_email}</td>
+                        <td>${lead.course_interest || lead.course_details || lead.other_course || (lead.form_data && (lead.form_data.course_interest || lead.form_data.course || lead.form_data.which_course || lead.form_data['Which course are you interested in?'])) || 'N/A'}</td>
                         <td><span style="font-size:12px; font-weight:600; color:#0284c7;">${lead.assigned_college || 'None'}</span></td>
                         <td>
                             <select class="status-select" onchange="updateStatus(${lead.id}, this.value)">
@@ -3065,26 +3362,50 @@ MAIN_DASHBOARD_HTML = """
             });
         }
 
-        function populateTrashTable(trashLeads) {
-            const trashTbody = document.getElementById('trashTbody');
-            trashTbody.innerHTML = '';
-            if(trashLeads.length === 0) {
-                trashTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#94a3b8;">Trash bin is empty.</td></tr>`;
+        async function fetchTrashData() {
+            try {
+                const res = await fetch('/api/get-trash');
+                if (res.ok) {
+                    rawTrashData = await res.json();
+                    applyTrashFilters();
+                }
+            } catch (e) { console.error('Trash Bin load failed', e); }
+        }
+
+        function populateTrashTable(items) {
+            const tbody=document.getElementById('trashTbody');
+            tbody.innerHTML='';
+            if(!items.length){
+                tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:#94a3b8;">Trash bin is empty.</td></tr>';
                 return;
             }
-            trashLeads.forEach(lead => {
-                trashTbody.innerHTML += `
-                    <tr>
-                        <td><input type="checkbox" class="trash-checkbox" value="${lead.id}"></td>
-                        <td>#${lead.id}</td>
-                        <td><strong>${lead.student_name}</strong></td>
-                        <td>${lead.contact_number}</td>
-                        <td>${lead.student_email}</td>
-                        <td>${lead.deleted_at || lead.deleted_date || lead.created_at || 'N/A'}</td>
-                        <td><button onclick="restoreLead(${lead.id})" style="background:#16a34a; color:white; border:none; padding:5px 10px; border-radius:6px; cursor:pointer; font-weight:600;">Restore</button></td>
-                    </tr>
-                `;
+            const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+            const order=['Logs','Work History','Colleges','Students','Student Documents','Leads','Other'];
+            const categories=[...new Set(items.map(x=>x.category||'Other'))].sort((a,b)=>(order.indexOf(a)<0?99:order.indexOf(a))-(order.indexOf(b)<0?99:order.indexOf(b)));
+            categories.forEach(category=>{
+                tbody.innerHTML+=`<tr style="background:#f1f5f9;"><td colspan="8" style="font-weight:800;color:#0f172a;padding:10px 12px;">${esc(category)} <span style="font-weight:500;color:#64748b;">(${items.filter(x=>(x.category||'Other')===category).length})</span></td></tr>`;
+                items.filter(x=>(x.category||'Other')===category).forEach(item=>{
+                    const record=item.record||{};
+                    const name=record.student_name||record.college_name||record.username||record.action_type||record.details||record.original_name||record.name||`Record #${item.source_id}`;
+                    const contact=record.contact_number||record.phone||record.ip_address||'—';
+                    const email=record.student_email||record.email||'—';
+                    const when=item.deleted_at||item.deleted_date||'—';
+                    tbody.innerHTML+=`<tr>
+                        <td><input type="checkbox" class="trash-checkbox" value="${esc(item.trash_id)}"></td>
+                        <td>${esc(category)}</td><td>#${esc(item.source_id)}</td>
+                        <td><strong>${esc(name)}</strong><div style="font-size:11px;color:#64748b;">${esc(record.details||record.action_type||record.description||record.original_name||'')}</div></td>
+                        <td>${esc(contact)}</td><td>${esc(email)}</td><td>${esc(when)}</td>
+                        <td><button onclick="restoreTrashRecord('${esc(item.trash_id)}')" style="background:#16a34a;color:white;border:0;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:600;">Restore</button></td>
+                    </tr>`;
+                });
             });
+        }
+
+        async function restoreTrashRecord(trashId) {
+            const res=await fetch('/api/trash/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trash_id:trashId})});
+            const result=await res.json();
+            if(res.ok){alert(result.message||'Record restored.');fetchLeadsData();fetchStudentsData();fetchColleges();fetchWorkHistory();fetchSettingsLogs();fetchTrashData();}
+            else alert(result.message||'Unable to restore this record.');
         }
 
         function toggleSelectAllTrash(master) {
@@ -3092,7 +3413,7 @@ MAIN_DASHBOARD_HTML = """
         }
 
         async function trashSelectedDelete() {
-            const selectedIds = Array.from(document.querySelectorAll('.trash-checkbox:checked')).map(cb => parseInt(cb.value));
+            const selectedIds = Array.from(document.querySelectorAll('.trash-checkbox:checked')).map(cb => cb.value);
             if(selectedIds.length === 0) {
                 alert('Please select at least one record from Trash Bin.');
                 return;
@@ -3101,11 +3422,11 @@ MAIN_DASHBOARD_HTML = """
                 const res = await fetch('/api/trash/delete-permanent', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({lead_ids: selectedIds})
+                    body: JSON.stringify({trash_ids: selectedIds})
                 });
                 if(res.ok) {
                     alert('Selected records permanently deleted.');
-                    fetchLeadsData();
+                    fetchLeadsData(); fetchTrashData();
                 } else {
                     alert('Unauthorized.');
                 }
@@ -3113,7 +3434,7 @@ MAIN_DASHBOARD_HTML = """
         }
 
         function trashSelectedDownload() {
-            const selectedIds = Array.from(document.querySelectorAll('.trash-checkbox:checked')).map(cb => parseInt(cb.value));
+            const selectedIds = Array.from(document.querySelectorAll('.trash-checkbox:checked')).map(cb => cb.value);
             if(selectedIds.length === 0) {
                 alert('Please select at least one record from Trash Bin to download.');
                 return;
@@ -3121,7 +3442,7 @@ MAIN_DASHBOARD_HTML = """
             fetch('/api/trash/download', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({lead_ids: selectedIds})
+                body: JSON.stringify({trash_ids: selectedIds})
             }).then(res => res.text()).then(html => {
                 const win = window.open('', '_blank');
                 win.document.write(html);
@@ -3143,7 +3464,7 @@ MAIN_DASHBOARD_HTML = """
             if(selectedIds.length === 0) return alert('Select at least one student.');
             if(confirm(`Delete ${selectedIds.length} student records?`)) {
                 const res = await fetch('/api/delete-selected-students', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({student_ids: selectedIds}) });
-                if(res.ok) fetchStudentsData(); else alert('Unauthorized.');
+                if(res.ok) { fetchStudentsData(); fetchTrashData(); } else alert('Unauthorized.');
             }
         }
 
@@ -3152,7 +3473,7 @@ MAIN_DASHBOARD_HTML = """
             if(selectedIds.length === 0) return alert('Select at least one college.');
             if(confirm(`Delete ${selectedIds.length} college records?`)) {
                 const res = await fetch('/api/delete-selected-colleges', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({college_ids: selectedIds}) });
-                if(res.ok) fetchColleges(); else alert('Unauthorized.');
+                if(res.ok) { fetchColleges(); fetchTrashData(); } else alert('Unauthorized.');
             }
         }
 
@@ -3161,7 +3482,7 @@ MAIN_DASHBOARD_HTML = """
             if(selectedIds.length === 0) return alert('Select at least one history entry.');
             if(confirm(`Delete ${selectedIds.length} history records?`)) {
                 const res = await fetch('/api/delete-selected-history', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({history_ids: selectedIds}) });
-                if(res.ok) fetchWorkHistory(); else alert('Unauthorized.');
+                if(res.ok) { fetchWorkHistory(); fetchTrashData(); } else alert('Unauthorized.');
             }
         }
 
@@ -3170,14 +3491,14 @@ MAIN_DASHBOARD_HTML = """
             if(selectedIds.length === 0) return alert('Select at least one log entry.');
             if(confirm(`Delete ${selectedIds.length} login log entries?`)) {
                 const res = await fetch('/api/delete-selected-logs', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({log_ids: selectedIds}) });
-                if(res.ok) fetchSettingsLogs(); else alert('Unauthorized.');
+                if(res.ok) { fetchSettingsLogs(); fetchTrashData(); } else alert('Unauthorized.');
             }
         }
 
         async function clearAllLogs() {
-            if(confirm("Permanently clear all login activity logs?")) {
+            if(confirm("Move all login activity logs to the Trash Bin?")) {
                 const res = await fetch('/api/clear-logs', { method: 'POST' });
-                if(res.ok) fetchSettingsLogs(); else alert('Unauthorized.');
+                if(res.ok) { fetchSettingsLogs(); fetchTrashData(); } else alert('Unauthorized.');
             }
         }
 
@@ -3196,6 +3517,39 @@ MAIN_DASHBOARD_HTML = """
                     alert('Error: ' + result.message);
                 }
             }
+        }
+
+        function renderAdditionalRegistrationSections(record) {
+            const core=new Set(['student_name','name','father_name','contact_number','phone','alternate_number','student_email','email',
+                'state','city','current_education_level','qualification','percentage_10th','percentage_12th','edu_percentage',
+                'course_interest','course_details','other_course','Which course are you interested in?','which_course','course','hear_about','other_source','preferred_time','annual_budget','budget',
+                'fee_payment_option','loan_assistance','hostel_required','hostel_preference','contacted_college','help_with',
+                'col_name_1','col_state_1','col_name_2','col_state_2','col_name_3','col_state_3','admission_preference','assigned_college']);
+            const excluded=/^(student_id|original_lead_id|id|status|score|notes|is_deleted|attachments|form_data|github_record_path|converted_at|created_|deleted_)/i;
+            const values={};
+            Object.entries((record&&record.form_data)||{}).forEach(([k,v])=>{if(v!==null&&v!==''&&!(Array.isArray(v)&&!v.length))values[k]=v;});
+            Object.entries(record||{}).forEach(([k,v])=>{if(!(k in values)&&v!==null&&v!==''&&typeof v!=='undefined'&&!core.has(k)&&!excluded.test(k)&&!/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(k))values[k]=v;});
+            const fields=Object.entries(values).filter(([k,v])=>!core.has(k)&&!excluded.test(k)&&!/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(k));
+            if(!fields.length)return '<div style="color:#64748b;font-size:12px;">No additional registration fields.</div>';
+            const groups=[
+                {name:'Additional Personal Details',test:k=>/(name|father|mother|contact|phone|mobile|email|gender|dob|birth)/i.test(k)},
+                {name:'Additional Academic Details',test:k=>/(education|qualification|percentage|10th|12th|score|board|school|academic)/i.test(k)},
+                {name:'Additional Course & Admission Details',test:k=>/(course|admission|hostel|budget|fee|loan|help|preferred|hear|source)/i.test(k)},
+                {name:'Additional Address Details',test:k=>/(address|state|city|district|pin|postal|country)/i.test(k)},
+                {name:'Other Submitted Fields',test:k=>true}
+            ];
+            const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+            const used=new Set();
+            return groups.map(group=>{
+                const selected=fields.filter(([k])=>!used.has(k)&&group.test(k));
+                selected.forEach(([k])=>used.add(k));
+                if(!selected.length)return '';
+                return `<section style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:10px 0;background:#f8fafc;">
+                    <h5 style="margin:0 0 8px;color:#334155;font-size:12px;">${group.name}</h5>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px;">
+                    ${selected.map(([k,v])=>`<div style="padding:5px 7px;border-bottom:1px solid #e2e8f0;"><strong>${esc(k.replace(/_/g,' '))}:</strong> ${esc(typeof v==='object'?JSON.stringify(v):v)}</div>`).join('')}
+                    </div></section>`;
+            }).join('');
         }
 
         /* --- ORGANIZED STUDENT DETAILS & MULTIPLE DOCUMENT VIEW MODAL --- */
@@ -3244,7 +3598,7 @@ MAIN_DASHBOARD_HTML = """
                     <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
                         <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-book-open"></i> Course Preferences & Admission Details</h4>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                            <div><strong>Course Interest:</strong> ${lead.course_details || lead.course_interest || 'N/A'}</div>
+                            <div><strong>Course Interest:</strong> ${lead.course_interest || lead.course_details || lead.other_course || 'N/A'}</div>
                             <div><strong>How did they hear:</strong> ${lead.hear_about || 'N/A'} ${lead.other_source ? '('+lead.other_source+')' : ''}</div>
                             <div><strong>Preferred Counselling Time:</strong> ${lead.preferred_time || 'N/A'}</div>
                             <div><strong>Annual Budget:</strong> ${lead.annual_budget || lead.budget || 'N/A'}</div>
@@ -3259,26 +3613,75 @@ MAIN_DASHBOARD_HTML = """
                         </div>
                     </div>
 
-                    <!-- Section 5: Multiple Documents & Photographs Thumbnails -->
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px;">
-                        <h4 style="color: #2563eb; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;"><i class="fa-solid fa-folder-open"></i> Uploaded Documents & Photographs</h4>
-                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            ${lead.id_document ? `<button onclick="previewDocument('/download-doc/${lead.id_document}', 'Primary ID Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-id-card"></i> View ID Document</button>` : ''}
-                            ${lead.class_10_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_10_doc}', '10th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-file-lines"></i> View 10th Marksheet</button>` : ''}
-                            ${lead.class_12_doc ? `<button onclick="previewDocument('/download-doc/${lead.class_12_doc}', '12th Marksheet')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-file-lines"></i> View 12th Marksheet</button>` : ''}
-                            ${lead.aadhar_doc ? `<button onclick="previewDocument('/download-doc/${lead.aadhar_doc}', 'Aadhar Document')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-id-card"></i> View Aadhar Document</button>` : ''}
-                            ${lead.edu_scorecard ? `<button onclick="previewDocument('/download-doc/${lead.edu_scorecard}', 'Education Scorecard')" class="doc-view-btn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid fa-file-invoice"></i> View Scorecard</button>` : ''}
-                            ${!lead.id_document && !lead.class_10_doc && !lead.class_12_doc && !lead.aadhar_doc && !lead.edu_scorecard ? '<span style="color:#64748b; font-size:12.5px;">No documents uploaded.</span>' : ''}
-                        </div>
+                    <!-- Section 5: Multiple Documents & Photographs -->
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:15px;">
+                        <h4 style="color:#2563eb;margin-bottom:10px;font-size:14px;border-bottom:1px solid #cbd5e1;padding-bottom:5px;"><i class="fa-solid fa-folder-open"></i> Uploaded Documents & Photographs</h4>
+                        <div id="studentDocumentControls" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
                     </div>
                 </div>
             `;
-            const allFields = Object.entries(lead || {}).filter(([k,v]) => !['document'].includes(k) && v !== null && v !== '' && typeof v !== 'undefined');
-            const genericHtml = allFields.map(([k,v]) => `<div style="padding:6px 8px;border-bottom:1px solid #e2e8f0;"><strong>${String(k).replace(/_/g,' ')}:</strong> ${typeof v==='object'?JSON.stringify(v):String(v)}</div>`).join('');
-            const extra = document.createElement('div'); extra.style.cssText='background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-top:12px;';
-            extra.innerHTML='<h4 style="color:#2563eb;margin:0 0 8px;">Complete Saved Registration Data</h4>'+genericHtml;
+            const extra = document.createElement('div');
+            extra.style.cssText='background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-top:12px;';
+            extra.innerHTML='<h4 style="color:#2563eb;margin:0 0 8px;">Additional Submitted Registration Information</h4>'+renderAdditionalRegistrationSections(lead);
             container.appendChild(extra);
+            renderStudentDocumentControls(lead);
             modal.style.display = 'flex';
+        }
+
+        function renderStudentDocumentControls(student) {
+            const host=document.getElementById('studentDocumentControls');
+            if(!host) return;
+            const docs=[]; const seen=new Set();
+            Object.entries(student||{}).forEach(([field,value])=>{
+                if(typeof value==='string' && value && /(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(field)){
+                    if(!seen.has(value)){docs.push({field,path:value,title:field.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase())});seen.add(value);}
+                }
+            });
+            (student.attachments||[]).forEach((a,i)=>{
+                if(a && typeof a==='object' && a.stored_name && !seen.has(a.stored_name)){
+                    docs.push({field:a.field||`attachment_${i}`,path:a.stored_name,title:a.original_name||`Attachment ${i+1}`});seen.add(a.stored_name);
+                }
+            });
+            if(!docs.length){host.innerHTML='<span style="color:#64748b;font-size:12.5px;">No documents uploaded.</span>';return;}
+            window.currentStudentDocumentFields=window.currentStudentDocumentFields||{};
+            host.innerHTML=docs.map((d,docIndex)=>{
+                const path='/download-doc/'+encodeURIComponent(d.path).replace(/%2F/g,'/');
+                const token=(String(d.field).replace(/[^a-zA-Z0-9_-]/g,'_')+'_'+docIndex);
+                const sid=Number(student.student_id)||0;
+                window.currentStudentDocumentFields[`${sid}:${token}`]={field:d.field,path:d.path,topLevel:student[d.field]===d.path};
+                const controls=(userRole==='Admin' && sid)?`<button type="button" onclick="replaceStudentDocument(${sid},'${token}')" style="background:#d97706;color:#fff;border:0;padding:6px 9px;border-radius:6px;cursor:pointer;">Replace</button>
+                    <button type="button" onclick="deleteStudentDocument(${sid},'${token}')" style="background:#dc2626;color:#fff;border:0;padding:6px 9px;border-radius:6px;cursor:pointer;">Delete</button>
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" id="replaceDoc_${token}" style="display:none" onchange="submitStudentDocumentReplace(${sid},'${token}')">`:'';
+                return `<div style="border:1px solid #dbeafe;background:#fff;border-radius:8px;padding:10px;min-width:210px;">
+                    <div style="font-weight:700;font-size:12px;margin-bottom:8px;">${d.title}</div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <button type="button" onclick="previewDocument('${path}','${d.title.replace(/'/g,"&#39;")}')" style="background:#2563eb;color:#fff;border:0;padding:6px 9px;border-radius:6px;cursor:pointer;">View</button>
+                        <a href="${path}?download=1" style="background:#16a34a;color:#fff;padding:6px 9px;border-radius:6px;text-decoration:none;">Download</a>${controls}
+                    </div></div>`;
+            }).join('');
+        }
+        function replaceStudentDocument(studentId, token) {
+            const input=document.getElementById('replaceDoc_'+token); if(input) input.click();
+        }
+        async function submitStudentDocumentReplace(studentId, token) {
+            const input=document.getElementById('replaceDoc_'+token); if(!input || !input.files.length) return;
+            const doc=(window.currentStudentDocumentFields||{})[`${studentId}:${token}`]||{field:token,path:''};
+            const field=doc.field;
+            const fd=new FormData(); fd.append('action','replace'); fd.append('field',field); fd.append('stored_name',doc.path); fd.append('file',input.files[0]);
+            const res=await fetch(`/api/student-document/${studentId}/${encodeURIComponent(field)}`,{method:'POST',body:fd});
+            const data=await res.json();
+            if(res.ok){alert(data.message||'Document replaced.');fetchStudentsData();fetchLeadsData();}
+            else alert(data.error||'Unable to replace document.');
+            input.value='';
+        }
+        async function deleteStudentDocument(studentId, token) {
+            if(!confirm('Move this individual document to Trash Bin?')) return;
+            const doc=(window.currentStudentDocumentFields||{})[`${studentId}:${token}`]||{field:token,path:''};
+            const field=doc.field;
+            const res=await fetch(`/api/student-document/${studentId}/${encodeURIComponent(field)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',field,stored_name:doc.path})});
+            const data=await res.json();
+            if(res.ok){alert(data.message||'Document moved to Trash Bin.');closeDocModal();fetchStudentsData();fetchTrashData();}
+            else alert(data.error||'Unable to delete document.');
         }
 
         function previewDocument(url, title) {
@@ -3287,7 +3690,7 @@ MAIN_DASHBOARD_HTML = """
             subModal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:2000; display:flex; justify-content:center; align-items:center; padding:12px; overflow:auto;';
             
             let previewContent = '';
-            if(url.match(/\\.(jpeg|jpg|png|gif|webp)$/i)) {
+            if(url.match(/\\.(jpeg|jpg|png|gif|webp)(?:\\?.*)?$/i)) {
                 previewContent = `<img src="${url}" style="max-width:100%; max-height:70vh; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.5);" alt="${title}">`;
             } else {
                 previewContent = `<iframe src="${url}" style="width:100%; max-width:800px; height:70vh; border:none; border-radius:8px; background:white;" title="${title}"></iframe>`;
@@ -3304,7 +3707,7 @@ MAIN_DASHBOARD_HTML = """
                         ${previewContent}
                     </div>
                     <div class="doc-preview-actions" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-                        <a href="${url}" download class="action-icon-btn doc-btn" style="background:#16a34a; color:white; padding:8px 16px; border-radius:6px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-weight:600; width:auto; height:auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
+                        <a href="${url}${url.includes('?')?'&':'?'}download=1" class="action-icon-btn doc-btn" style="background:#16a34a; color:white; padding:8px 16px; border-radius:6px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-weight:600; width:auto; height:auto;" target="_blank"><i class="fa-solid fa-download"></i> Download Document</a>
                         <button onclick="document.getElementById('docPreviewSubModal').remove()" style="background:#64748b; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">Close Preview</button>
                     </div>
                 </div>
@@ -3375,6 +3778,35 @@ MAIN_DASHBOARD_HTML = """
             }
         }
 
+        function renderStructuredStudentEditor(student) {
+            const host=document.getElementById('studentStructuredFields'); if(!host) return;
+            const record={...(student||{})};
+            const form=(student&&student.form_data&&typeof student.form_data==='object')?student.form_data:{};
+            Object.entries(form).forEach(([k,v])=>{if(record[k]===undefined || record[k]==='') record[k]=v;});
+            const excluded=new Set(['student_id','id','original_lead_id','is_deleted','attachments','form_data','github_record_path','converted_at','created_at','created_date','created_timestamp','deleted_date','deleted_at','deleted_timestamp','status','score','notes']);
+            const groups=[
+                {name:'Personal & Contact Details',test:k=>/(name|father|mother|contact|phone|mobile|email|gender|dob|birth)/i.test(k)},
+                {name:'Academic Details',test:k=>/(education|qualification|percentage|10th|12th|score|board|school|college)/i.test(k)},
+                {name:'Course & Admission Preferences',test:k=>/(course|admission|hostel|budget|fee|loan|help|preferred|hear|source)/i.test(k)},
+                {name:'Address Details',test:k=>/(address|state|city|district|pin|postal|country)/i.test(k)},
+                {name:'Other Registration Information',test:k=>true}
+            ];
+            const entries=Object.entries(record).filter(([k,v])=>!excluded.has(k)&&v!==null&&typeof v!=='undefined'&&!/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(k));
+            const used=new Set();
+            host.innerHTML=groups.map(group=>{
+                const fields=entries.filter(([k])=>!used.has(k)&&group.test(k));
+                fields.forEach(([k])=>used.add(k));
+                if(!fields.length)return '';
+                return `<section style="border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:12px;background:#f8fafc;">
+                    <h4 style="margin:0 0 10px;color:#2563eb;font-size:13px;">${group.name}</h4>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;">
+                    ${fields.map(([k,v])=>`<label style="font-size:11px;font-weight:700;color:#475569;">${k.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase())}
+                        <input class="form-control student-dynamic-field" data-field="${encodeURIComponent(k)}" value="${String(typeof v==='object'?JSON.stringify(v):v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" style="margin-top:4px;">
+                    </label>`).join('')}
+                    </div></section>`;
+            }).join('');
+        }
+
         function openStudentEditModal(st) {
             document.getElementById('student_edit_id').value = st.student_id;
             document.getElementById('s_edit_name').value = st.student_name || '';
@@ -3384,6 +3816,7 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('s_edit_college').value = st.assigned_college || '';
             document.getElementById('s_edit_budget').value = st.budget || '';
             document.getElementById('student_all_data_json').value = JSON.stringify(st, null, 2);
+            renderStructuredStudentEditor(st);
             document.getElementById('studentEditModal').style.display = 'flex';
         }
         function closeStudentEditModal() { document.getElementById('studentEditModal').style.display = 'none'; }
@@ -3401,6 +3834,27 @@ MAIN_DASHBOARD_HTML = """
                 fullRecord.course_details=document.getElementById('s_edit_course').value;
                 fullRecord.assigned_college=document.getElementById('s_edit_college').value;
                 fullRecord.budget=document.getElementById('s_edit_budget').value;
+                document.querySelectorAll('#studentStructuredFields .student-dynamic-field').forEach(input=>{
+                    const key=decodeURIComponent(input.dataset.field||'');
+                    let value=input.value;
+                    if((value.startsWith('[')&&value.endsWith(']'))||(value.startsWith('{')&&value.endsWith('}'))){try{value=JSON.parse(value);}catch(e){}}
+                    fullRecord[key]=value;
+                    if(!fullRecord.form_data || typeof fullRecord.form_data!=='object') fullRecord.form_data={};
+                    fullRecord.form_data[key]=value;
+                });
+                fullRecord.student_name=document.getElementById('s_edit_name').value;
+                fullRecord.contact_number=document.getElementById('s_edit_contact').value;
+                fullRecord.student_email=document.getElementById('s_edit_email').value;
+                fullRecord.course_details=document.getElementById('s_edit_course').value;
+                fullRecord.course_interest=fullRecord.course_details || fullRecord.course_interest || '';
+                fullRecord.assigned_college=document.getElementById('s_edit_college').value;
+                fullRecord.budget=document.getElementById('s_edit_budget').value;
+                if(!fullRecord.form_data || typeof fullRecord.form_data!=='object') fullRecord.form_data={};
+                Object.assign(fullRecord.form_data,{student_name:fullRecord.student_name,contact_number:fullRecord.contact_number,
+                    student_email:fullRecord.student_email,course_details:fullRecord.course_details,
+                    course_interest:fullRecord.course_interest,assigned_college:fullRecord.assigned_college,budget:fullRecord.budget});
+                fullRecord.course_interest=fullRecord.course_interest||fullRecord.course_details||'';
+                fullRecord.form_data.course_interest=fullRecord.course_interest;
                 formData.append('student_data_json', JSON.stringify(fullRecord));
             } catch(err) { alert('Please correct the JSON in All Saved Registration Fields.'); return; }
 
@@ -3458,20 +3912,26 @@ MAIN_DASHBOARD_HTML = """
                 'Contacted': activeLeads.filter(l => l.status==='Contacted').length,
                 'Follow Up': activeLeads.filter(l => l.status==='Follow Up').length,
                 'Closed': activeLeads.filter(l => l.status==='Closed').length,
-                'Rejected': activeLeads.filter(l => l.status==='Rejected').length
+                'Rejected': activeLeads.filter(l => l.status==='Rejected').length,
+                'Converted to Student': activeLeads.filter(l => l.status==='Converted to Student').length
             };
             const ctx = document.getElementById('leadsPieChart').getContext('2d');
             if(pieChartInstance) pieChartInstance.destroy();
+            const total=activeLeads.length;
+            const labels=['New Lead','Contacted','Follow Up','Closed','Rejected','Converted to Student'];
+            const values=labels.map(k=>counts[k]||0);
+            const converted=activeLeads.filter(l=>l.status==='Converted to Student').length;
+            const conversionRate=total ? (converted/total*100) : 0;
+            document.getElementById('leadsPieSummary').innerHTML =
+                labels.map((label,i)=>`<div style="display:flex;justify-content:space-between;gap:12px;"><span>${label}</span><strong>${values[i]} (${total?(values[i]/total*100).toFixed(1):'0.0'}%)</strong></div>`).join('')+
+                `<div style="border-top:1px solid var(--border-color);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;"><span>Converted to Students</span><strong>${converted} (${conversionRate.toFixed(1)}%)</strong></div><div style="display:flex;justify-content:space-between;"><span>Total Leads</span><strong>${total}</strong></div>`;
             pieChartInstance = new Chart(ctx, {
                 type: 'doughnut',
-                data: {
-                    labels: ['New', 'Contacted', 'Follow Up', 'Closed', 'Rejected'],
-                    datasets: [{
-                        data: [counts['New Lead'], counts['Contacted'], counts['Follow Up'], counts['Closed'], counts['Rejected']],
-                        backgroundColor: ['#38bdf8', '#f59e0b', '#6366f1', '#22c55e', '#ef4444']
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                data: { labels, datasets: [{ data: values, backgroundColor: ['#38bdf8', '#f59e0b', '#6366f1', '#22c55e', '#ef4444', '#0ea5e9'] }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: { callbacks: { label: context => `${context.label}: ${context.raw} (${total?(context.raw/total*100).toFixed(1):'0.0'}%)` } }
+                } }
             });
         }
 
