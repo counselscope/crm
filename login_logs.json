@@ -28,11 +28,11 @@
         "login_date": "2026-11-07",
         "login_time": "07 Nov 2026, 08:08 AM",
         "login_timestamp": 1794038905.501938,
-        "logout_date": "N/A",
-        "logout_time": "N/A",
-        "logout_timestamp": null,
+        "logout_date": "2026-11-07",
+        "logout_time": "07 Nov 2026, 08:10 AM",
+        "logout_timestamp": 1794039056.763084,
         "location": "Mumbai, Maharashtra, India",
-        "status": "Active",
+        "status": "Logged Out",
         "session_info": "Session ID: 1705940199456413020"
     }
 ]
