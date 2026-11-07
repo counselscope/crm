@@ -739,5 +739,14 @@
         "time": "06:07:34 AM",
         "action_type": "Delete Students",
         "details": "Admin deleted 1 student record(s)."
+    },
+    {
+        "id": 88,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "06:16:45 AM",
+        "action_type": "User Logout",
+        "details": "User admin logged out."
     }
 ]
