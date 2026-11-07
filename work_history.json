@@ -748,5 +748,14 @@
         "time": "06:16:45 AM",
         "action_type": "User Logout",
         "details": "User admin logged out."
+    },
+    {
+        "id": 89,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "06:16:51 AM",
+        "action_type": "User Login",
+        "details": "User admin (Admin) logged in successfully from IP 223.191.92.144"
     }
 ]
