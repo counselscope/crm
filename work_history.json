@@ -16,5 +16,14 @@
         "time": "07:58:26 AM",
         "action_type": "User Login",
         "details": "User admin (Admin) logged in successfully from IP 42.108.74.130"
+    },
+    {
+        "id": 3,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-07",
+        "time": "07:59:00 AM",
+        "action_type": "Delete Leads",
+        "details": "Admin moved 7 lead(s) to Trash Bin."
     }
 ]
