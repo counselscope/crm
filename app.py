@@ -2081,7 +2081,7 @@ LOGIN_HTML = """
 </head>
 <body>
     <div class="login-card">
-        <img src="https://i.ibb.co/6R6t2Y0/unnamed.jpg" class="logo-img" alt="CounselScope Logo">
+        <img src="logo.png" class="logo-img" alt="CounselScope Logo">
         <h2>CounselScope CRM</h2>
         <p class="subtitle">Enter your credentials to access portal</p>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
@@ -2272,7 +2272,7 @@ MAIN_DASHBOARD_HTML = """
     <aside class="sidebar" id="sidebarNav">
         <div>
             <div class="sidebar-brand">
-                <img src="https://i.ibb.co/6R6t2Y0/unnamed.jpg" alt="Logo">
+                <img src="logo.png" alt="Logo">
                 <div class="sidebar-brand-text">
                     <h3>CounselScope</h3>
                     <p>Role: {{ role }}</p>
