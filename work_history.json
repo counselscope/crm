@@ -22,8 +22,8 @@
         "username": "admin",
         "role": "Admin",
         "date": "2026-11-07",
-        "time": "06:26:45 AM",
-        "action_type": "Student Converted",
-        "details": "Converted lead #7 (lakaji) into a registered Student."
+        "time": "06:27:49 AM",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Converted to Student' for student lakaji"
     }
 ]
