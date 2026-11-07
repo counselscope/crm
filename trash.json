@@ -160,5 +160,23 @@
         "deleted_date": "2026-11-07",
         "deleted_at": "07 Nov 2026, 07:06 AM",
         "deleted_timestamp": 1794035195.966186
+    },
+    {
+        "trash_id": "b589d020fd4746a1bb28c3daaa82a0a3",
+        "category": "Work History",
+        "source_file": "work_history.json",
+        "source_id": 7,
+        "record": {
+            "id": 7,
+            "username": "admin",
+            "role": "Admin",
+            "date": "2026-11-07",
+            "time": "07:01:32 AM",
+            "action_type": "User Logout",
+            "details": "User admin logged out."
+        },
+        "deleted_date": "2026-11-07",
+        "deleted_at": "07 Nov 2026, 07:06 AM",
+        "deleted_timestamp": 1794035196.862895
     }
 ]
