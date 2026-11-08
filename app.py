@@ -1,11 +1,14 @@
 import os
 import json
 import csv
+import re
 import io
 import base64
 import uuid
 import requests
 import mimetypes
+import shutil
+import tempfile
 from datetime import datetime, timedelta
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, make_response, send_file
 from flask_cors import CORS
@@ -25,13 +28,150 @@ app = Flask(__name__)
 app.secret_key = "counselscope_world_class_crm_2026_secret"
 CORS(app)
 
-LOGIN_LOGS_FILE = "login_logs.json"
-DATA_FILE = "leads.json"
-COLLEGES_FILE = "colleges.json"
-HISTORY_FILE = "work_history.json"
-USERS_FILE = "users.json"
-STUDENTS_FILE = "students.json"
-TRASH_FILE = "trash.json"
+DEFAULT_NEW_USER_PERMISSIONS = ["call_leads", "update_leads"]
+PERMISSION_LABELS = {
+    "view_dashboard": "View Dashboard",
+    "call_leads": "Call Leads / Contact Customers",
+    "view_leads": "View Leads",
+    "update_leads": "Update Leads (status and follow-ups only)",
+    "view_lead_details": "View Lead Details",
+    "change_lead_status": "Change Lead Status",
+    "add_followup": "Add Follow-up Details",
+    "lead_filters": "Access Lead Filters",
+    "download_leads": "Download Lead Data",
+    "delete_leads": "Delete Leads",
+    "view_students": "View Student Records",
+    "view_student_details": "View Student Details",
+    "add_students": "Add Students",
+    "edit_students": "Edit Students",
+    "upload_student_documents": "Upload Student Documents",
+    "download_student_documents": "Download Student Documents",
+    "delete_student_documents": "Delete Student Documents",
+    "delete_students": "Delete Student Records",
+    "view_colleges": "View Colleges",
+    "add_colleges": "Add Colleges",
+    "edit_colleges": "Edit Colleges",
+    "upload_college_documents": "Upload College Documents",
+    "delete_colleges": "Delete Colleges",
+    "view_work_history": "View Work History",
+    "view_logs": "View Logs",
+    "export_reports": "Export Reports",
+    "access_settings": "Access Settings & Logs",
+    "view_trash": "View Trash Bin",
+    "restore_trash": "Restore Trash Records",
+}
+PERMISSION_ENDPOINTS = {
+    "get_leads_api": ("call_leads", "view_leads"),
+    "update_lead": ("update_leads", "add_followup", "change_lead_status"),
+    "update_status": ("update_leads", "change_lead_status"),
+    "log_action": ("update_leads",),
+    "export_filtered_leads_csv": ("download_leads",),
+    "export_leads_pdf": ("download_leads",),
+    "delete_lead": ("delete_leads",),
+    "delete_selected_leads": ("delete_leads",),
+    "delete_filtered_leads": ("delete_leads",),
+    "get_students_api": ("view_students",),
+    "convert_to_student": ("add_students",),
+    "update_student": ("edit_students",),
+    "delete_selected_students": ("delete_students",),
+    "manage_student_document": ("upload_student_documents", "delete_student_documents"),
+    "get_colleges": ("view_colleges",),
+    "add_college": ("add_colleges",),
+    "update_college": ("edit_colleges",),
+    "delete_selected_colleges": ("delete_colleges",),
+    "college_file": ("view_colleges", "download_student_documents"),
+    "download_document": ("download_student_documents",),
+    "get_history_api": ("view_work_history",),
+    "log_action_route": ("update_leads",),
+    "delete_selected_history": ("__admin_only__",),
+    "export_history_pdf": ("view_work_history",),
+    "export_filtered_history_pdf": ("view_work_history",),
+    "get_logs_api": ("view_logs",),
+    "delete_selected_logs": ("__admin_only__",),
+    "clear_logs": ("__admin_only__",),
+    "export_logs_pdf": ("view_logs",),
+    "export_filtered_logs_pdf": ("view_logs",),
+    "get_trash_api": ("view_trash",),
+    "trash_restore": ("restore_trash",),
+    "trash_permanent_delete": ("__admin_only__",),
+    "restore_lead": ("restore_trash",),
+    "trash_download": ("view_trash",),
+    "export_full_excel": ("export_reports",),
+    "export_full_pdf": ("export_reports",),
+    "export_students_consolidated_pdf": ("export_reports",),
+    "export_college_pdf": ("export_reports",),
+    "export_filtered_trash_pdf": ("export_reports",),
+    "admin_change_password": ("__admin_only__",),
+    "user_management_create": ("__admin_only__",),
+    "user_management_list": ("__admin_only__",),
+    "user_management_update": ("__admin_only__",),
+    "user_management_delete": ("__admin_only__",),
+}
+
+def is_admin_session():
+    return bool(session.get("logged_in") and session.get("role") == "Admin")
+
+def current_user_permissions():
+    if not session.get("logged_in"):
+        return set()
+    if session.get("role") == "Admin":
+        return {"*"}
+    if session.get("role") == "Client":
+        return set()
+    record = load_users().get(session.get("username"), {})
+    return set(record.get("permissions") or DEFAULT_NEW_USER_PERMISSIONS)
+
+def has_permission(permission):
+    if session.get("role") == "Admin":
+        return True
+    if session.get("role") == "Client":
+        return False
+    permissions = current_user_permissions()
+    return permission in permissions or "*" in permissions
+
+@app.before_request
+def enforce_new_user_route_permissions():
+    if not session.get("logged_in") or session.get("role") != "New User":
+        return None
+    username = session.get("username")
+    account = load_users().get(username)
+    if not account or account.get("active", True) is False:
+        session.clear()
+        return jsonify({"error":"This account is inactive or no longer exists. Please log in again."}), 401
+    endpoint = request.endpoint or ""
+    if endpoint in ("login", "home", "logout", "crm_dashboard", "static"):
+        return None
+    required = PERMISSION_ENDPOINTS.get(endpoint)
+    if required is None:
+        return jsonify({"error": "Access denied. This feature is not authorized for your account."}), 403
+    if "__admin_only__" in required:
+        return jsonify({"error": "Admin access required."}), 403
+    if not any(has_permission(p) for p in required):
+        return jsonify({"error": "Permission denied for this operation."}), 403
+    return None
+
+# Centralized persistent CRM storage. Set RENDER_DATA_DIR to the mount path of
+# an attached Render persistent disk when deploying.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.abspath(os.environ.get("RENDER_DATA_DIR") or os.path.join(BASE_DIR, "data"))
+LEADS_DIR = os.path.join(DATA_DIR, "leads")
+STUDENTS_DIR = os.path.join(DATA_DIR, "students")
+STUDENT_DOCUMENTS_DIR = os.path.join(DATA_DIR, "student_documents")
+COLLEGES_DIR = os.path.join(DATA_DIR, "colleges")
+COLLEGE_DOCUMENTS_DIR = os.path.join(DATA_DIR, "college_documents")
+USERS_DIR = os.path.join(DATA_DIR, "users")
+WORK_HISTORY_DIR = os.path.join(DATA_DIR, "work_history")
+LOGS_DIR = os.path.join(DATA_DIR, "logs")
+UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+TRASH_DIR = os.path.join(DATA_DIR, "trash")
+
+LOGIN_LOGS_FILE = os.path.join(DATA_DIR, "login_logs.json")
+DATA_FILE = os.path.join(DATA_DIR, "leads.json")
+COLLEGES_FILE = os.path.join(DATA_DIR, "colleges.json")
+HISTORY_FILE = os.path.join(DATA_DIR, "work_history.json")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+STUDENTS_FILE = os.path.join(DATA_DIR, "students.json")
+TRASH_FILE = os.path.join(DATA_DIR, "trash.json")
 
 # GitHub API Configuration from Environment Variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -51,15 +191,16 @@ def get_default_users():
     }
 
 def load_users():
+    initialize_data_directories()
     if not os.path.exists(USERS_FILE):
         default_users = get_default_users()
         save_data(USERS_FILE, default_users)
         return default_users
-    try:
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return get_default_users()
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        users = json.load(f)
+    if not isinstance(users, dict):
+        raise ValueError("Users data must be a JSON object.")
+    return users
 
 def get_geolocation(ip):
     if not ip or ip in ["127.0.0.1", "localhost", "::1"]:
@@ -131,20 +272,94 @@ def parse_user_agent_detailed(ua_string):
         
     return f"{browser} ({browser_version})", os_name
 
+_DATA_LOCK = __import__("threading").RLock()
+_DATA_FILES = {DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGIN_LOGS_FILE, USERS_FILE, STUDENTS_FILE, TRASH_FILE}
+
+def initialize_data_directories():
+    for directory in (DATA_DIR, LEADS_DIR, STUDENTS_DIR, STUDENT_DOCUMENTS_DIR,
+                      COLLEGES_DIR, COLLEGE_DOCUMENTS_DIR, USERS_DIR,
+                      WORK_HISTORY_DIR, LOGS_DIR, UPLOADS_DIR, TRASH_DIR):
+        os.makedirs(directory, exist_ok=True)
+
+def migrate_legacy_data_once():
+    """Idempotently copy legacy root data into data/ without overwriting newer files."""
+    initialize_data_directories()
+    marker = os.path.join(DATA_DIR, ".legacy_migration_v1.json")
+    legacy_names = ("leads.json", "colleges.json", "work_history.json",
+                    "users.json", "students.json", "trash.json", "login_logs.json")
+    report = {"version": 1, "migrated": [], "skipped": []}
+    for name in legacy_names:
+        source, destination = os.path.join(BASE_DIR, name), os.path.join(DATA_DIR, name)
+        if os.path.isfile(source) and os.path.abspath(source) != os.path.abspath(destination):
+            if not os.path.exists(destination):
+                shutil.copy2(source, destination)
+                report["migrated"].append(name)
+            else:
+                report["skipped"].append(name)
+    for old_dir, new_dir in ((os.path.join(BASE_DIR, "student_documents"), STUDENT_DOCUMENTS_DIR),
+                             (os.path.join(BASE_DIR, "college_uploads"), COLLEGE_DOCUMENTS_DIR)):
+        if os.path.isdir(old_dir):
+            for root, dirs, files in os.walk(old_dir):
+                rel = os.path.relpath(root, old_dir)
+                target_dir = new_dir if rel == "." else os.path.join(new_dir, rel)
+                os.makedirs(target_dir, exist_ok=True)
+                for filename in files:
+                    src, dst = os.path.join(root, filename), os.path.join(target_dir, filename)
+                    if not os.path.exists(dst):
+                        shutil.copy2(src, dst)
+    # Normalize legacy Trash Bin source references after files have been copied.
+    trash_path = os.path.join(DATA_DIR, "trash.json")
+    if os.path.isfile(trash_path):
+        try:
+            with open(trash_path, "r", encoding="utf-8") as f: trash_items = json.load(f)
+            legacy_map = {"leads.json": DATA_FILE, "students.json": STUDENTS_FILE,
+                          "colleges.json": COLLEGES_FILE, "work_history.json": HISTORY_FILE,
+                          "login_logs.json": LOGIN_LOGS_FILE}
+            changed = False
+            for item in trash_items if isinstance(trash_items, list) else []:
+                old = item.get("source_file")
+                if old in legacy_map:
+                    item["source_file"] = legacy_map[old]
+                    changed = True
+            if changed:
+                temp = trash_path + ".migration.tmp"
+                with open(temp, "w", encoding="utf-8") as f: json.dump(trash_items, f, indent=4, ensure_ascii=False)
+                os.replace(temp, trash_path)
+        except Exception:
+            app.logger.exception("Unable to normalize legacy Trash Bin references; legacy paths remain readable.")
+    if not os.path.exists(marker):
+        temp = marker + ".tmp"
+        with open(temp, "w", encoding="utf-8") as f: json.dump(report, f, indent=2)
+        os.replace(temp, marker)
+
 def load_data(filename):
-    if not os.path.exists(filename):
-        return []
+    initialize_data_directories()
+    if not os.path.exists(filename): return []
     try:
-        with open(filename, "r") as f:
+        with _DATA_LOCK, open(filename, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
-        return []
+    except (OSError, json.JSONDecodeError):
+        app.logger.exception("Unable to read CRM data file: %s", filename)
+        raise
 
 def save_data(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
-    
-    if GITHUB_TOKEN and GITHUB_REPO and filename in [DATA_FILE, COLLEGES_FILE, HISTORY_FILE, LOGIN_LOGS_FILE, USERS_FILE, STUDENTS_FILE, TRASH_FILE]:
+    initialize_data_directories()
+    directory = os.path.dirname(os.path.abspath(filename)) or DATA_DIR
+    os.makedirs(directory, exist_ok=True)
+    with _DATA_LOCK:
+        fd, temp_path = tempfile.mkstemp(prefix=".crm-", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, filename)
+        except Exception:
+            try: os.unlink(temp_path)
+            except OSError: pass
+            app.logger.exception("Unable to save CRM data file: %s", filename)
+            raise
+    if GITHUB_TOKEN and GITHUB_REPO and filename in _DATA_FILES:
         commit_json_to_github(filename)
 
 
@@ -174,6 +389,10 @@ def _archive_record(filename, record, record_id=None, category=None, extra=None)
 
 def _restore_trash_item(item):
     source=item.get("source_file"); source_id=item.get("source_id"); record=item.get("record")
+    legacy_sources = {os.path.basename(DATA_FILE): DATA_FILE, os.path.basename(STUDENTS_FILE): STUDENTS_FILE,
+                      os.path.basename(COLLEGES_FILE): COLLEGES_FILE, os.path.basename(HISTORY_FILE): HISTORY_FILE,
+                      os.path.basename(LOGIN_LOGS_FILE): LOGIN_LOGS_FILE}
+    source = legacy_sources.get(os.path.basename(str(source or "")), source)
     if not isinstance(record,dict): raise ValueError("Trash record snapshot is missing.")
     if source == "student_document":
         extra=item.get("extra") or {}
@@ -245,34 +464,60 @@ def _find_github_document_paths(value):
 
 
 def _delete_github_file_if_unreferenced(path, deleted_item):
-    if not path or not GITHUB_TOKEN or not GITHUB_REPO:
+    if not path:
         return
-    # Avoid deleting a file still referenced by another live CRM record.
-    for filename in (DATA_FILE,STUDENTS_FILE,COLLEGES_FILE):
+    # Avoid deleting a file still referenced by another live CRM record or Trash item.
+    for filename in (DATA_FILE, STUDENTS_FILE, COLLEGES_FILE):
         for rec in load_data(filename):
-            if filename==deleted_item.get("source_file") and str(rec.get("student_id" if filename==STUDENTS_FILE else "id"))==str(deleted_item.get("source_id")):
+            if filename == deleted_item.get("source_file") and str(rec.get("student_id" if filename == STUDENTS_FILE else "id")) == str(deleted_item.get("source_id")):
                 continue
             if path in _find_github_document_paths(rec):
                 return
     for archived in load_data(TRASH_FILE):
         if archived.get("trash_id") != deleted_item.get("trash_id") and path in _find_github_document_paths(archived.get("record") or {}):
             return
-    url=f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    headers={"Authorization":f"Bearer {GITHUB_TOKEN}","Accept":"application/vnd.github+json"}
-    try:
-        check=requests.get(url,headers=headers,params={"ref":GITHUB_BRANCH},timeout=20)
-        if check.status_code==404: return
-        if check.status_code!=200: return
-        sha=check.json().get("sha")
-        if sha:
-            requests.delete(url,headers=headers,json={"message":f"Permanently delete CRM attachment {os.path.basename(path)}",
-                              "sha":sha,"branch":GITHUB_BRANCH},timeout=30)
-    except Exception as exc:
-        app.logger.warning("Unable to permanently remove GitHub attachment %s: %s",path,exc)
+
+    # Remove the remote copy when GitHub is configured, but never let a remote
+    # lookup failure prevent cleanup of an unreferenced local persistent copy.
+    if GITHUB_TOKEN and GITHUB_REPO:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+        try:
+            check = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=20)
+            if check.status_code == 200:
+                sha = check.json().get("sha")
+                if sha:
+                    requests.delete(url, headers=headers,
+                                    json={"message":f"Permanently delete CRM attachment {os.path.basename(path)}",
+                                          "sha":sha,"branch":GITHUB_BRANCH}, timeout=30)
+            elif check.status_code != 404:
+                app.logger.warning("Unable to verify GitHub attachment deletion for %s: HTTP %s", path, check.status_code)
+        except Exception as exc:
+            app.logger.warning("Unable to permanently remove GitHub attachment %s: %s", path, exc)
+
+    local_path = None
+    if path.startswith("student_documents/"):
+        local_path = os.path.join(STUDENT_DOCUMENTS_DIR, path[len("student_documents/"):])
+    elif path.startswith("student/college/"):
+        local_path = os.path.join(COLLEGE_DOCUMENTS_DIR, *path.split("/")[2:])
+    elif path.startswith("college_uploads/"):
+        local_path = os.path.join(COLLEGE_DOCUMENTS_DIR, path[len("college_uploads/"):])
+    if local_path:
+        safe_root = os.path.realpath(DATA_DIR)
+        safe_target = os.path.realpath(local_path)
+        if os.path.commonpath((safe_root, safe_target)) == safe_root and os.path.isfile(safe_target):
+            try:
+                os.remove(safe_target)
+            except OSError as exc:
+                app.logger.warning("Unable to remove local CRM attachment %s: %s", safe_target, exc)
 
 
 def _permanently_delete_trash_item(item):
     source=item.get("source_file")
+    legacy_sources = {os.path.basename(DATA_FILE): DATA_FILE, os.path.basename(STUDENTS_FILE): STUDENTS_FILE,
+                      os.path.basename(COLLEGES_FILE): COLLEGES_FILE, os.path.basename(HISTORY_FILE): HISTORY_FILE,
+                      os.path.basename(LOGIN_LOGS_FILE): LOGIN_LOGS_FILE}
+    source = legacy_sources.get(os.path.basename(str(source or "")), source)
     snapshot=item.get("record") or {}
     if source=="student_document":
         extra=item.get("extra") or {}; field=extra.get("field")
@@ -314,21 +559,37 @@ def _migrate_legacy_deleted_leads():
         if lead.get("is_deleted"):
             _archive_record(DATA_FILE,lead,lead.get("id"),"Leads")
 
-def log_activity(action_type, details, username=None, role=None):
+def log_activity(action_type, details, username=None, role=None, module=None,
+                 related_record_id=None, action=None, user_id=None, ip_address=None):
+    """Write every account and system event to the one persistent work-history stream."""
     history = load_data(HISTORY_FILE)
     now = datetime.now()
     uname = username or session.get('username', 'System')
-    urole = role or session.get('role', 'Admin')
-    log_item = {
-        "id": len(history) + 1,
+    urole = role or session.get('role', 'System')
+    try:
+        current_user = load_users().get(uname, {}) if uname not in ("System", "") else {}
+    except Exception:
+        current_user = {}
+    activity_id = uuid.uuid4().hex
+    ip = ip_address
+    if ip is None:
+        try:
+            ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+            if ip and "," in ip: ip = ip.split(",")[0].strip()
+        except RuntimeError:
+            ip = ""
+    item = {
+        "id": activity_id, "activity_id": activity_id,
         "username": uname,
-        "role": urole,
-        "date": now.strftime("%Y-%m-%d"),
-        "time": now.strftime("%I:%M:%S %p"),
-        "action_type": action_type,
-        "details": details
+        "user_id": user_id or current_user.get("user_id") or ("system" if urole == "System" else uname),
+        "role": urole, "account_role": urole,
+        "date": now.strftime("%Y-%m-%d"), "time": now.strftime("%I:%M:%S %p"),
+        "timestamp": now.timestamp(), "ip_address": ip or "",
+        "module": module or (str(action_type).split(" ")[0] if action_type else "System"),
+        "action": action or action_type, "action_type": action_type,
+        "details": details, "related_record_id": related_record_id
     }
-    history.append(log_item)
+    history.append(item)
     save_data(HISTORY_FILE, history)
 
 def log_login_activity(username, role, req, status="Successful"):
@@ -373,7 +634,6 @@ def log_login_activity(username, role, req, status="Successful"):
     }
     logs.append(log_entry)
     save_data(LOGIN_LOGS_FILE, logs)
-    log_activity("User Login", f"User {username} ({role}) logged in successfully from IP {ip}", username=username, role=role)
 
 def log_logout_activity(username):
     logs = load_data(LOGIN_LOGS_FILE)
@@ -393,7 +653,8 @@ def commit_json_to_github(filepath):
             file_content = f.read()
         encoded_content = base64.b64encode(file_content).decode('utf-8')
         
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filepath}"
+        repo_filepath = "data/" + os.path.basename(filepath)
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_filepath}"
         headers = {
             "Authorization": f"Bearer {GITHUB_TOKEN}",
             "Accept": "application/vnd.github+json"
@@ -403,7 +664,7 @@ def commit_json_to_github(filepath):
         sha = get_res.json().get('sha') if get_res.status_code == 200 else None
 
         payload = {
-            "message": f"Auto-update {filepath} data",
+            "message": f"Auto-update {repo_filepath} data",
             "content": encoded_content,
             "branch": GITHUB_BRANCH
         }
@@ -415,41 +676,38 @@ def commit_json_to_github(filepath):
         print("GitHub JSON Commit Error:", e)
 
 def upload_file_to_github(file_storage, student_name, original_filename):
-    if not GITHUB_TOKEN or not GITHUB_REPO:
-        return None
-    
+    """Store a local persistent copy and retain the legacy GitHub path when configured."""
     try:
-        safe_student_name = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        target_filename = f"doc_{int(datetime.now().timestamp())}_{secure_filename(original_filename)}"
-        file_path_in_repo = f"student_documents/{safe_student_name}/{target_filename}"
-        
-        file_content = file_storage.read()
-        encoded_content = base64.b64encode(file_content).decode('utf-8')
-        
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{file_path_in_repo}"
-        headers = {
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json"
-        }
-        
-        get_res = requests.get(url, headers=headers)
-        sha = get_res.json().get('sha') if get_res.status_code == 200 else None
-
-        payload = {
-            "message": f"Upload document for student: {student_name}",
-            "content": encoded_content,
-            "branch": GITHUB_BRANCH
-        }
-        if sha:
-            payload["sha"] = sha
-
-        response = requests.put(url, headers=headers, json=payload)
-        if response.status_code in [201, 200]:
-            return file_path_in_repo
-    except Exception as e:
-        print("GitHub API Document Upload Error:", e)
-    
-    return None
+        safe_student_name = "".join(c for c in (student_name or "Student") if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_') or "Student"
+        target_filename = f"doc_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}_{secure_filename(original_filename)}"
+        relative_path = f"student_documents/{safe_student_name}/{target_filename}"
+        content = file_storage.read()
+        if not content:
+            return None
+        local_path = os.path.join(STUDENT_DOCUMENTS_DIR, safe_student_name, target_filename)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(content)
+        if GITHUB_TOKEN and GITHUB_REPO:
+            try:
+                encoded_content = base64.b64encode(content).decode('utf-8')
+                url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{relative_path}"
+                headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+                get_res = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=30)
+                sha = get_res.json().get('sha') if get_res.status_code == 200 else None
+                payload = {"message": f"Upload document for student: {student_name}",
+                           "content": encoded_content, "branch": GITHUB_BRANCH}
+                if sha: payload["sha"] = sha
+                response = requests.put(url, headers=headers, json=payload, timeout=60)
+                if response.status_code in (201, 200):
+                    return relative_path
+                app.logger.warning("GitHub student upload failed (%s); persistent local copy retained.", response.status_code)
+            except Exception:
+                app.logger.exception("GitHub student upload failed; persistent local copy retained.")
+        return relative_path
+    except Exception:
+        app.logger.exception("Student document could not be stored.")
+        return None
 
 
 # College Manager GitHub storage helpers.
@@ -506,36 +764,47 @@ def save_college_record_to_github(college):
     college["github_record_path"] = repo_path
     payload = json.dumps(college, ensure_ascii=False, indent=4).encode("utf-8")
     upload_college_content_to_github(repo_path, payload, f"Update college record: {college.get('college_name', 'College')}")
+    # Keep a local persistent per-college JSON copy inside the centralized data tree.
+    local_folder = os.path.join(COLLEGES_DIR, folder)
+    os.makedirs(local_folder, exist_ok=True)
+    local_record_path = os.path.join(local_folder, "college.json")
+    save_data(local_record_path, college)
     return repo_path
 
 
 def upload_college_document_to_github(upload, college_name, college_id):
-    if not upload or not upload.filename:
-        return None
+    if not upload or not upload.filename: return None
     original_name = secure_filename(upload.filename)
     ext = os.path.splitext(original_name)[1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".pdf"):
         raise ValueError("Only JPG, JPEG, PNG and PDF files are allowed.")
     content = upload.read()
-    if not content:
-        raise ValueError("The selected college file is empty.")
-    # GitHub's Contents API is limited to files up to 1 MB.
+    if not content: raise ValueError("The selected college file is empty.")
     if len(content) > 1_000_000:
         raise ValueError("College files must be 1 MB or smaller for this GitHub upload method.")
     folder = safe_college_folder_name(college_name)
     all_colleges = load_data(COLLEGES_FILE)
     same_name = [c for c in all_colleges if safe_college_folder_name(c.get("college_name")) == folder]
-    if any(int(c.get("id", -1)) != int(college_id) for c in same_name):
-        folder = f"{folder}_{college_id}"
-    stored_name = f"college_{uuid.uuid4().hex}{ext}"
-    repo_path = f"student/college/{folder}/{stored_name}"
-    upload_college_content_to_github(repo_path, content, f"Upload college document: {college_name}")
-    return {
-        "stored_name": repo_path,
-        "github_path": repo_path,
-        "original_name": original_name,
-        "extension": ext
-    }
+    if any(int(c.get("id", -1)) != int(college_id) for c in same_name): folder = f"{folder}_{college_id}"
+    stored_filename = f"college_{uuid.uuid4().hex}{ext}"
+    local_folder = os.path.join(COLLEGE_DOCUMENTS_DIR, folder)
+    os.makedirs(local_folder, exist_ok=True)
+    with open(os.path.join(local_folder, stored_filename), "wb") as f: f.write(content)
+    repo_path = f"student/college/{folder}/{stored_filename}"
+    if GITHUB_TOKEN and GITHUB_REPO:
+        try:
+            upload_college_content_to_github(repo_path, content, f"Upload college document: {college_name}")
+            stored_reference = repo_path
+            github_path = repo_path
+        except Exception:
+            app.logger.exception("GitHub college upload failed; persistent local copy retained.")
+            stored_reference = f"college_uploads/{folder}/{stored_filename}"
+            github_path = None
+    else:
+        stored_reference = f"college_uploads/{folder}/{stored_filename}"
+        github_path = None
+    return {"stored_name": stored_reference, "github_path": github_path,
+            "original_name": original_name, "extension": ext}
 
 
 def get_college_file_from_github(repo_path):
@@ -648,7 +917,10 @@ def submit_lead():
             "created_date": now.strftime("%Y-%m-%d"),
             "created_at": now.strftime("%d %b %Y, %I:%M %p"),
             "created_timestamp": now.timestamp(),
-            "form_data": flat_form
+            "form_data": flat_form,
+            "created_by": "System",
+            "created_by_id": "system",
+            "created_by_role": "System"
         }
         
         for upload_key, stored_path in uploaded_files.items():
@@ -656,7 +928,8 @@ def submit_lead():
                 new_lead[upload_key] = stored_path
         leads.append(new_lead)
         save_data(DATA_FILE, leads)
-        log_activity("Lead Created", f"New dynamic enquiry received for {student_name} ({contact_number})")
+        log_activity("Lead Created", f"New dynamic enquiry received for {student_name} ({contact_number})",
+                     username="System", role="System", module="Registration", related_record_id=new_lead.get("id"))
 
         return jsonify({"status": "success", "message": "Lead captured and stored dynamically!"}), 200
     except Exception as e:
@@ -670,7 +943,23 @@ def update_lead():
     try:
         form_data = request.form.to_dict()
         lead_id = int(form_data.get('lead_id'))
-        
+
+        if session.get("role") == "New User":
+            allowed_fields = {"lead_id", "status", "follow_up", "followup", "follow_up_date",
+                              "followup_date", "follow_up_details", "followup_details",
+                              "follow_up_notes", "followup_notes"}
+            if set(form_data) - allowed_fields or request.files:
+                return jsonify({"status":"error","message":"New users may only update lead status and follow-up information."}), 403
+            status_fields = {"status"}
+            followup_fields = {"follow_up", "followup", "follow_up_date", "followup_date",
+                               "follow_up_details", "followup_details", "follow_up_notes", "followup_notes"}
+            if status_fields.intersection(form_data) and not (has_permission("update_leads") or has_permission("change_lead_status")):
+                return jsonify({"status":"error","message":"Change Lead Status permission required."}), 403
+            if followup_fields.intersection(form_data) and not (has_permission("update_leads") or has_permission("add_followup")):
+                return jsonify({"status":"error","message":"Add Follow-up Details permission required."}), 403
+            if not (has_permission("update_leads") or has_permission("add_followup") or has_permission("change_lead_status")):
+                return jsonify({"status":"error","message":"Lead update permission required."}), 403
+
         leads = load_data(DATA_FILE)
         target_lead = None
         for lead in leads:
@@ -680,6 +969,26 @@ def update_lead():
         
         if not target_lead:
             return jsonify({"status": "error", "message": "Lead not found"}), 404
+
+        if session.get("role") == "New User":
+            changed = []
+            if "status" in form_data:
+                target_lead["status"] = form_data["status"]
+                changed.append("status")
+            for key in ("follow_up", "followup", "follow_up_date", "followup_date",
+                        "follow_up_details", "followup_details", "follow_up_notes", "followup_notes"):
+                if key in form_data:
+                    target_lead[key] = form_data[key]
+                    changed.append(key)
+            if not changed:
+                return jsonify({"status":"error","message":"No permitted lead update fields were supplied."}), 400
+            target_lead["updated_by"] = session.get("username")
+            target_lead["updated_by_id"] = session.get("user_id")
+            target_lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+            save_data(DATA_FILE, leads)
+            log_activity("Lead Follow-up Updated", f"New user updated {', '.join(changed)} for lead #{lead_id}.",
+                         module="Leads", related_record_id=lead_id)
+            return jsonify({"status":"success","message":"Lead status/follow-up updated successfully."})
 
         target_lead['student_name'] = form_data.get('student_name', target_lead.get('student_name'))
         target_lead['father_name'] = form_data.get('father_name', target_lead.get('father_name', ''))
@@ -727,6 +1036,9 @@ def update_lead():
                 if doc_path:
                     target_lead['id_document'] = doc_path
 
+        target_lead["updated_by"] = session.get("username")
+        target_lead["updated_by_id"] = session.get("user_id")
+        target_lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
         save_data(DATA_FILE, leads)
         log_activity("Lead Updated", f"Updated comprehensive information for lead #{lead_id} ({target_lead['student_name']})")
         return jsonify({"status": "success", "message": "Lead updated successfully!"})
@@ -812,8 +1124,8 @@ def export_filtered_leads_csv():
 
 @app.route('/api/all-leads/delete-filtered', methods=['POST'])
 def delete_filtered_leads():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    if not session.get('logged_in') or (session.get('role') != 'Admin' and not has_permission("delete_leads")):
+        return jsonify({"error": "Unauthorized. Permission required."}), 403
     data = request.json or {}
     statuses = data.get('statuses') or []
     start_date = (data.get('start_date') or '').strip()
@@ -846,7 +1158,14 @@ def delete_filtered_leads():
 def get_leads_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    return jsonify(load_data(DATA_FILE))
+    records = load_data(DATA_FILE)
+    if session.get("role") == "New User" and not has_permission("view_lead_details"):
+        basic = ("id", "student_name", "contact_number", "alternate_number", "student_email",
+                 "status", "created_date", "created_at", "created_timestamp",
+                 "follow_up", "followup", "follow_up_date", "followup_date",
+                 "follow_up_details", "followup_details", "follow_up_notes", "followup_notes", "notes")
+        records = [{k:v for k,v in lead.items() if k in basic} for lead in records]
+    return jsonify(records)
 
 
 def _enrich_registration_record(record):
@@ -887,7 +1206,11 @@ def _enrich_registration_record(record):
 def get_students_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    return jsonify([_enrich_registration_record(dict(student)) for student in load_data(STUDENTS_FILE)])
+    records = [_enrich_registration_record(dict(student)) for student in load_data(STUDENTS_FILE)]
+    if session.get("role") == "New User" and not has_permission("view_student_details"):
+        basic = ("student_id", "student_name", "contact_number", "student_email", "status", "converted_at")
+        records = [{k:v for k,v in student.items() if k in basic} for student in records]
+    return jsonify(records)
 
 
 @app.route('/api/convert-to-student', methods=['POST'])
@@ -916,6 +1239,9 @@ def convert_to_student():
     new_student['course_interest'] = new_student.get('course_interest') or new_student.get('course_details') or ''
     new_student['course_details'] = new_student.get('course_details') or new_student.get('course_interest') or ''
     new_student['student_id'] = len(students) + 1
+    new_student['created_by'] = session.get("username")
+    new_student['created_by_id'] = session.get("user_id")
+    new_student['created_by_role'] = session.get("role")
     new_student['original_lead_id'] = lead_id
     new_student['converted_at'] = datetime.now().strftime("%d %b %Y, %I:%M %p")
     
@@ -1006,6 +1332,9 @@ def update_student():
                             'original_name': secure_filename(upload.filename),
                             'extension': os.path.splitext(upload.filename)[1].lower()
                         })
+        target_student["updated_by"] = session.get("username")
+        target_student["updated_by_id"] = session.get("user_id")
+        target_student["updated_at"] = datetime.now().isoformat(timespec="seconds")
         save_data(STUDENTS_FILE, students)
         log_activity("Student Updated", f"Updated complete student profile for #{student_id} ({target_student.get('student_name','Student')})")
         return jsonify({"status": "success", "message": "Student updated successfully!"})
@@ -1015,8 +1344,8 @@ def update_student():
 
 @app.route('/api/delete-selected-students', methods=['POST'])
 def delete_selected_students():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    if not session.get('logged_in') or (session.get('role') != 'Admin' and not has_permission("delete_students")):
+        return jsonify({"error":"Unauthorized. Permission required."}),403
     ids={str(x) for x in (request.json or {}).get('student_ids',[])}
     records=load_data(STUDENTS_FILE); kept=[]; moved=0
     for rec in records:
@@ -1030,8 +1359,8 @@ def delete_selected_students():
 
 @app.route('/api/delete-selected-leads', methods=['POST'])
 def delete_selected_leads():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    if not session.get('logged_in') or (session.get('role') != 'Admin' and not has_permission("delete_leads")):
+        return jsonify({"error":"Unauthorized. Permission required."}),403
     ids={str(x) for x in (request.json or {}).get('lead_ids',[])}
     records=load_data(DATA_FILE); kept=[]; moved=0
     for rec in records:
@@ -1045,8 +1374,8 @@ def delete_selected_leads():
 
 @app.route('/api/delete-selected-colleges', methods=['POST'])
 def delete_selected_colleges():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    if not session.get('logged_in') or (session.get('role') != 'Admin' and not has_permission("delete_colleges")):
+        return jsonify({"error":"Unauthorized. Permission required."}),403
     ids={str(x) for x in (request.json or {}).get('college_ids',[])}
     records=load_data(COLLEGES_FILE); kept=[]; moved=0
     for rec in records:
@@ -1470,10 +1799,18 @@ def _get_attachment_bytes(reference,college=False):
     if path.startswith('data:'):
         try: return base64.b64decode(path.split(',',1)[1])
         except Exception: return None
-    if os.path.isfile(path):
-        try:
-            with open(path,'rb') as f: return f.read()
-        except OSError: return None
+    local_candidates = [path, os.path.join(DATA_DIR, path.lstrip("/"))]
+    if path.startswith("student_documents/"):
+        local_candidates.append(os.path.join(STUDENT_DOCUMENTS_DIR, path[len("student_documents/"):]))
+    if path.startswith("college_uploads/"):
+        local_candidates.append(os.path.join(COLLEGE_DOCUMENTS_DIR, path[len("college_uploads/"):]))
+    if path.startswith("student/college/"):
+        local_candidates.append(os.path.join(COLLEGE_DOCUMENTS_DIR, *path.split("/")[2:]))
+    for local_path in local_candidates:
+        if os.path.isfile(local_path):
+            try:
+                with open(local_path,'rb') as f: return f.read()
+            except OSError: return None
     if not GITHUB_REPO: return None
     if college and path.startswith('student/college/'):
         try: return get_college_file_from_github(path)
@@ -1721,11 +2058,23 @@ def export_leads_pdf():
 def download_document(filename):
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    if not GITHUB_REPO:
-        return jsonify({"error": "GitHub repository configuration is missing. Set GITHUB_REPO."}), 503
     safe_path = str(filename or '').lstrip('/')
     if '..' in safe_path.split('/'):
         return jsonify({"error": "Invalid document path."}), 400
+    local_candidates = []
+    if safe_path.startswith("student_documents/"):
+        local_candidates.append(os.path.join(STUDENT_DOCUMENTS_DIR, safe_path[len("student_documents/"):]))
+    if safe_path.startswith("college_uploads/"):
+        local_candidates.append(os.path.join(COLLEGE_DOCUMENTS_DIR, safe_path[len("college_uploads/"):]))
+    if safe_path.startswith("student/college/"):
+        local_candidates.append(os.path.join(COLLEGE_DOCUMENTS_DIR, *safe_path.split("/")[2:]))
+    for local_path in local_candidates:
+        if os.path.isfile(local_path):
+            return send_file(local_path, mimetype=mimetypes.guess_type(local_path)[0] or "application/octet-stream",
+                             as_attachment=request.args.get('download') == '1',
+                             download_name=os.path.basename(local_path), conditional=True)
+    if not GITHUB_REPO:
+        return jsonify({"error": "Document not found in centralized storage and GitHub is not configured."}), 404
     raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
     try:
         download_headers = {'Authorization': f'Bearer {GITHUB_TOKEN}'} if GITHUB_TOKEN else {}
@@ -1750,20 +2099,28 @@ def update_status():
     
     leads = load_data(DATA_FILE)
     student_name = ""
+    target = None
     for lead in leads:
-        if lead['id'] == lead_id:
+        if str(lead.get('id')) == str(lead_id):
             lead['status'] = new_status
-            student_name = lead['student_name']
+            lead['updated_by'] = session.get("username")
+            lead['updated_by_id'] = session.get("user_id")
+            lead['updated_at'] = datetime.now().isoformat(timespec="seconds")
+            student_name = lead.get('student_name', '')
+            target = lead
             break
+    if target is None:
+        return jsonify({"status":"error","message":"Lead not found."}),404
     save_data(DATA_FILE, leads)
-    log_activity("Status Change", f"Status changed to '{new_status}' for student {student_name}")
+    log_activity("Status Change", f"Status changed to '{new_status}' for student {student_name}",
+                 module="Leads", related_record_id=lead_id)
     return jsonify({"status": "success"})
 
 
 @app.route('/api/delete-lead', methods=['POST'])
 def delete_lead():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error":"Unauthorized. Admin access required."}),403
+    if not session.get('logged_in') or (session.get('role') != 'Admin' and not has_permission("delete_leads")):
+        return jsonify({"error":"Unauthorized. Permission required."}),403
     lead_id=(request.json or {}).get('lead_id')
     records=load_data(DATA_FILE)
     target=next((x for x in records if str(x.get('id'))==str(lead_id)),None)
@@ -1802,7 +2159,9 @@ def log_action_route():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
     data = request.json or {}
-    log_activity(data.get('action_type', 'Action'), data.get('details', ''))
+    log_activity(data.get('action_type', 'Action'), data.get('details', ''),
+                 module=data.get("module"), related_record_id=data.get("related_record_id"),
+                 action=data.get("action"))
     return jsonify({"status": "success"})
 
 
@@ -1815,8 +2174,8 @@ def get_colleges():
 
 @app.route('/api/add-college', methods=['POST'])
 def add_college():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
-        return jsonify({"error": "Unauthorized. Admin access required."}), 403
+    if not session.get('logged_in') or (session.get('role') != 'Admin' and not has_permission("add_colleges")):
+        return jsonify({"error": "Unauthorized. Permission required."}), 403
     try:
         if not GITHUB_TOKEN or not GITHUB_REPO:
             return jsonify({"status": "error", "message": "GitHub storage is not configured. Set GITHUB_TOKEN and GITHUB_REPO before adding colleges."}), 503
@@ -1838,10 +2197,15 @@ def add_college():
             "description": (data.get('description') or '').strip(),
             "courses": "",
             "package": "N/A",
-            "document": None
+            "document": None,
+            "created_by": session.get("username"),
+            "created_by_id": session.get("user_id"),
+            "created_by_role": session.get("role")
         }
 
         upload = request.files.get('college_file')
+        if upload and upload.filename and session.get("role") == "New User" and not has_permission("upload_college_documents"):
+            return jsonify({"error":"Upload College Documents permission required."}),403
         if upload and upload.filename:
             new_c['document'] = upload_college_document_to_github(upload, name, new_c['id'])
 
@@ -1859,7 +2223,7 @@ def add_college():
 
 @app.route('/api/update-college/<int:college_id>', methods=['POST'])
 def update_college(college_id):
-    if not session.get('logged_in') or session.get('role') != 'Admin':
+    if not session.get('logged_in') or (session.get('role') != 'Admin' and not has_permission('edit_colleges')):
         return jsonify({"error": "Unauthorized. Admin access required."}), 403
     try:
         if not GITHUB_TOKEN or not GITHUB_REPO:
@@ -1882,8 +2246,13 @@ def update_college(college_id):
             if field in data:
                 target[field] = data.get(field, '').strip()
         target['college_name'] = name
+        target["updated_by"] = session.get("username")
+        target["updated_by_id"] = session.get("user_id")
+        target["updated_at"] = datetime.now().isoformat(timespec="seconds")
 
         upload = request.files.get('college_file')
+        if upload and upload.filename and session.get("role") == "New User" and not has_permission("upload_college_documents"):
+            return jsonify({"error":"Upload College Documents permission required."}),403
         if upload and upload.filename:
             target['document'] = upload_college_document_to_github(upload, name, college_id)
 
@@ -1902,7 +2271,7 @@ def update_college(college_id):
 def manage_student_document(student_id, field):
     if not session.get('logged_in'):
         return jsonify({"error":"Unauthorized"}),401
-    if session.get('role') != 'Admin':
+    if session.get('role') not in ('Admin', 'New User'):
         return jsonify({"error":"Admin access required"}),403
     students=load_data(STUDENTS_FILE)
     student=next((x for x in students if str(x.get('student_id'))==str(student_id)),None)
@@ -1916,6 +2285,10 @@ def manage_student_document(student_id, field):
     top_level=bool(old_path and student.get(field)==old_path)
     form_data_ref=bool(old_path and isinstance(student.get('form_data'),dict) and student['form_data'].get(field)==old_path)
     action=request.form.get('action') or payload.get('action')
+    if session.get("role") == "New User":
+        required_permission = "delete_student_documents" if action == "delete" else "upload_student_documents"
+        if not has_permission(required_permission):
+            return jsonify({"error":"Permission denied for this document operation."}),403
     if action == 'upload':
         upload=request.files.get('file')
         if not upload or not upload.filename:
@@ -1999,10 +2372,20 @@ def college_file(college_id):
                              as_attachment=request.args.get('download') == '1',
                              download_name=document.get('original_name') or os.path.basename(github_path))
         except Exception as e:
-            return jsonify({"error": str(e)}), 502
+            app.logger.warning("GitHub college file unavailable; checking persistent local copy: %s", e)
 
-    # Backward compatibility: files uploaded by the older local-storage version.
-    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'college_uploads')
+    # Current centralized local storage, followed by legacy local-storage fallback.
+    if str(stored_name).startswith("college_uploads/"):
+        centralized_path = os.path.join(COLLEGE_DOCUMENTS_DIR, str(stored_name)[len("college_uploads/"):])
+    elif str(stored_name).startswith("student/college/"):
+        centralized_path = os.path.join(COLLEGE_DOCUMENTS_DIR, *str(stored_name).split("/")[2:])
+    else:
+        centralized_path = os.path.join(COLLEGE_DOCUMENTS_DIR, os.path.basename(stored_name))
+    if os.path.isfile(centralized_path):
+        return send_file(centralized_path, mimetype=mimetype,
+                         as_attachment=request.args.get('download') == '1',
+                         download_name=document.get('original_name') or os.path.basename(stored_name), conditional=True)
+    upload_dir = os.path.join(BASE_DIR, 'college_uploads')
     legacy_path = os.path.join(upload_dir, os.path.basename(stored_name))
     if os.path.isfile(legacy_path):
         return send_file(legacy_path, mimetype=mimetype,
@@ -2010,6 +2393,116 @@ def college_file(college_id):
                          download_name=document.get('original_name') or os.path.basename(stored_name), conditional=True)
     return jsonify({"error": "The stored college document was not found in GitHub or on this server."}), 404
 
+
+# --- ADMIN-ONLY USER MANAGEMENT API ---
+@app.route('/api/users', methods=['GET'])
+def user_management_list():
+    if not is_admin_session(): return jsonify({"error":"Admin access required."}), 403
+    users = load_users()
+    result = []
+    for username, record in users.items():
+        if record.get("role") in ("Admin", "Client"): continue
+        result.append({
+            "username": username, "user_id": record.get("user_id", username),
+            "role": record.get("role", "New User"),
+            "active": record.get("active", True) is not False,
+            "permissions": sorted(set(record.get("permissions") or DEFAULT_NEW_USER_PERMISSIONS)),
+            "created_at": record.get("created_at", "")
+        })
+    result.sort(key=lambda x: x["username"].lower())
+    return jsonify({"users": result, "permission_labels": PERMISSION_LABELS})
+
+@app.route('/api/users', methods=['POST'])
+def user_management_create():
+    if not is_admin_session(): return jsonify({"error":"Admin access required."}), 403
+    payload = request.get_json(silent=True) or {}
+    username = str(payload.get("username") or "").strip().lower()
+    password = str(payload.get("password") or "")
+    confirm = str(payload.get("confirm_password") or "")
+    if not re.fullmatch(r"[a-z0-9_.-]{3,40}", username):
+        return jsonify({"error":"Username must be 3-40 characters and contain only letters, numbers, dots, underscores or hyphens."}), 400
+    if len(password) < 8:
+        return jsonify({"error":"Password must contain at least 8 characters."}), 400
+    if password != confirm:
+        return jsonify({"error":"Password and Confirm Password do not match."}), 400
+    users = load_users()
+    if username in users:
+        return jsonify({"error":"This username already exists."}), 409
+    raw_permissions = payload.get("permissions") or []
+    if not isinstance(raw_permissions, list) or any(not isinstance(x, str) for x in raw_permissions):
+        return jsonify({"error":"Permissions must be submitted as a list."}), 400
+    selected = set(raw_permissions)
+    unknown = selected - set(PERMISSION_LABELS)
+    if unknown:
+        return jsonify({"error":"Invalid permission selected."}), 400
+    # Required defaults are always retained and cannot be removed.
+    selected.update(DEFAULT_NEW_USER_PERMISSIONS)
+    active_value = payload.get("active", True)
+    if not isinstance(active_value, bool):
+        return jsonify({"error":"Account status must be Active or Inactive."}), 400
+    now = datetime.now()
+    users[username] = {
+        "password": generate_password_hash(password),
+        "role": "New User", "user_id": uuid.uuid4().hex,
+        "active": active_value,
+        "permissions": sorted(selected),
+        "created_at": now.isoformat(timespec="seconds")
+    }
+    save_data(USERS_FILE, users)
+    log_activity("User Created", f"Admin created CRM account '{username}'.",
+                 module="User Management", related_record_id=users[username]["user_id"])
+    return jsonify({"status":"success","message":"New user created successfully.","user":{
+        "username":username,"user_id":users[username]["user_id"],"role":"New User",
+        "active":users[username]["active"],"permissions":sorted(selected)
+    }}), 201
+
+@app.route('/api/users/<username>', methods=['PUT'])
+def user_management_update(username):
+    if not is_admin_session(): return jsonify({"error":"Admin access required."}), 403
+    username = str(username or "").strip().lower()
+    users = load_users()
+    record = users.get(username)
+    if not record or record.get("role") in ("Admin", "Client"):
+        return jsonify({"error":"New user account not found."}), 404
+    payload = request.get_json(silent=True) or {}
+    if "permissions" in payload:
+        raw_permissions = payload.get("permissions") or []
+        if not isinstance(raw_permissions, list) or any(not isinstance(x, str) for x in raw_permissions):
+            return jsonify({"error":"Permissions must be submitted as a list."}), 400
+        selected = set(raw_permissions)
+        if selected - set(PERMISSION_LABELS):
+            return jsonify({"error":"Invalid permission selected."}), 400
+        selected.update(DEFAULT_NEW_USER_PERMISSIONS)
+        record["permissions"] = sorted(selected)
+    if "active" in payload:
+        if not isinstance(payload["active"], bool):
+            return jsonify({"error":"Account status must be Active or Inactive."}), 400
+        record["active"] = payload["active"]
+        if not record["active"] and session.get("username") == username:
+            session.clear()
+    if payload.get("password"):
+        if len(str(payload["password"])) < 8:
+            return jsonify({"error":"Password must contain at least 8 characters."}), 400
+        record["password"] = generate_password_hash(str(payload["password"]))
+    users[username] = record
+    save_data(USERS_FILE, users)
+    log_activity("User Updated", f"Admin updated account '{username}' (permissions/status/password).",
+                 module="User Management", related_record_id=record.get("user_id"))
+    return jsonify({"status":"success","message":"User account updated successfully."})
+
+@app.route('/api/users/<username>', methods=['DELETE'])
+def user_management_delete(username):
+    if not is_admin_session(): return jsonify({"error":"Admin access required."}), 403
+    username = str(username or "").strip().lower()
+    users = load_users()
+    record = users.get(username)
+    if not record or record.get("role") in ("Admin", "Client"):
+        return jsonify({"error":"New user account not found."}), 404
+    del users[username]
+    save_data(USERS_FILE, users)
+    log_activity("User Deleted", f"Admin deleted CRM login account '{username}'. Existing CRM records were retained.",
+                 module="User Management", related_record_id=record.get("user_id"))
+    return jsonify({"status":"success","message":"User account deleted. Existing CRM records were retained."})
 
 # --- ROUTING & VIEWS ---
 
@@ -2023,27 +2516,49 @@ def login():
         users = load_users()
         user_data = users.get(username)
         
-        if user_data and check_password_hash(user_data['password'], password):
+        if user_data and user_data.get("active", True) is not False and check_password_hash(user_data['password'], password):
             session['logged_in'] = True
             session['username'] = username
             session['role'] = user_data['role']
+            session['user_id'] = user_data.get("user_id", username)
             log_login_activity(username, user_data['role'], request, status="Successful")
+            log_activity("User Login", f"{username} logged in.", username=username, role=user_data['role'], module="Authentication", action="Login")
             return redirect(url_for('crm_dashboard'))
         else:
             log_login_activity(username if username else "unknown", "Unknown", request, status="Failed")
             error = "Invalid Username or Password!"
     return render_template_string(LOGIN_HTML, error=error)
 
+@app.after_request
+def capture_authenticated_read_activity(response):
+    try:
+        if session.get("logged_in"):
+            endpoint = request.endpoint or "unknown"
+            noisy = {"static", "get_leads_api", "get_students_api", "get_colleges",
+                     "get_history_api", "get_logs_api", "get_trash_api"}
+            should_log = (request.method == "GET" and endpoint not in noisy and endpoint not in ("login", "logout", "home"))
+            should_log = should_log or response.status_code >= 400
+            if should_log:
+                log_activity("Module Access" if response.status_code < 400 else "Failed Operation",
+                             f"{request.method} {request.path} returned HTTP {response.status_code}.",
+                             module=endpoint, action="Access" if response.status_code < 400 else "Failed")
+    except Exception:
+        app.logger.exception("Failed to record request in centralized Work History.")
+    return response
+
 @app.route('/dashboard')
 def crm_dashboard():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template_string(MAIN_DASHBOARD_HTML, role=session.get('role', 'Client'), username=session.get('username', 'admin'))
+    return render_template_string(MAIN_DASHBOARD_HTML, role=session.get('role', 'Client'),
+                                  username=session.get('username', 'admin'),
+                                  permissions=sorted(current_user_permissions()))
 
 @app.route('/logout')
 def logout():
     username = session.get('username', 'admin')
     log_logout_activity(username)
+    session.pop('user_id', None)
     session.pop('logged_in', None)
     session.pop('username', None)
     session.pop('role', None)
@@ -2265,6 +2780,32 @@ MAIN_DASHBOARD_HTML = """
     </style>
 </head>
 <body>
+    {% if role == 'New User' %}
+    <script>
+      window.crmUserPermissions = {{ permissions|tojson }};
+      document.addEventListener('DOMContentLoaded',()=>{
+        const p=new Set(window.crmUserPermissions||[]);
+        const allowed={ 'dashboard-tab':'view_dashboard', 'leads-tab':'call_leads',
+          'students-tab':'view_students', 'colleges-tab':'view_colleges',
+          'history-tab':'view_work_history', 'trash-tab':'view_trash', 'settings-tab':'access_settings' };
+        document.querySelectorAll('.nav-menu .nav-item').forEach(item=>{
+          const onclick=item.getAttribute('onclick')||''; const match=onclick.match(/switchTab\\('([^']+)'/);
+          if(match){const perm=allowed[match[1]];if(perm&&!p.has(perm)&&!(match[1]==='leads-tab'&&(p.has('view_leads')||p.has('call_leads')))&&!(match[1]==='settings-tab'&&p.has('view_logs')))item.style.display='none';}
+        });
+        Object.entries(allowed).forEach(([tab,perm])=>{
+          if(!p.has(perm)&&!(tab==='leads-tab'&&(p.has('view_leads')||p.has('call_leads')))&&!(tab==='settings-tab'&&p.has('view_logs'))){const el=document.getElementById(tab);if(el)el.style.display='none';}
+        });
+        if(!p.has('view_dashboard')){
+          const dash=document.getElementById('dashboard-tab');if(dash)dash.classList.remove('active');
+          const first=document.querySelector('.nav-menu .nav-item:not([style*="display: none"])');
+          if(first)first.click();
+        }
+        if(!p.has('download_leads'))document.querySelectorAll('[onclick*="downloadLeadsPDF"],[onclick*="downloadFilteredLeads"]').forEach(x=>x.style.display='none');
+        if(!p.has('lead_filters')){const filters=document.getElementById('leadFiltersPanel');if(filters)filters.style.display='none';}
+        if(!p.has('export_reports'))document.querySelectorAll('[onclick*="exportFull"]').forEach(x=>x.style.display='none');
+      });
+    </script>
+    {% endif %}
 
     <!-- Sidebar Backdrop Overlay -->
     <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
@@ -2417,11 +2958,11 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                     <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
                         <button onclick="downloadLeadsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download Leads PDF</button>
-                        {% if role == 'Admin' %}
+                        {% if role == 'Admin' or (role == 'New User' and 'delete_leads' in permissions) %}
                         <button onclick="deleteSelectedLeads()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Leads</button>
                         {% endif %}
                     </div>
-                    <div style="background:#f8fafc; padding:15px; border:1px solid var(--border-color); border-radius:10px; margin-top:12px;">
+                    <div id="leadFiltersPanel" style="background:#f8fafc; padding:15px; border:1px solid var(--border-color); border-radius:10px; margin-top:12px;">
                         <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
                             <div style="min-width:220px; flex:1;">
                                 <label for="leadStatusFilter" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Lead Status (select multiple)</label>
@@ -2460,7 +3001,7 @@ MAIN_DASHBOARD_HTML = """
                         <table>
                             <thead>
                                 <tr>
-                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('leads', this)"></th>{% endif %}
+                                    {% if role == 'Admin' or (role == 'New User' and 'delete_leads' in permissions) %}<th><input type="checkbox" onclick="toggleSelectAll('leads', this)"></th>{% endif %}
                                     <th>#ID</th>
                                     <th>Student Name</th>
                                     <th>Contact</th>
@@ -2485,7 +3026,7 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                     <div style="background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
                         <button onclick="downloadStudentsPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download Students PDF</button>
-                        {% if role == 'Admin' %}
+                        {% if role == 'Admin' or (role == 'New User' and 'delete_students' in permissions) %}
                         <button onclick="deleteSelectedStudents()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Students</button>
                         {% endif %}
                     </div>
@@ -2496,7 +3037,7 @@ MAIN_DASHBOARD_HTML = """
                         <table>
                             <thead>
                                 <tr>
-                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('students', this)"></th>{% endif %}
+                                    {% if role == 'Admin' or (role == 'New User' and 'delete_students' in permissions) %}<th><input type="checkbox" onclick="toggleSelectAll('students', this)"></th>{% endif %}
                                     <th>#ID</th>
                                     <th>Student Name</th>
                                     <th>Contact</th>
@@ -2554,7 +3095,7 @@ MAIN_DASHBOARD_HTML = """
 
             <!-- COLLEGES TAB -->
             <div id="colleges-tab" class="tab-section">
-                {% if role == 'Admin' %}
+                {% if role == 'Admin' or (role == 'New User' and ('add_colleges' in permissions or 'edit_colleges' in permissions)) %}
                 <div class="card" style="margin-bottom: 20px;">
                     <h3 id="collegeFormHeading">Add New College</h3>
                     <form id="collegeForm" onsubmit="saveCollege(event)" enctype="multipart/form-data">
@@ -2586,7 +3127,7 @@ MAIN_DASHBOARD_HTML = """
                     <div class="card-header"><h3>College Directory Export & Management</h3></div>
                     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
                         <button onclick="downloadCollegePDF()" style="background:#dc2626;color:white;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;"><i class="fa-solid fa-file-pdf"></i> Download College PDF</button>
-                        {% if role == 'Admin' %}
+                        {% if role == 'Admin' or (role == 'New User' and 'delete_colleges' in permissions) %}
                         <button onclick="deleteSelectedColleges()" style="background:#ef4444;color:white;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;"><i class="fa-solid fa-trash-can"></i> Delete Selected Colleges</button>
                         {% endif %}
                     </div>
@@ -2598,7 +3139,7 @@ MAIN_DASHBOARD_HTML = """
                         <table>
                             <thead>
                                 <tr>
-                                    {% if role == 'Admin' %}<th><input type="checkbox" onclick="toggleSelectAll('colleges', this)"></th>{% endif %}
+                                    {% if role == 'Admin' or (role == 'New User' and 'delete_colleges' in permissions) %}<th><input type="checkbox" onclick="toggleSelectAll('colleges', this)"></th>{% endif %}
                                     <th>#ID</th><th>College Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Description</th><th>Document</th>
                                     {% if role == 'Admin' %}<th>Action</th>{% endif %}
                                 </tr>
@@ -2679,6 +3220,27 @@ MAIN_DASHBOARD_HTML = """
                         <input type="password" id="pwdNewPassword" class="form-control" required placeholder="Enter new secure password">
                         <button type="submit" style="background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;">Update Password</button>
                     </form>
+                </div>
+                {% endif %}
+
+                {% if role == 'Admin' %}
+                <div class="card" style="margin-bottom:20px;border-left:5px solid #0f766e;">
+                    <div class="card-header"><h3 style="color:#0f766e;"><i class="fa-solid fa-users-gear"></i> User Management / Create New User</h3></div>
+                    <p style="font-size:12px;color:var(--text-muted);">Create separate CRM accounts and grant only the permissions each user needs. Call Leads and Update Leads are always enabled.</p>
+                    <form id="createCrmUserForm" onsubmit="createCrmUser(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;max-width:900px;">
+                        <label>Username<input id="newCrmUsername" class="form-control" required minlength="3" maxlength="40" pattern="[a-zA-Z0-9_.-]+"></label>
+                        <label>Password<input id="newCrmPassword" type="password" class="form-control" required minlength="8"></label>
+                        <label>Confirm Password<input id="newCrmConfirmPassword" type="password" class="form-control" required minlength="8"></label>
+                        <label>Account Status<select id="newCrmActive" class="form-control"><option value="true">Active</option><option value="false">Inactive</option></select></label>
+                        <div style="grid-column:1/-1;">
+                            <strong style="font-size:13px;">Custom Permissions</strong>
+                            <div id="newCrmPermissionChoices" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:7px;margin:10px 0;"></div>
+                            <button type="submit" style="background:#0f766e;color:white;border:0;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;">Create New User</button>
+                        </div>
+                    </form>
+                    <hr style="border:0;border-top:1px solid #e2e8f0;margin:18px 0;">
+                    <h4 style="font-size:14px;margin-bottom:10px;">Created CRM Users</h4>
+                    <div style="overflow-x:auto;"><table><thead><tr><th>Username</th><th>Status</th><th>Assigned Permissions</th><th>Actions</th></tr></thead><tbody id="crmUsersTbody"><tr><td colspan="4">Loading users...</td></tr></tbody></table></div>
                 </div>
                 {% endif %}
 
@@ -2926,6 +3488,26 @@ MAIN_DASHBOARD_HTML = """
         setInterval(updateClockAndGreeting, 1000);
         updateClockAndGreeting();
 
+        document.addEventListener('click', function(event){
+            const phoneLink=event.target.closest('a[href^="tel:"]');
+            if(phoneLink){
+                const phone=phoneLink.getAttribute('href').slice(4);
+                fetch('/api/log-action',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({action_type:'Customer Call Initiated',action:'Call',module:'Leads',
+                        details:'User initiated a call to '+phone+'.'})}).catch(()=>{});
+            }
+        });
+        async function addLeadFollowup(leadId){
+            const details=prompt('Enter follow-up details:');
+            if(details===null||!details.trim())return;
+            const followupDate=prompt('Enter follow-up date (optional, YYYY-MM-DD):','');
+            const body=new FormData();body.append('lead_id',leadId);body.append('follow_up_details',details.trim());
+            if(followupDate&&followupDate.trim())body.append('follow_up_date',followupDate.trim());
+            const res=await fetch('/api/update-lead',{method:'POST',body});
+            const data=await res.json();alert(data.message||data.error||'Request completed.');
+            if(res.ok)fetchLeadsData();
+        }
+
         function switchTab(tabId, navElement) {
             document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -2936,6 +3518,9 @@ MAIN_DASHBOARD_HTML = """
             if(tabId === 'students-tab') fetchStudentsData();
             if(tabId === 'settings-tab') fetchSettingsLogs();
             if(tabId === 'trash-tab') fetchTrashData();
+            fetch('/api/log-action',{method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({action_type:'Module Access',action:'Open Tab',module:tabId.replace('-tab',''),
+                    details:'Opened '+tabId.replace('-tab','')+' module.'})}).catch(()=>{});
             if(window.innerWidth <= 900) {
                 document.getElementById('sidebarNav').classList.remove('show');
                 document.getElementById('sidebarBackdrop').classList.remove('show');
@@ -2994,6 +3579,81 @@ MAIN_DASHBOARD_HTML = """
         function renderLoginLogRows(logs){const tbody=document.getElementById('settingsLogsTbody');tbody.innerHTML='';if(!logs.length){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:#94a3b8;">No matching login activity logs.</td></tr>';return;}logs.forEach(log=>{const badge=log.status==='Active'?'<span class="badge-status badge-closed">Active</span>':(log.status==='Failed'?'<span class="badge-status badge-rejected">Failed</span>':'<span class="badge-status badge-contacted">Logged Out</span>');const cb=userRole==='Admin'?`<td><input type="checkbox" class="logs-checkbox" value="${log.id}"></td>`:'';tbody.innerHTML+=`<tr>${cb}<td>#${log.id}</td><td><strong>${log.username||''}</strong></td><td><span class="badge-status badge-followup">${log.role||'N/A'}</span></td><td><code>${log.ip_address||''}</code></td><td>${log.browser||'Unknown'} / ${log.os||'Unknown'}</td><td><small>${log.location||'Unknown'}</small></td><td>${log.login_time||'N/A'}</td><td>${log.logout_time||'N/A'}</td><td>${badge}</td></tr>`;});}
         function renderHistoryRows(history){const tbody=document.getElementById('historyTbody');tbody.innerHTML='';if(!history.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#94a3b8;">No matching activity logged.</td></tr>';return;}history.slice().reverse().forEach(item=>{const cb=userRole==='Admin'?`<td><input type="checkbox" class="history-checkbox" value="${item.id}"></td>`:'';tbody.innerHTML+=`<tr>${cb}<td><strong>${item.username||'Admin'}</strong></td><td><span class="badge-status badge-followup">${item.role||'Admin'}</span></td><td><strong style="color:#2563eb;">${item.date||''} ${item.time||''}</strong></td><td><span class="badge-status badge-new">${item.action_type||''}</span></td><td>${item.details||''}</td></tr>`;});}
 
+        const crmPermissionLabels = {
+            view_dashboard:"View Dashboard", call_leads:"Call Leads / Contact Customers", view_leads:"View Leads",
+            update_leads:"Update Leads (status and follow-ups only)", view_lead_details:"View Lead Details",
+            change_lead_status:"Change Lead Status", add_followup:"Add Follow-up Details", lead_filters:"Access Lead Filters",
+            download_leads:"Download Lead Data", delete_leads:"Delete Leads", view_students:"View Student Records",
+            view_student_details:"View Student Details", add_students:"Add Students", edit_students:"Edit Students",
+            upload_student_documents:"Upload Student Documents", download_student_documents:"Download Student Documents",
+            delete_student_documents:"Delete Student Documents", delete_students:"Delete Student Records",
+            view_colleges:"View Colleges", add_colleges:"Add Colleges", edit_colleges:"Edit Colleges",
+            upload_college_documents:"Upload College Documents", delete_colleges:"Delete Colleges",
+            view_work_history:"View Work History", view_logs:"View Logs", export_reports:"Export Reports",
+            access_settings:"Access Settings & Logs", view_trash:"View Trash Bin", restore_trash:"Restore Trash Records"
+        };
+        const crmRequiredPermissions = ["call_leads","update_leads"];
+        function renderNewUserPermissionChoices(selected=[]) {
+            const holder=document.getElementById('newCrmPermissionChoices'); if(!holder)return;
+            holder.innerHTML=Object.entries(crmPermissionLabels).map(([key,label])=>{
+                const required=crmRequiredPermissions.includes(key);
+                return `<label style="display:flex;gap:7px;align-items:center;font-size:12px;"><input type="checkbox" class="crm-permission-check" value="${key}" ${required||selected.includes(key)?'checked':''} ${required?'disabled':''}> ${label}${required?' (Required)':''}</label>`;
+            }).join('');
+        }
+        function selectedCrmPermissions(){
+            return [...document.querySelectorAll('.crm-permission-check:checked')].map(x=>x.value).concat(crmRequiredPermissions);
+        }
+        async function createCrmUser(e){
+            e.preventDefault();
+            const payload={username:document.getElementById('newCrmUsername').value.trim(),password:document.getElementById('newCrmPassword').value,
+                confirm_password:document.getElementById('newCrmConfirmPassword').value,active:document.getElementById('newCrmActive').value==='true',
+                permissions:selectedCrmPermissions()};
+            if(payload.password!==payload.confirm_password){alert('Password and Confirm Password do not match.');return;}
+            const res=await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            const data=await res.json(); alert(data.message||data.error||'Request completed.');
+            if(res.ok){document.getElementById('createCrmUserForm').reset();renderNewUserPermissionChoices();fetchCrmUsers();}
+        }
+        async function fetchCrmUsers(){
+            const body=document.getElementById('crmUsersTbody'); if(!body)return;
+            try{
+                const res=await fetch('/api/users'); const data=await res.json(); if(!res.ok)throw new Error(data.error||'Unable to load users.');
+                body.innerHTML='';
+                (data.users||[]).forEach(user=>{
+                    const permissions=(user.permissions||[]).map(p=>crmPermissionLabels[p]||p).join(', ');
+                    const tr=document.createElement('tr');
+                    tr.innerHTML=`<td><strong></strong></td><td></td><td style="min-width:240px;white-space:normal;font-size:11px;"></td><td style="min-width:230px;"></td>`;
+                    tr.children[0].firstElementChild.textContent=user.username;
+                    tr.children[1].textContent=user.active?'Active':'Inactive';
+                    tr.children[2].textContent=permissions;
+                    const actions=document.createElement('div'); actions.style.cssText='display:flex;gap:5px;flex-wrap:wrap;';
+                    const edit=document.createElement('button'); edit.textContent='Edit Permissions'; edit.onclick=()=>editCrmUserPermissions(user);
+                    const toggle=document.createElement('button'); toggle.textContent=user.active?'Deactivate':'Activate'; toggle.onclick=()=>updateCrmUser(user.username,{active:!user.active});
+                    const del=document.createElement('button'); del.textContent='Delete User'; del.onclick=()=>deleteCrmUser(user.username);
+                    [edit,toggle,del].forEach((b,i)=>{b.style.cssText='border:0;padding:6px 8px;border-radius:6px;cursor:pointer;color:white;background:'+(i===2?'#dc2626':i===1?'#64748b':'#2563eb');actions.appendChild(b);});
+                    tr.children[3].appendChild(actions); body.appendChild(tr);
+                });
+                if(!(data.users||[]).length)body.innerHTML='<tr><td colspan="4">No additional users created.</td></tr>';
+            }catch(err){body.innerHTML=`<tr><td colspan="4">${String(err.message||err)}</td></tr>`;}
+        }
+        async function editCrmUserPermissions(user){
+            const selected=new Set(user.permissions||[]);
+            const lines=Object.entries(crmPermissionLabels).map(([key,label],i)=>`${i+1}. ${label}${crmRequiredPermissions.includes(key)?' [Required]':''}`).join('\\n');
+            const answer=prompt('Enter comma-separated permission keys to grant. Required Call Leads and Update Leads are always retained.\\n\\nAvailable keys:\\n'+Object.keys(crmPermissionLabels).join(', '),[...selected].join(','));
+            if(answer===null)return;
+            const chosen=answer.split(',').map(x=>x.trim()).filter(Boolean);
+            if(chosen.some(x=>!crmPermissionLabels[x])){alert('Unknown permission key entered.');return;}
+            await updateCrmUser(user.username,{permissions:chosen});
+        }
+        async function updateCrmUser(username,payload){
+            const res=await fetch('/api/users/'+encodeURIComponent(username),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            const data=await res.json();alert(data.message||data.error||'Request completed.');if(res.ok)fetchCrmUsers();
+        }
+        async function deleteCrmUser(username){
+            if(!confirm('Delete login account '+username+'? Existing leads, students, colleges, documents and work history will remain.'))return;
+            const res=await fetch('/api/users/'+encodeURIComponent(username),{method:'DELETE'});const data=await res.json();
+            alert(data.message||data.error||'Request completed.');if(res.ok)fetchCrmUsers();
+        }
+
         async function handleAdminPasswordChange(e) {
             e.preventDefault();
             const targetUser = document.getElementById('pwdTargetUser').value;
@@ -3026,10 +3686,12 @@ MAIN_DASHBOARD_HTML = """
                 const tbody = document.getElementById('collegesTbody');
                 tbody.innerHTML = '';
                 collegesData.forEach(c => {
-                    const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="colleges-checkbox" value="${c.id}"></td>` : '';
+                    const cbHtml = (userRole === 'Admin' || (userRole === 'New User' && (window.crmUserPermissions||[]).includes('delete_colleges'))) ? `<td><input type="checkbox" class="colleges-checkbox" value="${c.id}"></td>` : '';
                     const doc = c.document || null;
                     const fileHtml = doc ? `<button type="button" onclick="openCollegePreview(${c.id})" style="border:0;background:#e0edff;color:#1d4ed8;padding:6px 10px;border-radius:7px;cursor:pointer;"> <i class="fa-solid fa-eye"></i> View</button>` : '<span style="color:#94a3b8;">No file</span>';
-                    const actionHtml = userRole === 'Admin' ? `<td><button type="button" onclick="editCollegeRecord(${c.id})" class="action-icon-btn" title="Edit" style="color:#2563eb;"><i class="fa-solid fa-pen-to-square"></i></button> <button type="button" onclick="deleteCollegeRecord(${c.id})" class="action-icon-btn trash-btn" title="Delete"><i class="fa-solid fa-trash-can"></i></button></td>` : '';
+                    const canEditCollege = userRole === 'Admin' || (userRole === 'New User' && (window.crmUserPermissions||[]).includes('edit_colleges'));
+                    const canDeleteCollege = userRole === 'Admin' || (userRole === 'New User' && (window.crmUserPermissions||[]).includes('delete_colleges'));
+                    const actionHtml = (canEditCollege || canDeleteCollege) ? `<td>${canEditCollege?`<button type="button" onclick="editCollegeRecord(${c.id})" class="action-icon-btn" title="Edit" style="color:#2563eb;"><i class="fa-solid fa-pen-to-square"></i></button>`:''} ${canDeleteCollege?`<button type="button" onclick="deleteCollegeRecord(${c.id})" class="action-icon-btn trash-btn" title="Delete"><i class="fa-solid fa-trash-can"></i></button>`:''}</td>` : '';
                     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
                     tbody.innerHTML += `<tr>${cbHtml}<td>#${c.id}</td><td><strong>${esc(c.college_name)}</strong></td><td>${esc(c.address ?? c.location ?? '')}</td><td>${esc(c.phone || '')}</td><td>${esc(c.email || '')}</td><td style="max-width:240px;white-space:normal;">${esc(c.description || '')}</td><td>${fileHtml}</td>${actionHtml}</tr>`;
                 });
@@ -3303,8 +3965,8 @@ MAIN_DASHBOARD_HTML = """
             const recentTbody = document.getElementById('recentLeadsTbody');
             recentTbody.innerHTML = '';
             activeLeads.slice(-5).reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>`;
-                const deleteBtn = userRole === 'Admin' ? `<td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>` : '';
+                const docAction = (userRole !== 'New User' || (window.crmUserPermissions||[]).includes('view_lead_details')) ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>` : '';
+                const deleteBtn = (userRole === 'Admin' || (userRole === 'New User' && (window.crmUserPermissions||[]).includes('delete_leads'))) ? `<td><button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})"><i class="fa-solid fa-trash-can"></i></button></td>` : '';
                 recentTbody.innerHTML += `
                     <tr>
                         <td><strong>${lead.student_name}</strong></td>
@@ -3342,8 +4004,8 @@ MAIN_DASHBOARD_HTML = """
                 return;
             }
             students.slice().reverse().forEach(st => {
-                const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="students-checkbox" value="${st.student_id}"></td>` : '';
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(st)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>`;
+                const cbHtml = (userRole === 'Admin' || (userRole === 'New User' && (window.crmUserPermissions||[]).includes('delete_students'))) ? `<td><input type="checkbox" class="students-checkbox" value="${st.student_id}"></td>` : '';
+                const docAction = (userRole !== 'New User' || (window.crmUserPermissions||[]).includes('view_student_details')) ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(st)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>` : '';
                 tbody.innerHTML += `
                     <tr>
                         ${cbHtml}
@@ -3355,7 +4017,7 @@ MAIN_DASHBOARD_HTML = """
                         <td>${st.course_interest || st.course_details || st.other_course || 'N/A'}</td>
                         <td>
                             ${docAction}
-                            <button class="action-icon-btn edit-btn" onclick='openStudentEditModal(${JSON.stringify(st)})' title="Edit Student"><i class="fa-solid fa-pen"></i></button>
+                            ${(userRole !== 'New User' || (window.crmUserPermissions||[]).includes('edit_students')) ? `<button class="action-icon-btn edit-btn" onclick='openStudentEditModal(${JSON.stringify(st)})' title="Edit Student"><i class="fa-solid fa-pen"></i></button>` : ''}
                         </td>
                     </tr>
                 `;
@@ -3366,10 +4028,11 @@ MAIN_DASHBOARD_HTML = """
             const allTbody = document.getElementById('allLeadsTbody');
             allTbody.innerHTML = '';
             leads.slice().reverse().forEach(lead => {
-                const docAction = `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>`;
-                const convertBtn = `<button class="convert-btn" onclick="convertToStudent(${lead.id})"><i class="fa-solid fa-user-check"></i> Convert</button>`;
-                const cbHtml = userRole === 'Admin' ? `<td><input type="checkbox" class="leads-checkbox" value="${lead.id}"></td>` : '';
-                const deleteBtn = userRole === 'Admin' ? `<button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})" title="Delete Lead"><i class="fa-solid fa-trash-can"></i></button>` : '';
+                const docAction = (userRole !== 'New User' || (window.crmUserPermissions||[]).includes('view_lead_details')) ? `<button class="action-icon-btn doc-btn" onclick='openDocModal(${JSON.stringify(lead)})' title="View Organized Details"><i class="fa-solid fa-eye"></i></button>` : '';
+                const convertBtn = (userRole !== 'New User' || (window.crmUserPermissions||[]).includes('add_students')) ? `<button class="convert-btn" onclick="convertToStudent(${lead.id})"><i class="fa-solid fa-user-check"></i> Convert</button>` : '';
+                const followupBtn = userRole === 'New User' ? `<button class="action-icon-btn" style="background:#e0e7ff;color:#4338ca;" onclick="addLeadFollowup(${lead.id})" title="Add Follow-up"><i class="fa-solid fa-calendar-plus"></i></button>` : '';
+                const cbHtml = (userRole === 'Admin' || (userRole === 'New User' && (window.crmUserPermissions||[]).includes('delete_leads'))) ? `<td><input type="checkbox" class="leads-checkbox" value="${lead.id}"></td>` : '';
+                const deleteBtn = (userRole === 'Admin' || (userRole === 'New User' && (window.crmUserPermissions||[]).includes('delete_leads'))) ? `<button class="action-icon-btn trash-btn" onclick="deleteLead(${lead.id})" title="Delete Lead"><i class="fa-solid fa-trash-can"></i></button>` : '';
                 
                 allTbody.innerHTML += `
                     <tr>
@@ -3393,7 +4056,8 @@ MAIN_DASHBOARD_HTML = """
                         <td>
                             ${docAction}
                             ${convertBtn}
-                            <button class="action-icon-btn edit-btn" onclick='openEditModal(${JSON.stringify(lead)})' title="Edit All Fields"><i class="fa-solid fa-pen"></i></button>
+                            ${followupBtn}
+                            ${userRole !== 'New User' ? `<button class="action-icon-btn edit-btn" onclick='openEditModal(${JSON.stringify(lead)})' title="Edit All Fields"><i class="fa-solid fa-pen"></i></button>` : ''}
                             ${deleteBtn}
                         </td>
                     </tr>
@@ -4074,6 +4738,7 @@ MAIN_DASHBOARD_HTML = """
             });
         }
 
+        if(document.getElementById('crmUsersTbody')){renderNewUserPermissionChoices();fetchCrmUsers();}
         fetchLeadsData();
         fetchColleges();
         setInterval(fetchLeadsData, 5000);
@@ -4081,6 +4746,9 @@ MAIN_DASHBOARD_HTML = """
 </body>
 </html>
 """
+
+initialize_data_directories()
+migrate_legacy_data_once()
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
