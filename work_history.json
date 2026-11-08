@@ -1,14 +1,5 @@
 [
     {
-        "id": 2,
-        "username": "admin",
-        "role": "Admin",
-        "date": "2026-11-08",
-        "time": "06:39:15 PM",
-        "action_type": "User Logout",
-        "details": "User admin logged out."
-    },
-    {
         "id": 3,
         "username": "admin",
         "role": "Admin",
