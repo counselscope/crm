@@ -93,5 +93,22 @@
         "action_type": "User Logout",
         "details": "User admin logged out.",
         "related_record_id": null
+    },
+    {
+        "id": "1c0dd7d7816d4382a8ac24b8e8439f8f",
+        "activity_id": "1c0dd7d7816d4382a8ac24b8e8439f8f",
+        "username": "riya",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "role": "New User",
+        "account_role": "New User",
+        "date": "2026-11-08",
+        "time": "07:16:10 PM",
+        "timestamp": 1794165370.711419,
+        "ip_address": "106.192.54.240",
+        "module": "Authentication",
+        "action": "Login",
+        "action_type": "User Login",
+        "details": "riya logged in.",
+        "related_record_id": null
     }
 ]
