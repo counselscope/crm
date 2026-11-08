@@ -767,5 +767,23 @@
         "deleted_date": "2026-11-08",
         "deleted_at": "08 Nov 2026, 06:38 PM",
         "deleted_timestamp": 1794163080.2005
+    },
+    {
+        "trash_id": "a57516971b604a77bdbec43ea1696ae4",
+        "category": "Work History",
+        "source_file": "work_history.json",
+        "source_id": 11,
+        "record": {
+            "id": 11,
+            "username": "admin",
+            "role": "Admin",
+            "date": "2026-11-08",
+            "time": "06:37:38 PM",
+            "action_type": "User Login",
+            "details": "User admin (Admin) logged in successfully from IP 42.108.74.84"
+        },
+        "deleted_date": "2026-11-08",
+        "deleted_at": "08 Nov 2026, 06:38 PM",
+        "deleted_timestamp": 1794163094.255054
     }
 ]
