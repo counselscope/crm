@@ -1,23 +1,5 @@
 [
     {
-        "trash_id": "bc9e36d961894b66bdd7056fa31f0b56",
-        "category": "Work History",
-        "source_file": "work_history.json",
-        "source_id": 4,
-        "record": {
-            "id": 4,
-            "username": "admin",
-            "role": "Admin",
-            "date": "2026-11-07",
-            "time": "06:37:31 AM",
-            "action_type": "Clear Logs",
-            "details": "Admin admin cleared all login activity logs."
-        },
-        "deleted_date": "2026-11-07",
-        "deleted_at": "07 Nov 2026, 07:06 AM",
-        "deleted_timestamp": 1794035193.482322
-    },
-    {
         "trash_id": "ab52370bd79f4d4a886f8ea60cd44d05",
         "category": "Work History",
         "source_file": "work_history.json",
