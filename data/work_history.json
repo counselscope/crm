@@ -144,5 +144,22 @@
         "action_type": "User Login",
         "details": "riya logged in.",
         "related_record_id": null
+    },
+    {
+        "id": "e7b0119205174217bc6487c4f9eb7e50",
+        "activity_id": "e7b0119205174217bc6487c4f9eb7e50",
+        "username": "riya",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "role": "New User",
+        "account_role": "New User",
+        "date": "2026-11-08",
+        "time": "07:16:22 PM",
+        "timestamp": 1794165382.921606,
+        "ip_address": "106.192.54.240",
+        "module": "crm_dashboard",
+        "action": "Access",
+        "action_type": "Module Access",
+        "details": "GET /dashboard returned HTTP 200.",
+        "related_record_id": null
     }
 ]
