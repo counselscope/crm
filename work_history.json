@@ -1,1 +1,11 @@
-[]
+[
+    {
+        "id": 1,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-08",
+        "time": "06:38:17 PM",
+        "action_type": "Delete Work History",
+        "details": "Admin moved 12 history record(s) to Trash Bin."
+    }
+]
