@@ -76,5 +76,22 @@
         "action_type": "Module Access",
         "details": "GET /download-doc/student_documents/Shivam/doc_1794165157_421b96bf_1000350039.jpg returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "64ba85f3f030497b9f59b165a9645fa7",
+        "activity_id": "64ba85f3f030497b9f59b165a9645fa7",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-08",
+        "time": "07:13:09 PM",
+        "timestamp": 1794165189.777809,
+        "ip_address": "106.192.54.240",
+        "module": "leads",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened leads module.",
+        "related_record_id": null
     }
 ]
