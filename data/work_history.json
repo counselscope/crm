@@ -178,5 +178,39 @@
         "action_type": "Failed Operation",
         "details": "GET /api/get-colleges returned HTTP 403.",
         "related_record_id": null
+    },
+    {
+        "id": "573522ec8eb646b89df2f02f5c09e987",
+        "activity_id": "573522ec8eb646b89df2f02f5c09e987",
+        "username": "riya",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "role": "New User",
+        "account_role": "New User",
+        "date": "2026-11-08",
+        "time": "07:16:24 PM",
+        "timestamp": 1794165384.924079,
+        "ip_address": "106.192.54.240",
+        "module": "get_students_api",
+        "action": "Failed",
+        "action_type": "Failed Operation",
+        "details": "GET /api/get-students returned HTTP 403.",
+        "related_record_id": null
+    },
+    {
+        "id": "a5daa4e8515045e6ab1b7dce157c522e",
+        "activity_id": "a5daa4e8515045e6ab1b7dce157c522e",
+        "username": "riya",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "role": "New User",
+        "account_role": "New User",
+        "date": "2026-11-08",
+        "time": "07:16:29 PM",
+        "timestamp": 1794165389.63973,
+        "ip_address": "106.192.54.240",
+        "module": "leads",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened leads module.",
+        "related_record_id": null
     }
 ]
