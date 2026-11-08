@@ -1,0 +1,46 @@
+[
+    {
+        "id": 1,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-08",
+        "time": "06:50:00 PM",
+        "action_type": "Clear Logs",
+        "details": "Admin admin moved all login activity logs to Trash Bin."
+    },
+    {
+        "id": 2,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-08",
+        "time": "06:52:18 PM",
+        "action_type": "Trash Restore",
+        "details": "Restored Leads record #1."
+    },
+    {
+        "id": 3,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-08",
+        "time": "06:52:31 PM",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #1 (Vyom) to trash"
+    },
+    {
+        "id": "1d731068bdea4eafba30a64ddaee05a7",
+        "activity_id": "1d731068bdea4eafba30a64ddaee05a7",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-08",
+        "time": "07:06:57 PM",
+        "timestamp": 1794164817.246602,
+        "ip_address": "106.192.54.240",
+        "module": "Authentication",
+        "action": "Login",
+        "action_type": "User Login",
+        "details": "admin logged in.",
+        "related_record_id": null
+    }
+]
