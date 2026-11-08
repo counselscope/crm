@@ -884,5 +884,32 @@
         "deleted_date": "2026-11-08",
         "deleted_at": "08 Nov 2026, 06:38 PM",
         "deleted_timestamp": 1794163106.698773
+    },
+    {
+        "trash_id": "4b5765839eb441c6876f29add634c584",
+        "category": "Logs",
+        "source_file": "login_logs.json",
+        "source_id": 6,
+        "record": {
+            "id": 6,
+            "username": "admin",
+            "role": "Admin",
+            "ip_address": "106.192.61.240",
+            "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+            "browser": "Google Chrome (156.0.0.0)",
+            "os": "Android",
+            "login_date": "2026-11-08",
+            "login_time": "08 Nov 2026, 06:26 PM",
+            "login_timestamp": 1794162392.218722,
+            "logout_date": "2026-11-08",
+            "logout_time": "08 Nov 2026, 06:37 PM",
+            "logout_timestamp": 1794163057.209407,
+            "location": "Unknown",
+            "status": "Logged Out",
+            "session_info": "Session ID: 7896908970633541095"
+        },
+        "deleted_date": "2026-11-08",
+        "deleted_at": "08 Nov 2026, 06:38 PM",
+        "deleted_timestamp": 1794163107.935646
     }
 ]
