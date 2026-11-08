@@ -263,5 +263,39 @@
         "action_type": "Failed Operation",
         "details": "GET /api/get-trash returned HTTP 403.",
         "related_record_id": null
+    },
+    {
+        "id": "5b34b0edea574773995ac4f9b42833ef",
+        "activity_id": "5b34b0edea574773995ac4f9b42833ef",
+        "username": "riya",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "role": "New User",
+        "account_role": "New User",
+        "date": "2026-11-08",
+        "time": "07:16:35 PM",
+        "timestamp": 1794165395.707575,
+        "ip_address": "106.192.54.240",
+        "module": "dashboard",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened dashboard module.",
+        "related_record_id": null
+    },
+    {
+        "id": "b19e85a5b7124cc4bf83aa3f14869bb9",
+        "activity_id": "b19e85a5b7124cc4bf83aa3f14869bb9",
+        "username": "riya",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "role": "New User",
+        "account_role": "New User",
+        "date": "2026-11-08",
+        "time": "07:16:40 PM",
+        "timestamp": 1794165400.000956,
+        "ip_address": "106.192.54.240",
+        "module": "get_trash_api",
+        "action": "Failed",
+        "action_type": "Failed Operation",
+        "details": "GET /api/get-trash returned HTTP 403.",
+        "related_record_id": null
     }
 ]
