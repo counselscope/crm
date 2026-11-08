@@ -1,1 +1,11 @@
-[]
+[
+    {
+        "id": 1,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-08",
+        "time": "06:50:00 PM",
+        "action_type": "Clear Logs",
+        "details": "Admin admin moved all login activity logs to Trash Bin."
+    }
+]
