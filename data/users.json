@@ -1,0 +1,24 @@
+{
+    "admin": {
+        "password": "scrypt:32768:8:1$cie36aAY0e07KpRD$e41d412315a6347510ebe2159da8e6acafb0c87c9a7914037c3e6332102cd72b3fc0abc283d8e978f725d47e2385fbc573e93050617bbeb21f56069bc4328e83",
+        "role": "Admin"
+    },
+    "client": {
+        "password": "scrypt:32768:8:1$BD2aIjk0mDMxlzej$dd65ba48074289c389cc690027f1738c92b9a1296729135cc9067b64a7afd0099af58d7b37da03e56a8ce38a9eeb7b0b79c476a8bc6a64512f25f5fbbe1b8caa",
+        "role": "Client"
+    },
+    "riya": {
+        "password": "scrypt:32768:8:1$MyGEX3g0hQ1Xsp7I$aad6113f0a594ff0e9bc5e17d77286ec3df1ac8f6926299caee1aa94cd6794b0701710081bde790e24f1fc24926287a7d9d71184f9dca6b0381cbd32521ad3e4",
+        "role": "New User",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "active": true,
+        "permissions": [
+            "add_followup",
+            "call_leads",
+            "delete_leads",
+            "update_leads",
+            "view_dashboard"
+        ],
+        "created_at": "2026-11-08T19:14:06"
+    }
+}
