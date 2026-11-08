@@ -127,5 +127,39 @@
         "action_type": "Module Access",
         "details": "Opened trash module.",
         "related_record_id": null
+    },
+    {
+        "id": "96dc81614bc64535b924aaa15fe60755",
+        "activity_id": "96dc81614bc64535b924aaa15fe60755",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-08",
+        "time": "07:17:19 PM",
+        "timestamp": 1794165439.478671,
+        "ip_address": "106.192.54.240",
+        "module": "settings",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened settings module.",
+        "related_record_id": null
+    },
+    {
+        "id": "14f659b4fbd04bfaa8ce1ef92370b509",
+        "activity_id": "14f659b4fbd04bfaa8ce1ef92370b509",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-08",
+        "time": "07:17:33 PM",
+        "timestamp": 1794165453.945973,
+        "ip_address": "106.192.54.240",
+        "module": "User",
+        "action": "User Logout",
+        "action_type": "User Logout",
+        "details": "User admin logged out.",
+        "related_record_id": null
     }
 ]
