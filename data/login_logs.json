@@ -118,11 +118,11 @@
         "login_date": "2026-11-08",
         "login_time": "08 Nov 2026, 07:06 PM",
         "login_timestamp": 1794164815.61867,
-        "logout_date": "2026-11-08",
-        "logout_time": "08 Nov 2026, 07:15 PM",
-        "logout_timestamp": 1794165352.263493,
+        "logout_date": "N/A",
+        "logout_time": "N/A",
+        "logout_timestamp": null,
         "location": "Unknown",
-        "status": "Logged Out",
+        "status": "Active",
         "session_info": "Session ID: 503345883958959002"
     },
     {
@@ -135,12 +135,12 @@
         "os": "Windows",
         "login_date": "2026-11-08",
         "login_time": "08 Nov 2026, 07:16 PM",
-        "login_timestamp": 1794165369.060753,
+        "login_timestamp": 1794165379.520968,
         "logout_date": "N/A",
         "logout_time": "N/A",
         "logout_timestamp": null,
         "location": "Unknown",
         "status": "Active",
-        "session_info": "Session ID: 3797492268803103751"
+        "session_info": "Session ID: 1586645437518877538"
     }
 ]
