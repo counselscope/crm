@@ -97,5 +97,14 @@
         "time": "06:38:57 PM",
         "action_type": "Delete Login Logs",
         "details": "Admin moved 7 login log record(s) to Trash Bin."
+    },
+    {
+        "id": 12,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-08",
+        "time": "06:39:08 PM",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #1 (Vyom) to trash"
     }
 ]
