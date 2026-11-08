@@ -1,23 +1,5 @@
 [
     {
-        "trash_id": "9cb796e8d5b34ee99e4332681ac88fe7",
-        "category": "Work History",
-        "source_file": "work_history.json",
-        "source_id": 8,
-        "record": {
-            "id": 8,
-            "username": "admin",
-            "role": "Admin",
-            "date": "2026-11-07",
-            "time": "07:04:13 AM",
-            "action_type": "User Logout",
-            "details": "User admin logged out."
-        },
-        "deleted_date": "2026-11-07",
-        "deleted_at": "07 Nov 2026, 07:06 AM",
-        "deleted_timestamp": 1794035198.199898
-    },
-    {
         "trash_id": "f46074e340164c03ae3b5175b8aee06a",
         "category": "Work History",
         "source_file": "work_history.json",
