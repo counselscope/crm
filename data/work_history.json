@@ -161,5 +161,22 @@
         "action_type": "Module Access",
         "details": "GET /dashboard returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "32aa629d10d146259fe80adc5898b9e8",
+        "activity_id": "32aa629d10d146259fe80adc5898b9e8",
+        "username": "riya",
+        "user_id": "892d7bcf2c9b4de3ad869b198c12c894",
+        "role": "New User",
+        "account_role": "New User",
+        "date": "2026-11-08",
+        "time": "07:16:24 PM",
+        "timestamp": 1794165384.652167,
+        "ip_address": "106.192.54.240",
+        "module": "get_colleges",
+        "action": "Failed",
+        "action_type": "Failed Operation",
+        "details": "GET /api/get-colleges returned HTTP 403.",
+        "related_record_id": null
     }
 ]
