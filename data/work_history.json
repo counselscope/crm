@@ -42,5 +42,22 @@
         "action_type": "Module Access",
         "details": "Opened dashboard module.",
         "related_record_id": null
+    },
+    {
+        "id": "0e2b593d95ef4dbe8a5d93ffcb347429",
+        "activity_id": "0e2b593d95ef4dbe8a5d93ffcb347429",
+        "username": "System",
+        "user_id": "system",
+        "role": "System",
+        "account_role": "System",
+        "date": "2026-11-08",
+        "time": "07:12:48 PM",
+        "timestamp": 1794165168.245094,
+        "ip_address": "106.192.54.240",
+        "module": "Registration",
+        "action": "Lead Created",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for Shivam  (9874563232)",
+        "related_record_id": 1
     }
 ]
