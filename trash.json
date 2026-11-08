@@ -785,5 +785,23 @@
         "deleted_date": "2026-11-08",
         "deleted_at": "08 Nov 2026, 06:38 PM",
         "deleted_timestamp": 1794163094.255054
+    },
+    {
+        "trash_id": "733921e8809f408b9e5ec90773119d02",
+        "category": "Work History",
+        "source_file": "work_history.json",
+        "source_id": 12,
+        "record": {
+            "id": 12,
+            "username": "admin",
+            "role": "Admin",
+            "date": "2026-11-08",
+            "time": "06:38:02 PM",
+            "action_type": "Moved to Trash",
+            "details": "Moved lead #1 (Vyom) to trash"
+        },
+        "deleted_date": "2026-11-08",
+        "deleted_at": "08 Nov 2026, 06:38 PM",
+        "deleted_timestamp": 1794163095.561757
     }
 ]
