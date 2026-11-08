@@ -16,5 +16,14 @@
         "time": "06:52:18 PM",
         "action_type": "Trash Restore",
         "details": "Restored Leads record #1."
+    },
+    {
+        "id": 3,
+        "username": "admin",
+        "role": "Admin",
+        "date": "2026-11-08",
+        "time": "06:52:31 PM",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #1 (Vyom) to trash"
     }
 ]
