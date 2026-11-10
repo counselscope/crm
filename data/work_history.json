@@ -263,5 +263,22 @@
         "action_type": "Module Access",
         "details": "Opened students module.",
         "related_record_id": null
+    },
+    {
+        "id": "30bd87d24b424a06be802097aef5f7e7",
+        "activity_id": "30bd87d24b424a06be802097aef5f7e7",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:31:38 PM",
+        "timestamp": 1794328298.205476,
+        "ip_address": "106.192.53.6",
+        "module": "colleges",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened colleges module.",
+        "related_record_id": null
     }
 ]
