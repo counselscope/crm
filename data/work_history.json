@@ -2447,5 +2447,26 @@
         "action_type": "User Login",
         "details": "admin logged in.",
         "related_record_id": null
+    },
+    {
+        "id": "48156c3ed916401c8f08e85b337b5c52",
+        "activity_id": "48156c3ed916401c8f08e85b337b5c52",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "06:03:54 PM",
+        "timestamp": 1794333834.008601,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "crm_dashboard",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /dashboard returned HTTP 200.",
+        "related_record_id": null
     }
 ]
