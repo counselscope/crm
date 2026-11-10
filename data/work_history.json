@@ -2384,5 +2384,26 @@
         "action_type": "User Logout",
         "details": "User admin logged out.",
         "related_record_id": null
+    },
+    {
+        "id": "46483e259ba046a1895b7190d2d2433e",
+        "activity_id": "46483e259ba046a1895b7190d2d2433e",
+        "username": "System",
+        "user_id": "system",
+        "role": "System",
+        "account_role": "System",
+        "date": "2026-11-10",
+        "time": "06:03:29 PM",
+        "timestamp": 1794333809.620121,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "Registration",
+        "action": "Lead Created",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for rishikesh (1234567890)",
+        "related_record_id": 2
     }
 ]
