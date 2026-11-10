@@ -994,5 +994,22 @@
         "action_type": "Moved to Trash",
         "details": "Moved lead #1 (priti) to trash",
         "related_record_id": null
+    },
+    {
+        "id": "dfed786858774fb39ec97d2aabc26563",
+        "activity_id": "dfed786858774fb39ec97d2aabc26563",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:59:16 PM",
+        "timestamp": 1794329956.341766,
+        "ip_address": "106.192.53.6",
+        "module": "User",
+        "action": "User Logout",
+        "action_type": "User Logout",
+        "details": "User admin logged out.",
+        "related_record_id": null
     }
 ]
