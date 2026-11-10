@@ -2405,5 +2405,26 @@
         "action_type": "Lead Created",
         "details": "New dynamic enquiry received for rishikesh (1234567890)",
         "related_record_id": 2
+    },
+    {
+        "id": "66907f6eb36b4b40af4c8198608eb0a9",
+        "activity_id": "66907f6eb36b4b40af4c8198608eb0a9",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-10",
+        "time": "06:03:48 PM",
+        "timestamp": 1794333828.405682,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
