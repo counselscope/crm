@@ -37,10 +37,10 @@
         "col_name_3": "",
         "col_state_3": "",
         "admission_preference": "",
-        "assigned_college": "",
+        "assigned_college": "kio",
         "state": "Goa",
         "city": "Testing ",
-        "id_document": "student_documents/Mishi/doc_1794332112_62cb793f_Screenshot_20261106_113326_Facebook.jpg",
+        "id_document": null,
         "class_10_doc": "student_documents/Mishi/doc_1794332108_56f4b91a_Screenshot_20261106_113326_Facebook.jpg",
         "class_12_doc": "student_documents/Mishi/doc_1794332110_61df9723_Screenshot_20261106_113326_Facebook.jpg",
         "aadhar_doc": "student_documents/Mishi/doc_1794332114_744fb9a8_Screenshot_20261110_193053_Chrome.jpg",
@@ -67,12 +67,6 @@
             {
                 "field": "class_12_doc",
                 "stored_name": "student_documents/Mishi/doc_1794332110_61df9723_Screenshot_20261106_113326_Facebook.jpg",
-                "original_name": "Screenshot_20261106_113326_Facebook.jpg",
-                "extension": ".jpg"
-            },
-            {
-                "field": "id_document",
-                "stored_name": "student_documents/Mishi/doc_1794332112_62cb793f_Screenshot_20261106_113326_Facebook.jpg",
                 "original_name": "Screenshot_20261106_113326_Facebook.jpg",
                 "extension": ".jpg"
             },
@@ -123,11 +117,38 @@
             "col_state_2": "",
             "col_name_3": "",
             "col_state_3": "",
-            "course_details": "B.Sc / B.Com / B.A"
+            "course_details": "B.Sc / B.Com / B.A",
+            "aadhar_doc": "student_documents/Mishi/doc_1794332114_744fb9a8_Screenshot_20261110_193053_Chrome.jpg",
+            "admission_preference": "",
+            "assigned_college": "kio",
+            "budget": "₹5 - 10 Lakhs",
+            "class_10_doc": "student_documents/Mishi/doc_1794332108_56f4b91a_Screenshot_20261106_113326_Facebook.jpg",
+            "class_12_doc": "student_documents/Mishi/doc_1794332110_61df9723_Screenshot_20261106_113326_Facebook.jpg",
+            "created_at": "10 Nov 2026, 05:35 PM",
+            "created_by": "System",
+            "created_by_id": "system",
+            "created_by_role": "System",
+            "created_date": "2026-11-10",
+            "created_timestamp": 1794332115.661931,
+            "edu_scorecard": "student_documents/Mishi/doc_1794332106_5dd9ecc9_Screenshot_20261106_113326_Facebook.jpg",
+            "hostel_preference": "Yes",
+            "id_document": null,
+            "installment_duration": "",
+            "is_deleted": false,
+            "notes": "Enquiry received via dynamic HTML form submission.",
+            "passport_photo": "student_documents/Mishi/doc_1794332104_da11167e_Screenshot_20261106_113326_Facebook.jpg",
+            "qualification": "",
+            "score": 80,
+            "status": "New Lead",
+            "lead_id": "1",
+            "delete_doc": "true"
         },
         "created_by": "System",
         "created_by_id": "system",
         "created_by_role": "System",
-        "passport_photo": "student_documents/Mishi/doc_1794332104_da11167e_Screenshot_20261106_113326_Facebook.jpg"
+        "passport_photo": "student_documents/Mishi/doc_1794332104_da11167e_Screenshot_20261106_113326_Facebook.jpg",
+        "updated_by": "admin",
+        "updated_by_id": "admin",
+        "updated_at": "2026-11-10T17:35:48"
     }
 ]
