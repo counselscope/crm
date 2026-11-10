@@ -2321,5 +2321,26 @@
         "action_type": "Module Access",
         "details": "Opened history module.",
         "related_record_id": null
+    },
+    {
+        "id": "752911e8d2a24e3f93ff2ba6632c0e7d",
+        "activity_id": "752911e8d2a24e3f93ff2ba6632c0e7d",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:38:04 PM",
+        "timestamp": 1794332284.828327,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "Delete",
+        "action": "Delete Work History",
+        "action_type": "Delete Work History",
+        "details": "Admin moved 2 selected history record(s) to Trash Bin.",
+        "related_record_id": null
     }
 ]
