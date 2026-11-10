@@ -909,5 +909,22 @@
         "action_type": "Student Converted",
         "details": "Converted lead #1 (priti) into a registered Student.",
         "related_record_id": null
+    },
+    {
+        "id": "d593358313d4443fa6c7812f63e0d347",
+        "activity_id": "d593358313d4443fa6c7812f63e0d347",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:43:14 PM",
+        "timestamp": 1794328994.459372,
+        "ip_address": "106.192.53.6",
+        "module": "students",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened students module.",
+        "related_record_id": null
     }
 ]
