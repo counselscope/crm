@@ -1376,5 +1376,26 @@
         "action_type": "Module Access",
         "details": "Opened colleges module.",
         "related_record_id": null
+    },
+    {
+        "id": "a5e0c83c40604495b9536aa060ce238f",
+        "activity_id": "a5e0c83c40604495b9536aa060ce238f",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:07:54 PM",
+        "timestamp": 1794330474.794637,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "College",
+        "action": "College Added",
+        "action_type": "College Added",
+        "details": "Added new college: kio",
+        "related_record_id": null
     }
 ]
