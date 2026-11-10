@@ -2111,5 +2111,26 @@
         "action_type": "Module Access",
         "details": "Opened trash module.",
         "related_record_id": null
+    },
+    {
+        "id": "dda882d7f9094c428885ede352b7529a",
+        "activity_id": "dda882d7f9094c428885ede352b7529a",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:31:17 PM",
+        "timestamp": 1794331877.185287,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "Permanent",
+        "action": "Permanent Delete",
+        "action_type": "Permanent Delete",
+        "details": "Admin permanently deleted 13 Trash Bin record(s).",
+        "related_record_id": null
     }
 ]
