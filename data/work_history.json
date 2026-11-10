@@ -1544,5 +1544,26 @@
         "action_type": "Status Change",
         "details": "Status changed to 'Follow Up' for student trisha",
         "related_record_id": 1
+    },
+    {
+        "id": "65528b1c258f42a5ad132b12ebf2c479",
+        "activity_id": "65528b1c258f42a5ad132b12ebf2c479",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:14:25 PM",
+        "timestamp": 1794330865.867499,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "Leads",
+        "action": "Call",
+        "action_type": "Customer Call Initiated",
+        "details": "User initiated a call to 9619235684.",
+        "related_record_id": null
     }
 ]
