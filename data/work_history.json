@@ -739,5 +739,22 @@
         "action_type": "Module Access",
         "details": "Opened trash module.",
         "related_record_id": null
+    },
+    {
+        "id": "9aa6eb0a13f544f48808956133069e9f",
+        "activity_id": "9aa6eb0a13f544f48808956133069e9f",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:42:50 PM",
+        "timestamp": 1794328970.32549,
+        "ip_address": "106.192.53.6",
+        "module": "history",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened history module.",
+        "related_record_id": null
     }
 ]
