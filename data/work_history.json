@@ -790,5 +790,22 @@
         "action_type": "College Added",
         "details": "Added new college: kirti",
         "related_record_id": null
+    },
+    {
+        "id": "c06050083b514d9e879e6f41957e5751",
+        "activity_id": "c06050083b514d9e879e6f41957e5751",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:45:14 PM",
+        "timestamp": 1794329114.475405,
+        "ip_address": "106.192.53.6",
+        "module": "college_file",
+        "action": "Access",
+        "action_type": "Module Access",
+        "details": "GET /api/college-file/1 returned HTTP 200.",
+        "related_record_id": null
     }
 ]
