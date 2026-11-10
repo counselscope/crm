@@ -1,1 +1,44 @@
-[]
+[
+    {
+        "id": 1,
+        "college_name": "kirti",
+        "location": "mahim",
+        "address": "mahim",
+        "phone": "1234567890",
+        "email": "counselscope@gmail.com",
+        "description": "ss",
+        "courses": "",
+        "package": "N/A",
+        "document": {
+            "stored_name": "student/college/kirti/college_47f50a431660428380d4fb719e478138.png",
+            "github_path": "student/college/kirti/college_47f50a431660428380d4fb719e478138.png",
+            "original_name": "logo.png",
+            "extension": ".png"
+        },
+        "created_by": "admin",
+        "created_by_id": "admin",
+        "created_by_role": "Admin",
+        "github_record_path": "student/college/kirti/college.json"
+    },
+    {
+        "id": 2,
+        "college_name": "kio",
+        "location": "matunga",
+        "address": "matunga",
+        "phone": "1234567890",
+        "email": "counselscope@gmail.com",
+        "description": "aa",
+        "courses": "",
+        "package": "N/A",
+        "document": {
+            "stored_name": "student/college/kio/college_22a96975d98240fa82e1ad375f69eb8e.png",
+            "github_path": "student/college/kio/college_22a96975d98240fa82e1ad375f69eb8e.png",
+            "original_name": "logo.png",
+            "extension": ".png"
+        },
+        "created_by": "admin",
+        "created_by_id": "admin",
+        "created_by_role": "Admin",
+        "github_record_path": "student/college/kio/college.json"
+    }
+]
