@@ -2552,5 +2552,26 @@
         "action_type": "Module Access",
         "details": "Opened dashboard module.",
         "related_record_id": null
+    },
+    {
+        "id": "dc17da8105fa4633b3f3b4d30168eaef",
+        "activity_id": "dc17da8105fa4633b3f3b4d30168eaef",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "06:05:44 PM",
+        "timestamp": 1794333944.678704,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "download_document",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /download-doc/student_documents/rishikesh/doc_1794333800_f1112969_cover.jpg returned HTTP 200.",
+        "related_record_id": null
     }
 ]
