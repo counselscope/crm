@@ -1943,5 +1943,26 @@
         "action_type": "Request Activity",
         "details": "GET /download-doc/student_documents/trisha/doc_1794330333_1d9e65f4_logo_1.png returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "429bf63c1fa14c038b689aa101960d14",
+        "activity_id": "429bf63c1fa14c038b689aa101960d14",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:18:08 PM",
+        "timestamp": 1794331088.864833,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "trash",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened trash module.",
+        "related_record_id": null
     }
 ]
