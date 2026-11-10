@@ -484,5 +484,22 @@
         "action_type": "User Logout",
         "details": "User admin logged out.",
         "related_record_id": null
+    },
+    {
+        "id": "e1d0641b78aa456499f473b4fae64a5a",
+        "activity_id": "e1d0641b78aa456499f473b4fae64a5a",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:39:06 PM",
+        "timestamp": 1794328746.318332,
+        "ip_address": "106.192.53.6",
+        "module": "Authentication",
+        "action": "Login",
+        "action_type": "User Login",
+        "details": "admin logged in.",
+        "related_record_id": null
     }
 ]
