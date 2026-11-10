@@ -365,5 +365,22 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "2985fdff65374be0b25f45c3c478ceb0",
+        "activity_id": "2985fdff65374be0b25f45c3c478ceb0",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:33:27 PM",
+        "timestamp": 1794328407.297625,
+        "ip_address": "106.192.53.6",
+        "module": "students",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened students module.",
+        "related_record_id": null
     }
 ]
