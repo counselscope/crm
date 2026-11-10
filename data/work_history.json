@@ -280,5 +280,22 @@
         "action_type": "Module Access",
         "details": "Opened dashboard module.",
         "related_record_id": null
+    },
+    {
+        "id": "742696feffc246ee98d08f97709f8f0f",
+        "activity_id": "742696feffc246ee98d08f97709f8f0f",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:32:46 PM",
+        "timestamp": 1794328366.641492,
+        "ip_address": "106.192.53.6",
+        "module": "leads",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened leads module.",
+        "related_record_id": null
     }
 ]
