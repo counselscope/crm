@@ -620,5 +620,22 @@
         "action_type": "Module Access",
         "details": "Opened dashboard module.",
         "related_record_id": null
+    },
+    {
+        "id": "abe59d49fceb4ea9805547e4c49fbb1b",
+        "activity_id": "abe59d49fceb4ea9805547e4c49fbb1b",
+        "username": "System",
+        "user_id": "system",
+        "role": "System",
+        "account_role": "System",
+        "date": "2026-11-10",
+        "time": "04:41:23 PM",
+        "timestamp": 1794328883.713771,
+        "ip_address": "106.192.53.6",
+        "module": "Registration",
+        "action": "Lead Created",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for priti (9874561230)",
+        "related_record_id": 1
     }
 ]
