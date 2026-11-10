@@ -2321,5 +2321,26 @@
         "action_type": "Module Access",
         "details": "Opened students module.",
         "related_record_id": null
+    },
+    {
+        "id": "1d467fbd0fa8494faf061febdc877b37",
+        "activity_id": "1d467fbd0fa8494faf061febdc877b37",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:31:49 PM",
+        "timestamp": 1794331909.745923,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "leads",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened leads module.",
+        "related_record_id": null
     }
 ]
