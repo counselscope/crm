@@ -476,5 +476,23 @@
         "deleted_date": "2026-11-10",
         "deleted_at": "10 Nov 2026, 04:32 PM",
         "deleted_timestamp": 1794328321.569014
+    },
+    {
+        "trash_id": "dc87b9e6a53a4ffda80dfb8d95e7b730",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": 1,
+        "record": {
+            "id": 1,
+            "username": "admin",
+            "role": "Admin",
+            "date": "2026-11-08",
+            "time": "06:50:00 PM",
+            "action_type": "Clear Logs",
+            "details": "Admin admin moved all login activity logs to Trash Bin."
+        },
+        "deleted_date": "2026-11-10",
+        "deleted_at": "10 Nov 2026, 05:01 PM",
+        "deleted_timestamp": 1794330062.641999
     }
 ]
