@@ -1,32 +1,5 @@
 [
     {
-        "trash_id": "c6db2d64ca6f4aa8b1609cd0ce80c172",
-        "category": "Logs",
-        "source_file": "/opt/render/project/src/data/login_logs.json",
-        "source_id": 6,
-        "record": {
-            "id": 6,
-            "username": "admin",
-            "role": "Admin",
-            "ip_address": "106.192.61.240",
-            "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
-            "browser": "Google Chrome (156.0.0.0)",
-            "os": "Android",
-            "login_date": "2026-11-08",
-            "login_time": "08 Nov 2026, 06:26 PM",
-            "login_timestamp": 1794162392.218722,
-            "logout_date": "2026-11-08",
-            "logout_time": "08 Nov 2026, 06:37 PM",
-            "logout_timestamp": 1794163057.209407,
-            "location": "Unknown",
-            "status": "Logged Out",
-            "session_info": "Session ID: 7896908970633541095"
-        },
-        "deleted_date": "2026-11-08",
-        "deleted_at": "08 Nov 2026, 06:38 PM",
-        "deleted_timestamp": 1794163134.135661
-    },
-    {
         "trash_id": "8569871380fa4f0a8066cf06fe401847",
         "category": "Logs",
         "source_file": "/opt/render/project/src/data/login_logs.json",
