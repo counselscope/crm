@@ -756,5 +756,39 @@
         "action_type": "Module Access",
         "details": "Opened history module.",
         "related_record_id": null
+    },
+    {
+        "id": "f600637b52a14d84bdfc9e37b354731d",
+        "activity_id": "f600637b52a14d84bdfc9e37b354731d",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:42:51 PM",
+        "timestamp": 1794328971.015163,
+        "ip_address": "106.192.53.6",
+        "module": "history",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened history module.",
+        "related_record_id": null
+    },
+    {
+        "id": "eade7ba8bb074c65b4ca96770e11b815",
+        "activity_id": "eade7ba8bb074c65b4ca96770e11b815",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:42:52 PM",
+        "timestamp": 1794328972.522383,
+        "ip_address": "106.192.53.6",
+        "module": "colleges",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened colleges module.",
+        "related_record_id": null
     }
 ]
