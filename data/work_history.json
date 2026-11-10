@@ -1880,5 +1880,26 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "43a61bb24ced4b07b36bb776da8b241b",
+        "activity_id": "43a61bb24ced4b07b36bb776da8b241b",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:17:47 PM",
+        "timestamp": 1794331067.214941,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "dashboard",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened dashboard module.",
+        "related_record_id": null
     }
 ]
