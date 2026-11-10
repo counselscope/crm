@@ -501,5 +501,22 @@
         "action_type": "User Login",
         "details": "admin logged in.",
         "related_record_id": null
+    },
+    {
+        "id": "51f3633b732a4e75ad3b868e6b27a70b",
+        "activity_id": "51f3633b732a4e75ad3b868e6b27a70b",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:39:09 PM",
+        "timestamp": 1794328749.838149,
+        "ip_address": "106.192.53.6",
+        "module": "crm_dashboard",
+        "action": "Access",
+        "action_type": "Module Access",
+        "details": "GET /dashboard returned HTTP 200.",
+        "related_record_id": null
     }
 ]
