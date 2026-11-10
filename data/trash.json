@@ -1,26 +1,32 @@
 [
     {
-        "trash_id": "eebb8ddc37a44aa7925195705bf665df",
-        "category": "Student Documents",
-        "source_file": "student_document",
-        "source_id": "lead:1:id_document:91b5728cfcb6479abbbbc81b70e94c0f",
+        "trash_id": "7feba7ac2a47430296c22d7e3aef4f75",
+        "category": "Colleges",
+        "source_file": "/opt/render/project/src/data/colleges.json",
+        "source_id": 2,
         "record": {
-            "stored_name": "student_documents/Mishi/doc_1794332112_62cb793f_Screenshot_20261106_113326_Facebook.jpg",
-            "attachment": {
-                "field": "id_document",
-                "stored_name": "student_documents/Mishi/doc_1794332112_62cb793f_Screenshot_20261106_113326_Facebook.jpg",
-                "original_name": "Screenshot_20261106_113326_Facebook.jpg",
-                "extension": ".jpg"
+            "id": 2,
+            "college_name": "kio",
+            "location": "matunga",
+            "address": "matunga",
+            "phone": "1234567890",
+            "email": "counselscope@gmail.com",
+            "description": "aa",
+            "courses": "",
+            "package": "N/A",
+            "document": {
+                "stored_name": "student/college/kio/college_22a96975d98240fa82e1ad375f69eb8e.png",
+                "github_path": "student/college/kio/college_22a96975d98240fa82e1ad375f69eb8e.png",
+                "original_name": "logo.png",
+                "extension": ".png"
             },
-            "original_name": "Screenshot_20261106_113326_Facebook.jpg"
+            "created_by": "admin",
+            "created_by_id": "admin",
+            "created_by_role": "Admin",
+            "github_record_path": "student/college/kio/college.json"
         },
         "deleted_date": "2026-11-10",
-        "deleted_at": "10 Nov 2026, 05:35 PM",
-        "deleted_timestamp": 1794332147.798981,
-        "extra": {
-            "parent_type": "lead",
-            "lead_id": 1,
-            "field": "id_document"
-        }
+        "deleted_at": "10 Nov 2026, 05:36 PM",
+        "deleted_timestamp": 1794332176.589378
     }
 ]
