@@ -2048,5 +2048,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/users returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "bde3b7f3980a4c4b9bb4ae3cced4d4f5",
+        "activity_id": "bde3b7f3980a4c4b9bb4ae3cced4d4f5",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:28:07 PM",
+        "timestamp": 1794331687.667326,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "download_document",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /download-doc/student_documents/trisha/doc_1794330322_13a71932_logo_1.png returned HTTP 200.",
+        "related_record_id": null
     }
 ]
