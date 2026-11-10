@@ -1628,5 +1628,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/college-file/2 returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "19a3601dbc2849099a66000ea8dc6f99",
+        "activity_id": "19a3601dbc2849099a66000ea8dc6f99",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:17:11 PM",
+        "timestamp": 1794331031.967747,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "students",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened students module.",
+        "related_record_id": null
     }
 ]
