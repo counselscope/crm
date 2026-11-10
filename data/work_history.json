@@ -467,5 +467,22 @@
         "action_type": "Module Access",
         "details": "Opened settings module.",
         "related_record_id": null
+    },
+    {
+        "id": "7bc788622cd945c69e7472108b33f092",
+        "activity_id": "7bc788622cd945c69e7472108b33f092",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:36:24 PM",
+        "timestamp": 1794328584.877922,
+        "ip_address": "106.192.53.6",
+        "module": "User",
+        "action": "User Logout",
+        "action_type": "User Logout",
+        "details": "User admin logged out.",
+        "related_record_id": null
     }
 ]
