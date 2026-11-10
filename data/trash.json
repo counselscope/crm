@@ -783,5 +783,31 @@
         "deleted_date": "2026-11-10",
         "deleted_at": "10 Nov 2026, 05:29 PM",
         "deleted_timestamp": 1794331799.441809
+    },
+    {
+        "trash_id": "93080a0209914001a9e0c513c63bbe5d",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "aa4e2cfad5434637b4959a4b54bfe3bd",
+        "record": {
+            "id": "aa4e2cfad5434637b4959a4b54bfe3bd",
+            "activity_id": "aa4e2cfad5434637b4959a4b54bfe3bd",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-08",
+            "time": "07:14:08 PM",
+            "timestamp": 1794165248.58111,
+            "ip_address": "106.192.54.240",
+            "module": "User Management",
+            "action": "User Created",
+            "action_type": "User Created",
+            "details": "Admin created CRM account 'riya'.",
+            "related_record_id": "892d7bcf2c9b4de3ad869b198c12c894"
+        },
+        "deleted_date": "2026-11-10",
+        "deleted_at": "10 Nov 2026, 05:30 PM",
+        "deleted_timestamp": 1794331800.852816
     }
 ]
