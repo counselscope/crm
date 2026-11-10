@@ -2153,5 +2153,26 @@
         "action_type": "Module Access",
         "details": "Opened colleges module.",
         "related_record_id": null
+    },
+    {
+        "id": "2b86f7e2380d44ab86179308e0aaff9d",
+        "activity_id": "2b86f7e2380d44ab86179308e0aaff9d",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "05:29:48 PM",
+        "timestamp": 1794331788.117393,
+        "ip_address": "106.192.53.6",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "get_work_history_users",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/work-history-users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
