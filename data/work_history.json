@@ -552,5 +552,39 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "f4d76d25d7bb4cff9fa25ceb5cb8d277",
+        "activity_id": "f4d76d25d7bb4cff9fa25ceb5cb8d277",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:39:20 PM",
+        "timestamp": 1794328760.424069,
+        "ip_address": "106.192.53.6",
+        "module": "students",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened students module.",
+        "related_record_id": null
+    },
+    {
+        "id": "6d3b117399f94463a8c3d1ad216dd396",
+        "activity_id": "6d3b117399f94463a8c3d1ad216dd396",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:39:22 PM",
+        "timestamp": 1794328762.448698,
+        "ip_address": "106.192.53.6",
+        "module": "dashboard",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened dashboard module.",
+        "related_record_id": null
     }
 ]
