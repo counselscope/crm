@@ -212,5 +212,22 @@
         "action_type": "Module Access",
         "details": "GET /api/users returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "10146819ba3440639169cb520d3952c0",
+        "activity_id": "10146819ba3440639169cb520d3952c0",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:31:33 PM",
+        "timestamp": 1794328293.348904,
+        "ip_address": "106.192.53.6",
+        "module": "Moved",
+        "action": "Moved to Trash",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #1 (Shivam ) to trash",
+        "related_record_id": null
     }
 ]
