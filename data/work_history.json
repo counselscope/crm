@@ -977,5 +977,22 @@
         "action_type": "Module Access",
         "details": "Opened dashboard module.",
         "related_record_id": null
+    },
+    {
+        "id": "abe4e46b6eff417a9379cf472cd5ed7c",
+        "activity_id": "abe4e46b6eff417a9379cf472cd5ed7c",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:59:11 PM",
+        "timestamp": 1794329951.361439,
+        "ip_address": "106.192.53.6",
+        "module": "Moved",
+        "action": "Moved to Trash",
+        "action_type": "Moved to Trash",
+        "details": "Moved lead #1 (priti) to trash",
+        "related_record_id": null
     }
 ]
