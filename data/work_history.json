@@ -892,5 +892,22 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "4890cbfa2c0b4f52b8f544d1f8e11ee6",
+        "activity_id": "4890cbfa2c0b4f52b8f544d1f8e11ee6",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:43:12 PM",
+        "timestamp": 1794328992.811843,
+        "ip_address": "106.192.53.6",
+        "module": "Student",
+        "action": "Student Converted",
+        "action_type": "Student Converted",
+        "details": "Converted lead #1 (priti) into a registered Student.",
+        "related_record_id": null
     }
 ]
