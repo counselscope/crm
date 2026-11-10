@@ -83,6 +83,7 @@ PERMISSION_ENDPOINTS = {
     "college_file": ("view_colleges", "download_student_documents"),
     "download_document": ("download_student_documents",),
     "get_history_api": ("view_work_history",),
+    "get_work_history_users": ("view_work_history",),
     "log_action_route": ("update_leads",),
     "delete_selected_history": ("__admin_only__",),
     "export_history_pdf": ("view_work_history",),
@@ -1526,15 +1527,20 @@ def delete_selected_colleges():
 def delete_selected_history():
     if not session.get('logged_in') or session.get('role') != 'Admin':
         return jsonify({"error":"Unauthorized. Admin access required."}),403
-    ids={str(x) for x in (request.json or {}).get('history_ids',[])}
+    payload=request.get_json(silent=True) or {}
+    raw_ids=payload.get('history_ids',[])
+    if not isinstance(raw_ids,list) or not raw_ids:
+        return jsonify({"status":"error","message":"Select at least one Work History record."}),400
+    ids={str(x).strip() for x in raw_ids if str(x).strip()}
     records=load_data(HISTORY_FILE); kept=[]; moved=0
     for rec in records:
-        if str(rec.get('id')) in ids:
-            _archive_record(HISTORY_FILE,rec,rec.get('id'),"Work History"); moved+=1
+        if str(rec.get('id') or rec.get('activity_id') or '').strip() in ids:
+            _archive_record(HISTORY_FILE,rec,rec.get('id') or rec.get('activity_id'),"Work History"); moved+=1
         else: kept.append(rec)
-    save_data(HISTORY_FILE,kept)
-    log_activity("Delete Work History",f"Admin moved {moved} history record(s) to Trash Bin.")
-    return jsonify({"status":"success","message":f"{moved} history record(s) moved to Trash Bin."})
+    if moved:
+        save_data(HISTORY_FILE,kept)
+    log_activity("Delete Work History",f"Admin moved {moved} selected history record(s) to Trash Bin.")
+    return jsonify({"status":"success","deleted_count":moved,"message":f"{moved} history record(s) moved to Trash Bin."})
 
 
 @app.route('/api/delete-selected-logs', methods=['POST'])
@@ -1602,11 +1608,31 @@ def trash_restore():
 def trash_permanent_delete():
     if not session.get('logged_in') or session.get('role') != 'Admin':
         return jsonify({"error":"Unauthorized. Admin access required."}),403
-    ids={str(x) for x in (request.json or {}).get('trash_ids',[])}
-    items=[x for x in load_data(TRASH_FILE) if str(x.get('trash_id')) in ids]
-    for item in items: _permanently_delete_trash_item(item)
-    log_activity("Permanent Delete",f"Admin permanently deleted {len(items)} records from Trash Bin.")
-    return jsonify({"status":"success","message":f"{len(items)} selected record(s) permanently deleted."})
+    payload=request.get_json(silent=True) or {}
+    raw_ids=payload.get('trash_ids',[])
+    if not isinstance(raw_ids,list) or not raw_ids:
+        return jsonify({"status":"error","message":"Select at least one Trash Bin record."}),400
+    ids={str(x).strip() for x in raw_ids if str(x).strip()}
+    items=[x for x in load_data(TRASH_FILE) if str(x.get('trash_id') or '') in ids]
+    if not items:
+        return jsonify({"status":"error","message":"No matching Trash Bin records were found. Refresh and try again."}),404
+    deleted=[]; errors=[]
+    for item in items:
+        try:
+            _permanently_delete_trash_item(item)
+            deleted.append(str(item.get('trash_id')))
+        except Exception as exc:
+            app.logger.exception("Permanent Trash Bin deletion failed for %s",item.get('trash_id'))
+            errors.append({"trash_id":str(item.get('trash_id')),"error":str(exc)})
+    # Final authoritative cleanup: remove only records whose deletion completed.
+    if deleted:
+        remaining=[x for x in load_data(TRASH_FILE) if str(x.get('trash_id') or '') not in set(deleted)]
+        save_data(TRASH_FILE,remaining)
+    log_activity("Permanent Delete",f"Admin permanently deleted {len(deleted)} Trash Bin record(s).")
+    if errors:
+        return jsonify({"status":"partial","deleted_count":len(deleted),"failed_count":len(errors),"errors":errors,
+                        "message":f"Deleted {len(deleted)} record(s); {len(errors)} could not be deleted."}),207
+    return jsonify({"status":"success","deleted_count":len(deleted),"message":f"{len(deleted)} selected record(s) permanently deleted."})
 
 
 @app.route('/api/trash/download', methods=['POST'])
@@ -2331,6 +2357,15 @@ def get_history_api():
         return jsonify({"error": "Unauthorized"}), 401
     return jsonify(load_data(HISTORY_FILE))
 
+@app.route('/api/work-history-users', methods=['GET'])
+def get_work_history_users():
+    if not session.get('logged_in'):
+        return jsonify({"error":"Unauthorized"}),401
+    users=load_users()
+    result=[{"username":name,"role":record.get("role","New User")} for name,record in users.items()]
+    result.append({"username":"System","role":"System"})
+    return jsonify(result)
+
 
 @app.route('/api/log-action', methods=['POST'])
 def log_action_route():
@@ -2463,29 +2498,36 @@ def manage_lead_document(lead_id, field):
         return jsonify({"error":"Lead not found"}),404
     field=request.form.get("field") or payload.get("field") or field
     old_path=request.form.get("stored_name") or payload.get("stored_name")
-    if action == "upload":
+    if action in ("upload", "replace"):
         upload=request.files.get("file")
         if not upload or not upload.filename:
             return jsonify({"error":"Select a document to upload."}),400
         new_path=upload_file_to_github(upload,lead.get("student_name","Student"),upload.filename,lead.get("id"))
         if not new_path:
             return jsonify({"error":"Unable to upload document."}),502
-        new_field="additional_document_"+uuid.uuid4().hex[:10]
+        replace_field = field if action == "replace" else None
+        old_path = lead.get(replace_field) if replace_field else None
+        if replace_field and isinstance(lead.get("form_data"),dict):
+            old_path = old_path or lead["form_data"].get(replace_field)
+        old_attachment=next((a for a in lead.get("attachments",[]) if isinstance(a,dict) and a.get("stored_name")==old_path),None) if old_path else None
+        if old_path:
+            _archive_record("student_document",{"stored_name":old_path,"attachment":old_attachment,
+                "original_name":(old_attachment or {}).get("original_name") or os.path.basename(str(old_path))},
+                f"lead:{lead_id}:{replace_field}:{uuid.uuid4().hex}","Student Documents",
+                {"parent_type":"lead","lead_id":lead_id,"field":replace_field})
+            lead["attachments"]=[a for a in lead.get("attachments",[]) if not (isinstance(a,dict) and a.get("stored_name")==old_path)]
+        new_field=replace_field or ("additional_document_"+uuid.uuid4().hex[:10])
         lead[new_field]=new_path
         if not isinstance(lead.get("form_data"),dict): lead["form_data"]={}
         lead["form_data"][new_field]=new_path
-        lead.setdefault("attachments",[]).append({
-            "field":new_field,"stored_name":new_path,
-            "original_name":secure_filename(upload.filename),
-            "extension":os.path.splitext(upload.filename)[1].lower()
-        })
-        save_data(DATA_FILE,leads)
-        log_activity("Lead Document Uploaded",f"Uploaded an additional document for lead #{lead_id}.")
         new_document={"field":new_field,"stored_name":new_path,
                       "original_name":secure_filename(upload.filename),
                       "extension":os.path.splitext(upload.filename)[1].lower()}
-        # The attachment has already been persisted above; return its metadata for the editor refresh.
-        return jsonify({"status":"success","message":"Document uploaded successfully.","document":new_document})
+        lead.setdefault("attachments",[]).append(new_document)
+        save_data(DATA_FILE,leads)
+        log_activity("Lead Document Replaced" if old_path else "Lead Document Uploaded",
+                     f"{'Replaced' if old_path else 'Uploaded'} document '{new_document['original_name']}' for lead #{lead_id}.")
+        return jsonify({"status":"success","message":"Document replaced successfully." if old_path else "Document uploaded successfully.","document":new_document})
     if action == "delete":
         if not old_path:
             return jsonify({"error":"Selected document was not found."}),404
@@ -2712,6 +2754,11 @@ def user_management_update(username):
     if not record or record.get("role") in ("Admin", "Client"):
         return jsonify({"error":"New user account not found."}), 404
     payload = request.get_json(silent=True) or {}
+    new_username = str(payload.get("new_username") or username).strip().lower()
+    if not re.fullmatch(r"[a-z0-9_.-]{3,40}", new_username):
+        return jsonify({"error":"Username must be 3-40 characters and contain only letters, numbers, dots, underscores or hyphens."}),400
+    if new_username != username and new_username in users:
+        return jsonify({"error":"This username already exists."}),409
     if "permissions" in payload:
         raw_permissions = payload.get("permissions") or []
         if not isinstance(raw_permissions, list) or any(not isinstance(x, str) for x in raw_permissions):
@@ -2731,11 +2778,15 @@ def user_management_update(username):
         if len(str(payload["password"])) < 8:
             return jsonify({"error":"Password must contain at least 8 characters."}), 400
         record["password"] = generate_password_hash(str(payload["password"]))
-    users[username] = record
+    if new_username != username:
+        users.pop(username, None)
+        users[new_username] = record
+    else:
+        users[username] = record
     save_data(USERS_FILE, users)
-    log_activity("User Updated", f"Admin updated account '{username}' (permissions/status/password).",
+    log_activity("User Updated", f"Admin updated account '{username}' to '{new_username}' (username/permissions/status/password).",
                  module="User Management", related_record_id=record.get("user_id"))
-    return jsonify({"status":"success","message":"User account updated successfully."})
+    return jsonify({"status":"success","message":"User account updated successfully.","username":new_username})
 
 @app.route('/api/users/<username>', methods=['DELETE'])
 def user_management_delete(username):
@@ -3316,6 +3367,7 @@ MAIN_DASHBOARD_HTML = """
                         <label>Particular Date <input type="date" id="historySingleDate" class="form-control" onchange="setSingleDateFilter('history')"></label>
                         <label>Start Date <input type="date" id="historyStartDate" class="form-control" onchange="applyHistoryFilters()"></label>
                         <label>End Date <input type="date" id="historyEndDate" class="form-control" onchange="applyHistoryFilters()"></label>
+                        <label>Specific User <select id="historyUserFilter" class="form-control" onchange="applyHistoryFilters()"><option value="All Users">All Users</option></select></label>
                         <button onclick="resetHistoryFilters()" style="background:#64748b;color:white;border:0;padding:10px 14px;border-radius:8px;">Clear Filters</button>
                         <span id="historyFilterSummary" style="font-size:12px;font-weight:600;color:#475569;"></span>
                         <button onclick="downloadHistoryPDF()" style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;"><i class="fa-solid fa-file-pdf"></i> Download Work History PDF</button>
@@ -3336,6 +3388,7 @@ MAIN_DASHBOARD_HTML = """
                                     <th>Date & Time</th>
                                     <th>Activity Type</th>
                                     <th>Details</th>
+                                    <th>IP Address</th>
                                 </tr>
                             </thead>
                             <tbody id="historyTbody"></tbody>
@@ -3492,6 +3545,21 @@ MAIN_DASHBOARD_HTML = """
                     <hr style="border:0;border-top:1px solid #e2e8f0;margin:18px 0;">
                     <h4 style="font-size:14px;margin-bottom:10px;">Created CRM Users</h4>
                     <div style="overflow-x:auto;"><table><thead><tr><th>Username</th><th>Status</th><th>Assigned Permissions</th><th>Actions</th></tr></thead><tbody id="crmUsersTbody"><tr><td colspan="4">Loading users...</td></tr></tbody></table></div>
+                    <div id="crmUserEditModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:10020;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeCrmUserEditModal();">
+                        <div style="background:#fff;width:min(760px,96vw);max-height:90vh;overflow:auto;border-radius:14px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;"><div><h3 style="margin:0;color:#0f172a;">Edit CRM User</h3><small style="color:#64748b;">Update username, password, account status and permissions</small></div><button type="button" onclick="closeCrmUserEditModal()" style="border:0;background:#e2e8f0;border-radius:8px;padding:7px 11px;cursor:pointer;font-size:18px;">×</button></div>
+                            <form id="crmUserEditForm" onsubmit="saveCrmUserEdit(event)">
+                                <input type="hidden" id="crmEditOriginalUsername">
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;">
+                                    <label style="font-size:12px;font-weight:700;">Username<input id="crmEditUsername" class="form-control" required minlength="3" maxlength="40" pattern="[a-zA-Z0-9_.-]+"></label>
+                                    <label style="font-size:12px;font-weight:700;">New Password <small>(leave blank to keep current)</small><input id="crmEditPassword" type="password" class="form-control" minlength="8" autocomplete="new-password" placeholder="Enter new password"></label>
+                                    <label style="font-size:12px;font-weight:700;">Account Status<select id="crmEditActive" class="form-control"><option value="true">Active</option><option value="false">Inactive</option></select></label>
+                                </div>
+                                <h4 style="font-size:13px;margin:18px 0 8px;">Permissions</h4><div id="crmEditPermissionChoices" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;"></div>
+                                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;"><button type="button" onclick="closeCrmUserEditModal()" style="background:#64748b;color:#fff;border:0;border-radius:8px;padding:9px 15px;">Cancel</button><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-weight:700;">Save Changes</button></div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
                 {% endif %}
 
@@ -3828,15 +3896,17 @@ MAIN_DASHBOARD_HTML = """
             if(kind==='history') applyHistoryFilters(); else if(kind==='trash') applyTrashFilters(); else applyLogsFilters();
         }
         function dateInRange(value,start,end){const raw=String(value||'').trim();let d=/^\\d{4}-\\d{2}-\\d{2}/.test(raw)?raw.slice(0,10):'';if(!d){const m=raw.match(/^(\\d{1,2})\\s+([A-Za-z]{3})\\s+(\\d{4})/);if(m){const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];const month=months.findIndex(x=>x.toLowerCase()===m[2].toLowerCase())+1;if(month)d=`${m[3]}-${String(month).padStart(2,'0')}-${String(Number(m[1])).padStart(2,'0')}`;}}return !!d&&(!start||d>=start)&&(!end||d<=end);}
-        function applyHistoryFilters(){const start=document.getElementById('historyStartDate').value,end=document.getElementById('historyEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const rows=rawHistoryData.filter(x=>!start&&!end||dateInRange(x.date||x.created_date||x.created_at,start,end));renderHistoryRows(rows);document.getElementById('historyFilterSummary').textContent=`Showing ${rows.length} of ${rawHistoryData.length} work history records.`;}
-        function resetHistoryFilters(){['historySingleDate','historyStartDate','historyEndDate'].forEach(id=>document.getElementById(id).value='');applyHistoryFilters();}
+        let historyAccountUsers=[];
+        function populateHistoryUserFilter(){const select=document.getElementById('historyUserFilter');if(!select)return;const current=select.value||'All Users';const byName=new Map();[...historyAccountUsers,...rawHistoryData.map(x=>({username:x.username||'System',role:x.role||'System'}))].forEach(x=>{const name=String(x.username||'').trim();if(name&&!byName.has(name))byName.set(name,x.role||'');});const users=[...byName.keys()].sort((a,b)=>a.localeCompare(b));const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));select.innerHTML='<option value="All Users">All Users</option>'+users.map(u=>`<option value="${esc(u)}">${esc(u)}${byName.get(u)?' ('+esc(byName.get(u))+')':''}</option>`).join('');if(users.includes(current))select.value=current;}
+        function applyHistoryFilters(){const start=document.getElementById('historyStartDate').value,end=document.getElementById('historyEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const user=document.getElementById('historyUserFilter')?.value||'All Users';const rows=rawHistoryData.filter(x=>(user==='All Users'||String(x.username||'System')===user)&&(!start&&!end||dateInRange(x.date||x.created_date||x.created_at,start,end)));renderHistoryRows(rows);document.getElementById('historyFilterSummary').textContent=`Showing ${rows.length} of ${rawHistoryData.length} work history records.`;}
+        function resetHistoryFilters(){['historySingleDate','historyStartDate','historyEndDate'].forEach(id=>document.getElementById(id).value='');const uf=document.getElementById('historyUserFilter');if(uf)uf.value='All Users';applyHistoryFilters();}
         function applyTrashFilters(){const start=document.getElementById('trashStartDate').value,end=document.getElementById('trashEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const rows=rawTrashData.filter(x=>!start&&!end||dateInRange(x.deleted_date||x.deleted_at,start,end));populateTrashTable(rows);}
         function resetTrashFilters(){['trashSingleDate','trashStartDate','trashEndDate'].forEach(id=>document.getElementById(id).value='');applyTrashFilters();}
         function applyLogsFilters(){const start=document.getElementById('logsStartDate').value,end=document.getElementById('logsEndDate').value;if(start&&end&&start>end){alert('Start Date cannot be after End Date.');return;}const role=document.getElementById('logsUserType').value;const rows=rawLogsData.filter(x=>(role==='All Users'||String(x.role||'').toLowerCase()===role.toLowerCase())&&(!start&&!end||[x.login_date,x.logout_date].some(v=>dateInRange(v,start,end))));renderLoginLogRows(rows);}
         function resetLogsFilters(){['logsSingleDate','logsStartDate','logsEndDate'].forEach(id=>document.getElementById(id).value='');document.getElementById('logsUserType').value='All Users';applyLogsFilters();}
         function downloadAllFilteredTrash(){const q=new URLSearchParams();const a=document.getElementById('trashStartDate').value,b=document.getElementById('trashEndDate').value;if(a)q.set('start_date',a);if(b)q.set('end_date',b);window.open('/api/export-filtered-trash-pdf?'+q.toString(),'_blank');}
         function renderLoginLogRows(logs){const tbody=document.getElementById('settingsLogsTbody');tbody.innerHTML='';if(!logs.length){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:#94a3b8;">No matching login activity logs.</td></tr>';return;}logs.forEach(log=>{const badge=log.status==='Active'?'<span class="badge-status badge-closed">Active</span>':(log.status==='Failed'?'<span class="badge-status badge-rejected">Failed</span>':'<span class="badge-status badge-contacted">Logged Out</span>');const cb=userRole==='Admin'?`<td><input type="checkbox" class="logs-checkbox" value="${log.id}"></td>`:'';tbody.innerHTML+=`<tr>${cb}<td>#${log.id}</td><td><strong>${log.username||''}</strong></td><td><span class="badge-status badge-followup">${log.role||'N/A'}</span></td><td><code>${log.ip_address||''}</code></td><td>${log.browser||'Unknown'} / ${log.os||'Unknown'}</td><td><small>${log.location||'Unknown'}</small></td><td>${log.login_time||'N/A'}</td><td>${log.logout_time||'N/A'}</td><td>${badge}</td></tr>`;});}
-        function renderHistoryRows(history){const tbody=document.getElementById('historyTbody');tbody.innerHTML='';if(!history.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#94a3b8;">No matching activity logged.</td></tr>';return;}history.slice().reverse().forEach(item=>{const cb=userRole==='Admin'?`<td><input type="checkbox" class="history-checkbox" value="${item.id}"></td>`:'';tbody.innerHTML+=`<tr>${cb}<td><strong>${item.username||'Admin'}</strong></td><td><span class="badge-status badge-followup">${item.role||'Admin'}</span></td><td><strong style="color:#2563eb;">${item.date||''} ${item.time||''}</strong></td><td><span class="badge-status badge-new">${item.action_type||''}</span></td><td>${item.details||''}</td></tr>`;});}
+        function renderHistoryRows(history){const tbody=document.getElementById('historyTbody');tbody.innerHTML='';if(!history.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:#94a3b8;">No matching activity logged.</td></tr>';return;}const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));history.slice().reverse().forEach(item=>{const cb=userRole==='Admin'?`<td><input type="checkbox" class="history-checkbox" value="${esc(item.id)}"></td>`:'';tbody.innerHTML+=`<tr>${cb}<td><strong>${esc(item.username||'System')}</strong></td><td><span class="badge-status badge-followup">${esc(item.role||'System')}</span></td><td><strong style="color:#2563eb;">${esc(item.date||'')} ${esc(item.time||'')}</strong></td><td><span class="badge-status badge-new">${esc(item.action_type||'')}</span></td><td>${esc(item.details||'')}</td><td><code>${esc(item.ip_address||'—')}</code></td></tr>`;});}
 
         const crmPermissionLabels = {
             view_dashboard:"View Dashboard", call_leads:"Call Leads / Contact Customers", view_leads:"View Leads",
@@ -3894,14 +3964,31 @@ MAIN_DASHBOARD_HTML = """
                 if(!(data.users||[]).length)body.innerHTML='<tr><td colspan="4">No additional users created.</td></tr>';
             }catch(err){body.innerHTML=`<tr><td colspan="4">${String(err.message||err)}</td></tr>`;}
         }
-        async function editCrmUserPermissions(user){
+        function editCrmUserPermissions(user){
+            document.getElementById('crmEditOriginalUsername').value=user.username;
+            document.getElementById('crmEditUsername').value=user.username;
+            document.getElementById('crmEditPassword').value='';
+            document.getElementById('crmEditActive').value=user.active?'true':'false';
             const selected=new Set(user.permissions||[]);
-            const lines=Object.entries(crmPermissionLabels).map(([key,label],i)=>`${i+1}. ${label}${crmRequiredPermissions.includes(key)?' [Required]':''}`).join('\\n');
-            const answer=prompt('Enter comma-separated permission keys to grant. Required Call Leads and Update Leads are always retained.\\n\\nAvailable keys:\\n'+Object.keys(crmPermissionLabels).join(', '),[...selected].join(','));
-            if(answer===null)return;
-            const chosen=answer.split(',').map(x=>x.trim()).filter(Boolean);
-            if(chosen.some(x=>!crmPermissionLabels[x])){alert('Unknown permission key entered.');return;}
-            await updateCrmUser(user.username,{permissions:chosen});
+            const holder=document.getElementById('crmEditPermissionChoices');
+            holder.innerHTML=Object.entries(crmPermissionLabels).map(([key,label])=>{const required=crmRequiredPermissions.includes(key);return `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#334155;"><input type="checkbox" class="crm-edit-permission" value="${key}" ${required||selected.has(key)?'checked':''} ${required?'disabled':''}> <span>${label}${required?' (Required)':''}</span></label>`;}).join('');
+            document.getElementById('crmUserEditModal').style.display='flex';
+        }
+        function closeCrmUserEditModal(){const modal=document.getElementById('crmUserEditModal');if(modal)modal.style.display='none';}
+        async function saveCrmUserEdit(e){
+            e.preventDefault();
+            const original=document.getElementById('crmEditOriginalUsername').value;
+            const newUsername=document.getElementById('crmEditUsername').value.trim().toLowerCase();
+            const password=document.getElementById('crmEditPassword').value;
+            if(!/^[a-z0-9_.-]{3,40}$/.test(newUsername)){alert('Username must be 3-40 characters and use letters, numbers, dots, underscores or hyphens.');return;}
+            if(password&&password.length<8){alert('New password must contain at least 8 characters.');return;}
+            const permissions=[...document.querySelectorAll('.crm-edit-permission:checked')].map(x=>x.value);
+            const payload={new_username:newUsername,active:document.getElementById('crmEditActive').value==='true',permissions};
+            if(password)payload.password=password;
+            const res=await fetch('/api/users/'+encodeURIComponent(original),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            const data=await res.json().catch(()=>({error:'Unable to update user.'}));
+            alert(data.message||data.error||'Request completed.');
+            if(res.ok){closeCrmUserEditModal();fetchCrmUsers();}
         }
         async function updateCrmUser(username,payload){
             const res=await fetch('/api/users/'+encodeURIComponent(username),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -3933,8 +4020,9 @@ MAIN_DASHBOARD_HTML = """
         }
 
         async function fetchWorkHistory() {
-            const res=await fetch('/api/get-history');
-            if(res.ok){rawHistoryData=await res.json();applyHistoryFilters();}
+            const [res,userRes]=await Promise.all([fetch('/api/get-history'),fetch('/api/work-history-users')]);
+            if(userRes.ok)historyAccountUsers=await userRes.json();
+            if(res.ok){rawHistoryData=await res.json();populateHistoryUserFilter();applyHistoryFilters();}
         }
 
 
@@ -4386,11 +4474,12 @@ MAIN_DASHBOARD_HTML = """
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({trash_ids: selectedIds})
                 });
+                const result=await res.json().catch(()=>({message:'Unable to delete selected Trash Bin records.'}));
                 if(res.ok) {
-                    alert('Selected records permanently deleted.');
-                    fetchLeadsData(); fetchTrashData();
+                    alert(result.message||'Selected records permanently deleted.');
+                    fetchLeadsData(); fetchStudentsData(); fetchColleges(); fetchWorkHistory(); fetchSettingsLogs(); fetchTrashData();
                 } else {
-                    alert('Unauthorized.');
+                    alert(result.message||result.error||'Unable to permanently delete selected records.');
                 }
             }
         }
@@ -4440,7 +4529,7 @@ MAIN_DASHBOARD_HTML = """
         }
 
         async function deleteSelectedHistory() {
-            const selectedIds = Array.from(document.querySelectorAll('.history-checkbox:checked')).map(cb => parseInt(cb.value));
+            const selectedIds = Array.from(document.querySelectorAll('.history-checkbox:checked')).map(cb => String(cb.value));
             if(selectedIds.length === 0) return alert('Select at least one history entry.');
             if(confirm(`Delete ${selectedIds.length} history records?`)) {
                 const res = await fetch('/api/delete-selected-history', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({history_ids: selectedIds}) });
@@ -4700,31 +4789,13 @@ MAIN_DASHBOARD_HTML = """
         function closeDocModal() { document.getElementById('docModal').style.display = 'none'; }
 
         function renderLeadStructuredFields(lead) {
-            const host=document.getElementById('leadStructuredFields'); if(!host) return;
-            const record={...(lead||{})};
-            const form=(lead&&lead.form_data&&typeof lead.form_data==='object')?lead.form_data:{};
-            Object.entries(form).forEach(([k,v])=>{if(record[k]===undefined || record[k]==='') record[k]=v;});
-            const known=new Set(['id','student_name','father_name','contact_number','alternate_number','student_email',
-                'current_education_level','qualification','percentage_10th','percentage_12th','course_details','course_interest',
-                'budget','annual_budget','hostel_preference','hostel_required','admission_preference','assigned_college','state','city',
-                'status','score','notes','is_deleted','created_date','created_at','created_timestamp','created_by','created_by_id',
-                'created_by_role','updated_by','updated_by_id','updated_at','attachments','form_data','id_document',
-                'class_10_doc','class_12_doc','aadhar_doc','edu_scorecard','passport_photo']);
-            const entries=Object.entries(record).filter(([k,v])=>!known.has(k)&&v!==null&&typeof v!=='undefined'&&
-                !/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(k));
-            const groups=[
-                {name:'Additional Registration Information',test:k=>true}
-            ];
-            host.innerHTML=groups.map(group=>{
-                const fields=entries.filter(([k])=>group.test(k));
-                if(!fields.length)return '';
-                return `<section style="border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:12px;background:#f8fafc;">
-                    <h4 style="margin:0 0 10px;color:#2563eb;font-size:13px;">${group.name}</h4>
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;">
-                    ${fields.map(([k,v])=>`<label style="font-size:11px;font-weight:700;color:#475569;">${k.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase())}
-                        <input class="form-control lead-dynamic-field" data-field="${encodeURIComponent(k)}" value="${String(typeof v==='object'?JSON.stringify(v):v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"></label>`).join('')}
-                    </div></section>`;
-            }).join('');
+            const host=document.getElementById('leadStructuredFields'); if(!host)return;
+            const fixed=new Set(['id','student_name','father_name','contact_number','alternate_number','student_email','current_education_level','qualification','percentage_10th','percentage_12th','course_details','course_interest','budget','annual_budget','hostel_preference','hostel_required','admission_preference','assigned_college','state','city','id_document','class_10_doc','class_12_doc','aadhar_doc','edu_scorecard','passport_photo','attachments','form_data','status','score','notes','is_deleted','created_date','created_at','created_timestamp','created_by','created_by_id','created_by_role','updated_by','updated_by_id','updated_at']);
+            const docKey=/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i;
+            const values=new Map();
+            const flatten=(obj,prefix='')=>{if(!obj||typeof obj!=='object'||Array.isArray(obj))return;Object.entries(obj).forEach(([k,v])=>{const key=prefix?`${prefix}.${k}`:k;if(v&&typeof v==='object'&&!Array.isArray(v))flatten(v,key);else if(!fixed.has(k)&&!docKey.test(k)&&v!==null&&typeof v!=='undefined')values.set(key,v);});};
+            flatten(lead||{});flatten(lead&&lead.form_data||{});
+            host.innerHTML=values.size?`<section style="border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:12px;background:#f8fafc;"><h4 style="margin:0 0 10px;color:#2563eb;font-size:13px;">All Additional Submitted Registration Information</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;">${[...values.entries()].map(([k,v])=>`<label style="font-size:11px;font-weight:700;color:#475569;">${k.replace(/_/g,' ').replace(/[.]/g,' / ').replace(/(^|[ /])([a-z])/g,(_,a,b)=>a+b.toUpperCase())}<input class="form-control lead-dynamic-field" data-field="${encodeURIComponent(k)}" value="${String(typeof v==='object'?JSON.stringify(v):v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"></label>`).join('')}</div></section>`:'<p style="font-size:12px;color:#64748b;">No additional registration fields were submitted.</p>';
         }
         function renderLeadEditDocuments(lead) {
             const host=document.getElementById('leadEditDocumentControls'); if(!host)return;
@@ -4757,6 +4828,7 @@ MAIN_DASHBOARD_HTML = """
                     <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     <button type="button" onclick="previewDocument('${url}','${String(d.title).replace(/'/g,"&#39;")}')" style="background:#2563eb;color:#fff;border:0;padding:6px 9px;border-radius:6px;">View</button>
                     <a href="${url}?download=1" download="${String(d.original_name||d.title).replace(/"/g,'&quot;')}" style="background:#16a34a;color:#fff;padding:6px 9px;border-radius:6px;text-decoration:none;">Download</a>
+                    <label style="background:#7c3aed;color:#fff;padding:6px 9px;border-radius:6px;cursor:pointer;">Replace<input type="file" id="replace_${token}" style="display:none" onchange="replaceLeadDocument('${token}')"></label>
                     <button type="button" onclick="deleteLeadDocument('${token}')" style="background:#dc2626;color:#fff;border:0;padding:6px 9px;border-radius:6px;">Delete</button></div></div>`;
             }).join('');
         }
@@ -4774,6 +4846,18 @@ MAIN_DASHBOARD_HTML = """
                 window.currentEditingLeadRecord=record;renderLeadEditDocuments(record);fetchLeadsData();
             } else alert(data.error||'Unable to upload document.');
         }
+        async function replaceLeadDocument(token) {
+            const doc=(window.currentLeadDocumentFields||{})[token];
+            const input=document.getElementById('replace_'+token);
+            if(!doc||!input||!input.files.length)return;
+            const fd=new FormData();fd.append('action','replace');fd.append('field',doc.field);fd.append('stored_name',doc.path);fd.append('file',input.files[0]);
+            const leadId=document.getElementById('edit_lead_id').value;
+            const res=await fetch(`/api/lead-document/${leadId}/${encodeURIComponent(doc.field)}`,{method:'POST',body:fd});
+            const data=await res.json().catch(()=>({error:'Unable to replace document.'}));
+            if(res.ok){alert(data.message||'Document replaced.');const record=window.currentEditingLeadRecord||{};if(record[doc.field]===doc.path)record[doc.field]=data.document.stored_name;if(record.form_data&&record.form_data[doc.field]===doc.path)record.form_data[doc.field]=data.document.stored_name;record.attachments=(record.attachments||[]).filter(a=>!a||a.stored_name!==doc.path);record.attachments.push(data.document);window.currentEditingLeadRecord=record;renderLeadEditDocuments(record);fetchLeadsData();}
+            else alert(data.error||'Unable to replace document.');
+        }
+
         async function deleteLeadDocument(token) {
             if(!confirm('Move this individual document to Trash Bin?'))return;
             const leadId=document.getElementById('edit_lead_id').value;
@@ -4863,7 +4947,7 @@ MAIN_DASHBOARD_HTML = """
             document.querySelectorAll('#leadStructuredFields .lead-dynamic-field').forEach(input=>{
                 const key=decodeURIComponent(input.dataset.field||'');let value=input.value;
                 if((value.startsWith('[')&&value.endsWith(']'))||(value.startsWith('{')&&value.endsWith('}'))){try{value=JSON.parse(value);}catch(e){}}
-                fullLead[key]=value;fullLead.form_data[key]=value;
+                if(key.includes('.')){const parts=key.split('.');let target=fullLead.form_data;for(let i=0;i<parts.length-1;i++){if(!target[parts[i]]||typeof target[parts[i]]!=='object'||Array.isArray(target[parts[i]]))target[parts[i]]={};target=target[parts[i]];}target[parts[parts.length-1]]=value;}else{fullLead[key]=value;fullLead.form_data[key]=value;}
             });
             formData.append('lead_data_json',JSON.stringify(fullLead));
 
