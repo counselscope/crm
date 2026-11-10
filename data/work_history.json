@@ -654,5 +654,22 @@
         "action_type": "Module Access",
         "details": "GET /download-doc/student_documents/priti/doc_1794328873_767344bd_logo.png returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "091ce0bd1f434fb1bdeb5e54c32bbe86",
+        "activity_id": "091ce0bd1f434fb1bdeb5e54c32bbe86",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:41:35 PM",
+        "timestamp": 1794328895.093104,
+        "ip_address": "106.192.53.6",
+        "module": "download_document",
+        "action": "Access",
+        "action_type": "Module Access",
+        "details": "GET /download-doc/student_documents/priti/doc_1794328876_387ff4a9_logo.png returned HTTP 200.",
+        "related_record_id": null
     }
 ]
