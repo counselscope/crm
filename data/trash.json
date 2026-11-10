@@ -1017,5 +1017,31 @@
         "deleted_date": "2026-11-10",
         "deleted_at": "10 Nov 2026, 05:30 PM",
         "deleted_timestamp": 1794331811.502323
+    },
+    {
+        "trash_id": "f60a6b7ac29c4095bb69b273dba7c25f",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "10146819ba3440639169cb520d3952c0",
+        "record": {
+            "id": "10146819ba3440639169cb520d3952c0",
+            "activity_id": "10146819ba3440639169cb520d3952c0",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:31:33 PM",
+            "timestamp": 1794328293.348904,
+            "ip_address": "106.192.53.6",
+            "module": "Moved",
+            "action": "Moved to Trash",
+            "action_type": "Moved to Trash",
+            "details": "Moved lead #1 (Shivam ) to trash",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-10",
+        "deleted_at": "10 Nov 2026, 05:30 PM",
+        "deleted_timestamp": 1794331812.840795
     }
 ]
