@@ -518,5 +518,22 @@
         "action_type": "Module Access",
         "details": "GET /dashboard returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "b312bc61ea4d4be0a7dbd17ae7dd6b87",
+        "activity_id": "b312bc61ea4d4be0a7dbd17ae7dd6b87",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:39:12 PM",
+        "timestamp": 1794328752.578369,
+        "ip_address": "106.192.53.6",
+        "module": "user_management_list",
+        "action": "Access",
+        "action_type": "Module Access",
+        "details": "GET /api/users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
