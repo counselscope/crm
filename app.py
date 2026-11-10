@@ -75,6 +75,7 @@ PERMISSION_ENDPOINTS = {
     "update_student": ("edit_students",),
     "delete_selected_students": ("delete_students",),
     "manage_student_document": ("upload_student_documents", "delete_student_documents"),
+    "manage_lead_document": ("upload_student_documents", "delete_student_documents"),
     "get_colleges": ("view_colleges",),
     "add_college": ("add_colleges",),
     "update_college": ("edit_colleges",),
@@ -170,7 +171,7 @@ DATA_FILE = os.path.join(DATA_DIR, "leads.json")
 COLLEGES_FILE = os.path.join(DATA_DIR, "colleges.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "work_history.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
-STUDENTS_FILE = os.path.join(DATA_DIR, "students.json")
+STUDENTS_FILE = os.path.join(STUDENTS_DIR, "students.json")
 TRASH_FILE = os.path.join(DATA_DIR, "trash.json")
 
 # GitHub API Configuration from Environment Variables
@@ -286,7 +287,7 @@ def migrate_legacy_data_once():
     initialize_data_directories()
     marker = os.path.join(DATA_DIR, ".legacy_migration_v1.json")
     legacy_names = ("leads.json", "colleges.json", "work_history.json",
-                    "users.json", "students.json", "trash.json", "login_logs.json")
+                    "users.json", "trash.json", "login_logs.json")
     report = {"version": 1, "migrated": [], "skipped": []}
     for name in legacy_names:
         source, destination = os.path.join(BASE_DIR, name), os.path.join(DATA_DIR, name)
@@ -296,6 +297,17 @@ def migrate_legacy_data_once():
                 report["migrated"].append(name)
             else:
                 report["skipped"].append(name)
+    # Student records now live inside data/students/. Copy legacy files without
+    # overwriting either the new destination or the original backup.
+    student_sources = (os.path.join(DATA_DIR, "students.json"),
+                       os.path.join(BASE_DIR, "students.json"))
+    for source in student_sources:
+        if os.path.isfile(source) and os.path.abspath(source) != os.path.abspath(STUDENTS_FILE):
+            if not os.path.exists(STUDENTS_FILE):
+                shutil.copy2(source, STUDENTS_FILE)
+                report["migrated"].append(os.path.relpath(source, BASE_DIR))
+            else:
+                report["skipped"].append(os.path.relpath(source, BASE_DIR))
     for old_dir, new_dir in ((os.path.join(BASE_DIR, "student_documents"), STUDENT_DOCUMENTS_DIR),
                              (os.path.join(BASE_DIR, "college_uploads"), COLLEGE_DOCUMENTS_DIR)):
         if os.path.isdir(old_dir):
@@ -403,6 +415,10 @@ def _restore_trash_item(item):
                 field=extra.get("field") or "id_document"
                 parent[field]=record.get("stored_name")
                 if isinstance(parent.get("form_data"),dict): parent["form_data"][field]=record.get("stored_name")
+                if record.get("attachment"):
+                    arr=parent.setdefault("attachments",[])
+                    if not any(isinstance(x,dict) and x.get("stored_name")==record["attachment"].get("stored_name") for x in arr):
+                        arr.append(record["attachment"])
                 save_data(DATA_FILE,leads)
             else:
                 trash_records=load_data(TRASH_FILE)
@@ -413,6 +429,10 @@ def _restore_trash_item(item):
                 field=extra.get("field") or "id_document"
                 archived["record"][field]=record.get("stored_name")
                 if isinstance(archived["record"].get("form_data"),dict): archived["record"]["form_data"][field]=record.get("stored_name")
+                if record.get("attachment"):
+                    arr=archived["record"].setdefault("attachments",[])
+                    if not any(isinstance(x,dict) and x.get("stored_name")==record["attachment"].get("stored_name") for x in arr):
+                        arr.append(record["attachment"])
                 save_data(TRASH_FILE,trash_records)
         else:
             students=load_data(STUDENTS_FILE)
@@ -653,7 +673,8 @@ def commit_json_to_github(filepath):
             file_content = f.read()
         encoded_content = base64.b64encode(file_content).decode('utf-8')
         
-        repo_filepath = "data/" + os.path.basename(filepath)
+        repo_filepath = ("data/students/students.json" if os.path.abspath(filepath) == os.path.abspath(STUDENTS_FILE)
+                         else "data/" + os.path.basename(filepath))
         url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_filepath}"
         headers = {
             "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -970,6 +991,27 @@ def update_lead():
         if not target_lead:
             return jsonify({"status": "error", "message": "Lead not found"}), 404
 
+        # Merge the complete submitted registration record, preserving identifiers,
+        # workflow metadata and existing document references unless explicitly changed.
+        raw_lead_record = form_data.get("lead_data_json")
+        if raw_lead_record:
+            submitted = json.loads(raw_lead_record)
+            if not isinstance(submitted, dict):
+                raise ValueError("Lead data must be a JSON object.")
+            protected = {"id", "attachments", "is_deleted", "created_date", "created_at",
+                         "created_timestamp", "created_by", "created_by_id", "created_by_role"}
+            document_fields = {"id_document", "class_10_doc", "class_12_doc", "aadhar_doc",
+                               "edu_scorecard", "passport_photo"}
+            for key, value in submitted.items():
+                if key not in protected and key not in document_fields and key != "form_data":
+                    target_lead[key] = value
+            if isinstance(submitted.get("form_data"), dict):
+                existing_form = target_lead.get("form_data")
+                if not isinstance(existing_form, dict):
+                    existing_form = {}
+                existing_form.update(submitted["form_data"])
+                target_lead["form_data"] = existing_form
+
         if session.get("role") == "New User":
             changed = []
             if "status" in form_data:
@@ -1006,8 +1048,10 @@ def update_lead():
             target_lead['course_interest'] = form_data.get('course_details', '')
         else:
             target_lead['course_interest'] = target_lead.get('course_interest') or target_lead.get('course_details', '')
+        if not isinstance(target_lead.get('form_data'), dict):
+            target_lead['form_data'] = {}
         if isinstance(target_lead.get('form_data'), dict):
-            target_lead['form_data'].update(form_data)
+            target_lead['form_data'].update({k:v for k,v in form_data.items() if k != "lead_data_json"})
             target_lead['form_data']['course_interest'] = target_lead['course_interest']
             target_lead['form_data']['course_details'] = target_lead['course_details']
             if 'Which course are you interested in?' in target_lead['form_data']:
@@ -1023,9 +1067,14 @@ def update_lead():
         if delete_doc:
             old_doc=target_lead.get('id_document')
             if old_doc:
-                _archive_record("student_document",{"stored_name":old_doc,"original_name":os.path.basename(str(old_doc))},
+                old_attachment=next((a for a in target_lead.get("attachments",[]) if isinstance(a,dict)
+                                     and a.get("stored_name")==old_doc),None)
+                _archive_record("student_document",{"stored_name":old_doc,"attachment":old_attachment,
+                                "original_name":(old_attachment or {}).get("original_name") or os.path.basename(str(old_doc))},
                                 f"lead:{lead_id}:id_document:{uuid.uuid4().hex}","Student Documents",
                                 {"parent_type":"lead","lead_id":lead_id,"field":"id_document"})
+                target_lead["attachments"]=[a for a in target_lead.get("attachments",[]) if not
+                                            (isinstance(a,dict) and a.get("stored_name")==old_doc)]
             target_lead['id_document'] = None
             if isinstance(target_lead.get('form_data'),dict): target_lead['form_data']['id_document']=None
 
@@ -1035,6 +1084,8 @@ def update_lead():
                 doc_path = upload_file_to_github(file, target_lead.get('student_name', 'Student'), file.filename)
                 if doc_path:
                     target_lead['id_document'] = doc_path
+                    if isinstance(target_lead.get('form_data'), dict):
+                        target_lead['form_data']['id_document'] = doc_path
 
         target_lead["updated_by"] = session.get("username")
         target_lead["updated_by_id"] = session.get("user_id")
@@ -1232,13 +1283,13 @@ def convert_to_student():
         
     students = load_data(STUDENTS_FILE)
     for s in students:
-        if s.get('original_lead_id') == lead_id:
+        if str(s.get('original_lead_id')) == str(lead_id):
             return jsonify({"status": "success", "message": "Lead is already converted to student."})
             
     new_student = _enrich_registration_record(dict(target_lead))
     new_student['course_interest'] = new_student.get('course_interest') or new_student.get('course_details') or ''
     new_student['course_details'] = new_student.get('course_details') or new_student.get('course_interest') or ''
-    new_student['student_id'] = len(students) + 1
+    new_student['student_id'] = max([int(s.get('student_id', 0)) for s in students if str(s.get('student_id', '')).isdigit()] or [0]) + 1
     new_student['created_by'] = session.get("username")
     new_student['created_by_id'] = session.get("user_id")
     new_student['created_by_role'] = session.get("role")
@@ -2061,6 +2112,21 @@ def download_document(filename):
     safe_path = str(filename or '').lstrip('/')
     if '..' in safe_path.split('/'):
         return jsonify({"error": "Invalid document path."}), 400
+    original_download_name = os.path.basename(safe_path)
+    # Recover the user-supplied filename from the owning record's attachment metadata.
+    try:
+        for record_file in (DATA_FILE, STUDENTS_FILE):
+            for record in load_data(record_file):
+                for attachment in record.get("attachments", []) if isinstance(record.get("attachments"), list) else []:
+                    if isinstance(attachment, dict) and attachment.get("stored_name") == safe_path and attachment.get("original_name"):
+                        original_download_name = secure_filename(attachment.get("original_name")) or original_download_name
+                        raise StopIteration
+    except StopIteration:
+        pass
+    except Exception:
+        app.logger.warning("Unable to resolve original document filename for %s.", safe_path)
+    if not original_download_name:
+        original_download_name = os.path.basename(safe_path)
     local_candidates = []
     if safe_path.startswith("student_documents/"):
         local_candidates.append(os.path.join(STUDENT_DOCUMENTS_DIR, safe_path[len("student_documents/"):]))
@@ -2072,7 +2138,7 @@ def download_document(filename):
         if os.path.isfile(local_path):
             return send_file(local_path, mimetype=mimetypes.guess_type(local_path)[0] or "application/octet-stream",
                              as_attachment=request.args.get('download') == '1',
-                             download_name=os.path.basename(local_path), conditional=True)
+                             download_name=original_download_name, conditional=True)
     if not GITHUB_REPO:
         return jsonify({"error": "Document not found in centralized storage and GitHub is not configured."}), 404
     raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
@@ -2083,7 +2149,7 @@ def download_document(filename):
             return jsonify({"error": f"Document not found in GitHub (HTTP {upstream.status_code})."}), 404
         content = upstream.content
         mimetype = upstream.headers.get('Content-Type') or mimetypes.guess_type(safe_path)[0] or 'application/octet-stream'
-        return send_file(io.BytesIO(content), mimetype=mimetype, as_attachment=request.args.get('download') == '1', download_name=os.path.basename(safe_path))
+        return send_file(io.BytesIO(content), mimetype=mimetype, as_attachment=request.args.get('download') == '1', download_name=original_download_name)
     except requests.RequestException as e:
         app.logger.exception('GitHub document download failed')
         return jsonify({"error": f"Unable to retrieve document from GitHub: {e}"}), 502
@@ -2265,6 +2331,70 @@ def update_college(college_id):
         return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/lead-document/<int:lead_id>/<path:field>', methods=['POST'])
+def manage_lead_document(lead_id, field):
+    if not session.get('logged_in'):
+        return jsonify({"error":"Unauthorized"}),401
+    if session.get("role") == "Client":
+        return jsonify({"error":"Access denied."}),403
+    payload=request.get_json(silent=True) or {}
+    action=request.form.get("action") or payload.get("action")
+    if session.get("role") == "New User":
+        required = "delete_student_documents" if action == "delete" else "upload_student_documents"
+        if not has_permission(required):
+            return jsonify({"error":"Permission denied for this document operation."}),403
+    leads=load_data(DATA_FILE)
+    lead=next((x for x in leads if str(x.get("id"))==str(lead_id)),None)
+    if not lead:
+        return jsonify({"error":"Lead not found"}),404
+    field=request.form.get("field") or payload.get("field") or field
+    old_path=request.form.get("stored_name") or payload.get("stored_name")
+    if action == "upload":
+        upload=request.files.get("file")
+        if not upload or not upload.filename:
+            return jsonify({"error":"Select a document to upload."}),400
+        new_path=upload_file_to_github(upload,lead.get("student_name","Student"),upload.filename)
+        if not new_path:
+            return jsonify({"error":"Unable to upload document."}),502
+        new_field="additional_document_"+uuid.uuid4().hex[:10]
+        lead[new_field]=new_path
+        if not isinstance(lead.get("form_data"),dict): lead["form_data"]={}
+        lead["form_data"][new_field]=new_path
+        lead.setdefault("attachments",[]).append({
+            "field":new_field,"stored_name":new_path,
+            "original_name":secure_filename(upload.filename),
+            "extension":os.path.splitext(upload.filename)[1].lower()
+        })
+        save_data(DATA_FILE,leads)
+        log_activity("Lead Document Uploaded",f"Uploaded an additional document for lead #{lead_id}.")
+        new_document={"field":new_field,"stored_name":new_path,
+                      "original_name":secure_filename(upload.filename),
+                      "extension":os.path.splitext(upload.filename)[1].lower()}
+        # The attachment has already been persisted above; return its metadata for the editor refresh.
+        return jsonify({"status":"success","message":"Document uploaded successfully.","document":new_document})
+    if action == "delete":
+        if not old_path:
+            return jsonify({"error":"Selected document was not found."}),404
+        top_level=lead.get(field)==old_path
+        form_ref=isinstance(lead.get("form_data"),dict) and lead["form_data"].get(field)==old_path
+        attachment=next((a for a in lead.get("attachments",[]) if isinstance(a,dict) and
+                         a.get("stored_name")==old_path),None)
+        if not (top_level or form_ref or attachment):
+            return jsonify({"error":"Selected document is not associated with this lead."}),404
+        _archive_record("student_document",{"stored_name":old_path,"attachment":attachment,
+            "original_name":(attachment or {}).get("original_name") or os.path.basename(str(old_path))},
+            f"lead:{lead_id}:{field}:{uuid.uuid4().hex}","Student Documents",
+            {"parent_type":"lead","lead_id":lead_id,"field":field})
+        if top_level: lead[field]=None
+        if form_ref: lead["form_data"][field]=None
+        lead["attachments"]=[a for a in lead.get("attachments",[]) if not
+                             (isinstance(a,dict) and a.get("stored_name")==old_path)]
+        save_data(DATA_FILE,leads)
+        log_activity("Lead Document Deleted",f"Moved {field} document for lead #{lead_id} to Trash Bin.")
+        return jsonify({"status":"success","message":"Document moved to Trash Bin."})
+    return jsonify({"error":"Unsupported document action."}),400
 
 
 @app.route('/api/student-document/<int:student_id>/<path:field>', methods=['POST'])
@@ -3366,6 +3496,14 @@ MAIN_DASHBOARD_HTML = """
                     </div>
                 </div>
 
+                <div id="leadStructuredFields" style="margin-top:14px;"></div>
+                <div style="margin-top:15px;border:1px solid #e2e8f0;border-radius:9px;padding:12px;">
+                    <h4 style="margin:0 0 8px;color:#2563eb;font-size:13px;">All Submitted Student Documents</h4>
+                    <div id="leadEditDocumentControls" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;"></div>
+                    <label style="font-size:12px;font-weight:600;">Upload Additional Document</label>
+                    <input type="file" id="leadNewDocumentFile" style="width:100%;margin-top:5px;">
+                    <button type="button" onclick="uploadLeadDocument()" style="margin-top:8px;background:#2563eb;color:#fff;border:0;padding:7px 10px;border-radius:6px;cursor:pointer;">Upload Document</button>
+                </div>
                 <div style="background: #f8fafc; padding: 14px; border-radius: 10px; border: 1px solid #cbd5e1; margin-top: 15px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <label style="font-size: 13px; font-weight: 700; color: #1e293b; margin:0;"><i class="fa-solid fa-building-columns" style="color:#2563eb; margin-right:5px;"></i> College Assignment</label>
@@ -4337,10 +4475,11 @@ MAIN_DASHBOARD_HTML = """
         function renderStudentDocumentControls(student, hostId='studentDocumentControls') {
             const host=document.getElementById(hostId);
             if(!host) return;
-            const docs=[]; const seen=new Set();
+            const docs=[]; const seen=new Set(); const metadata=new Map();
+            (student.attachments||[]).forEach(a=>{if(a&&a.stored_name)metadata.set(a.stored_name,a);});
             Object.entries(student||{}).forEach(([field,value])=>{
                 if(typeof value==='string' && value && /(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(field)){
-                    if(!seen.has(value)){docs.push({field,path:value,title:field.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase())});seen.add(value);}
+                    if(!seen.has(value)){const meta=metadata.get(value)||{};docs.push({field,path:value,title:meta.original_name||field.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase()),original_name:meta.original_name||''});seen.add(value);}
                 }
             });
             (student.attachments||[]).forEach((a,i)=>{
@@ -4362,7 +4501,7 @@ MAIN_DASHBOARD_HTML = """
                     <div style="font-weight:700;font-size:12px;margin-bottom:8px;">${d.title}</div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;">
                         <button type="button" onclick="previewDocument('${path}','${d.title.replace(/'/g,"&#39;")}')" style="background:#2563eb;color:#fff;border:0;padding:6px 9px;border-radius:6px;cursor:pointer;">View</button>
-                        <a href="${path}?download=1" style="background:#16a34a;color:#fff;padding:6px 9px;border-radius:6px;text-decoration:none;">Download</a>${controls}
+                        <a href="${path}?download=1" download="${String(d.original_name||d.title).replace(/"/g,'&quot;')}" style="background:#16a34a;color:#fff;padding:6px 9px;border-radius:6px;text-decoration:none;">Download</a>${controls}
                     </div></div>`;
             }).join('');
         }
@@ -4439,7 +4578,101 @@ MAIN_DASHBOARD_HTML = """
 
         function closeDocModal() { document.getElementById('docModal').style.display = 'none'; }
 
+        function renderLeadStructuredFields(lead) {
+            const host=document.getElementById('leadStructuredFields'); if(!host) return;
+            const record={...(lead||{})};
+            const form=(lead&&lead.form_data&&typeof lead.form_data==='object')?lead.form_data:{};
+            Object.entries(form).forEach(([k,v])=>{if(record[k]===undefined || record[k]==='') record[k]=v;});
+            const known=new Set(['id','student_name','father_name','contact_number','alternate_number','student_email',
+                'current_education_level','qualification','percentage_10th','percentage_12th','course_details','course_interest',
+                'budget','annual_budget','hostel_preference','hostel_required','admission_preference','assigned_college','state','city',
+                'status','score','notes','is_deleted','created_date','created_at','created_timestamp','created_by','created_by_id',
+                'created_by_role','updated_by','updated_by_id','updated_at','attachments','form_data','id_document',
+                'class_10_doc','class_12_doc','aadhar_doc','edu_scorecard','passport_photo']);
+            const entries=Object.entries(record).filter(([k,v])=>!known.has(k)&&v!==null&&typeof v!=='undefined'&&
+                !/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(k));
+            const groups=[
+                {name:'Additional Registration Information',test:k=>true}
+            ];
+            host.innerHTML=groups.map(group=>{
+                const fields=entries.filter(([k])=>group.test(k));
+                if(!fields.length)return '';
+                return `<section style="border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:12px;background:#f8fafc;">
+                    <h4 style="margin:0 0 10px;color:#2563eb;font-size:13px;">${group.name}</h4>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;">
+                    ${fields.map(([k,v])=>`<label style="font-size:11px;font-weight:700;color:#475569;">${k.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase())}
+                        <input class="form-control lead-dynamic-field" data-field="${encodeURIComponent(k)}" value="${String(typeof v==='object'?JSON.stringify(v):v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"></label>`).join('')}
+                    </div></section>`;
+            }).join('');
+        }
+        function renderLeadEditDocuments(lead) {
+            const host=document.getElementById('leadEditDocumentControls'); if(!host)return;
+            const docs=[],seen=new Set(),metadata=new Map();
+            (lead.attachments||[]).forEach(a=>{if(a&&a.stored_name)metadata.set(a.stored_name,a);});
+            Object.entries(lead||{}).forEach(([field,value])=>{
+                if(typeof value==='string'&&value&&/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(field)&&!seen.has(value)){
+                    const meta=metadata.get(value)||{};docs.push({field,path:value,title:meta.original_name||field.replace(/_/g,' '),original_name:meta.original_name||''});seen.add(value);
+                }
+            });
+            const form=lead&&lead.form_data&&typeof lead.form_data==='object'?lead.form_data:{};
+            Object.entries(form).forEach(([field,value])=>{
+                if(typeof value==='string'&&value&&/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(field)&&!seen.has(value)){
+                    docs.push({field,path:value,title:field.replace(/_/g,' ')});seen.add(value);
+                }
+            });
+            (lead.attachments||[]).forEach((a,i)=>{
+                if(a&&typeof a==='object'&&a.stored_name&&!seen.has(a.stored_name)){
+                    docs.push({field:a.field||`attachment_${i}`,path:a.stored_name,title:a.original_name||`Attachment ${i+1}`});seen.add(a.stored_name);
+                }
+            });
+            window.currentLeadDocumentFields={};
+            if(!docs.length){host.innerHTML='<span style="color:#64748b;font-size:12px;">No documents uploaded.</span>';return;}
+            host.innerHTML=docs.map((d,i)=>{
+                const token='leadDoc_'+i;
+                window.currentLeadDocumentFields[token]=d;
+                const url='/download-doc/'+encodeURIComponent(d.path).replace(/%2F/g,'/');
+                return `<div style="border:1px solid #dbeafe;background:#fff;border-radius:8px;padding:10px;min-width:210px;">
+                    <div style="font-weight:700;font-size:12px;margin-bottom:8px;">${d.title}</div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="button" onclick="previewDocument('${url}','${String(d.title).replace(/'/g,"&#39;")}')" style="background:#2563eb;color:#fff;border:0;padding:6px 9px;border-radius:6px;">View</button>
+                    <a href="${url}?download=1" download="${String(d.original_name||d.title).replace(/"/g,'&quot;')}" style="background:#16a34a;color:#fff;padding:6px 9px;border-radius:6px;text-decoration:none;">Download</a>
+                    <button type="button" onclick="deleteLeadDocument('${token}')" style="background:#dc2626;color:#fff;border:0;padding:6px 9px;border-radius:6px;">Delete</button></div></div>`;
+            }).join('');
+        }
+        async function uploadLeadDocument() {
+            const leadId=document.getElementById('edit_lead_id').value;
+            const input=document.getElementById('leadNewDocumentFile');
+            if(!input||!input.files.length){alert('Please select a document first.');return;}
+            const fd=new FormData();fd.append('action','upload');fd.append('file',input.files[0]);
+            const res=await fetch(`/api/lead-document/${leadId}/additional_document`,{method:'POST',body:fd});
+            const data=await res.json();
+            if(res.ok){
+                alert(data.message||'Document uploaded.');input.value='';
+                const record=window.currentEditingLeadRecord||{};
+                if(data.document){record[data.document.field]=data.document.stored_name;record.attachments=record.attachments||[];record.attachments.push(data.document);if(!record.form_data)record.form_data={};record.form_data[data.document.field]=data.document.stored_name;}
+                window.currentEditingLeadRecord=record;renderLeadEditDocuments(record);fetchLeadsData();
+            } else alert(data.error||'Unable to upload document.');
+        }
+        async function deleteLeadDocument(token) {
+            if(!confirm('Move this individual document to Trash Bin?'))return;
+            const leadId=document.getElementById('edit_lead_id').value;
+            const doc=(window.currentLeadDocumentFields||{})[token];if(!doc)return;
+            const res=await fetch(`/api/lead-document/${leadId}/${encodeURIComponent(doc.field)}`,{
+                method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({action:'delete',field:doc.field,stored_name:doc.path})});
+            const data=await res.json();
+            if(res.ok){
+                alert(data.message||'Document moved to Trash Bin.');
+                const record=window.currentEditingLeadRecord||{};
+                if(record[doc.field]===doc.path)record[doc.field]=null;
+                if(record.form_data&&record.form_data[doc.field]===doc.path)record.form_data[doc.field]=null;
+                record.attachments=(record.attachments||[]).filter(a=>!a||a.stored_name!==doc.path);
+                window.currentEditingLeadRecord=record;renderLeadEditDocuments(record);fetchLeadsData();
+            } else alert(data.error||'Unable to delete document.');
+        }
+
         function openEditModal(lead) {
+            window.currentEditingLeadRecord=JSON.parse(JSON.stringify(lead||{}));
             document.getElementById('edit_lead_id').value = lead.id;
             document.getElementById('edit_student_name').value = lead.student_name || '';
             document.getElementById('edit_father_name').value = lead.father_name || '';
@@ -4484,6 +4717,34 @@ MAIN_DASHBOARD_HTML = """
             formData.append('state', document.getElementById('edit_state').value);
             formData.append('city', document.getElementById('edit_city').value);
             formData.append('delete_doc', document.getElementById('edit_delete_doc').checked);
+            const fullLead=JSON.parse(JSON.stringify(window.currentEditingLeadRecord||{}));
+            Object.assign(fullLead,{
+                student_name:document.getElementById('edit_student_name').value,
+                father_name:document.getElementById('edit_father_name').value,
+                contact_number:document.getElementById('edit_contact_number').value,
+                alternate_number:document.getElementById('edit_alternate_number').value,
+                student_email:document.getElementById('edit_student_email').value,
+                current_education_level:document.getElementById('edit_current_education_level').value,
+                qualification:document.getElementById('edit_qualification').value,
+                percentage_10th:document.getElementById('edit_percentage_10th').value,
+                percentage_12th:document.getElementById('edit_percentage_12th').value,
+                course_details:document.getElementById('edit_course_details').value,
+                budget:document.getElementById('edit_budget').value,
+                hostel_preference:document.getElementById('edit_hostel_preference').value,
+                admission_preference:document.getElementById('edit_admission_preference').value,
+                assigned_college:document.getElementById('edit_assigned_college').value,
+                state:document.getElementById('edit_state').value,
+                city:document.getElementById('edit_city').value
+            });
+            fullLead.course_interest=fullLead.course_details||fullLead.course_interest||'';
+            if(!fullLead.form_data||typeof fullLead.form_data!=='object')fullLead.form_data={};
+            Object.entries(fullLead).forEach(([k,v])=>{if(k!=='form_data'&&k!=='attachments'&&k!=='id')fullLead.form_data[k]=v;});
+            document.querySelectorAll('#leadStructuredFields .lead-dynamic-field').forEach(input=>{
+                const key=decodeURIComponent(input.dataset.field||'');let value=input.value;
+                if((value.startsWith('[')&&value.endsWith(']'))||(value.startsWith('{')&&value.endsWith('}'))){try{value=JSON.parse(value);}catch(e){}}
+                fullLead[key]=value;fullLead.form_data[key]=value;
+            });
+            formData.append('lead_data_json',JSON.stringify(fullLead));
 
             const fileField = document.getElementById('edit_id_document');
             if (fileField.files.length > 0) {
