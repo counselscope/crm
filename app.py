@@ -354,6 +354,38 @@ def load_data(filename):
         app.logger.exception("Unable to read CRM data file: %s", filename)
         raise
 
+def _safe_record_folder_name(value, fallback="Record"):
+    raw = str(value or fallback).strip()
+    cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in (" ", "_", "-", ".")).strip()
+    cleaned = cleaned.replace(" ", "_").strip("._")
+    return cleaned[:100] or fallback
+
+def _sync_student_record_folders(records):
+    """Maintain one complete local JSON file and documents folder per student."""
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, dict):
+            continue
+        name = _safe_record_folder_name(record.get("student_name"), "Student")
+        sid = record.get("student_id", record.get("id", ""))
+        folder = f"{name}_{sid}" if sid not in (None, "") else name
+        target = os.path.join(STUDENTS_DIR, folder)
+        os.makedirs(os.path.join(target, "documents"), exist_ok=True)
+        save_data(os.path.join(target, "student.json"), record)
+
+def _sync_college_record_folders(records):
+    """Maintain one complete local JSON file and documents folder per college."""
+    seen = {}
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, dict):
+            continue
+        name = _safe_record_folder_name(record.get("college_name"), "College")
+        seen[name] = seen.get(name, 0) + 1
+        cid = record.get("id", "")
+        folder = f"{name}_{cid}" if seen[name] > 1 else name
+        target = os.path.join(COLLEGES_DIR, folder)
+        os.makedirs(os.path.join(target, "documents"), exist_ok=True)
+        save_data(os.path.join(target, "college.json"), record)
+
 def save_data(filename, data):
     initialize_data_directories()
     directory = os.path.dirname(os.path.abspath(filename)) or DATA_DIR
@@ -366,6 +398,10 @@ def save_data(filename, data):
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temp_path, filename)
+            if os.path.abspath(filename) == os.path.abspath(STUDENTS_FILE) and isinstance(data, list):
+                _sync_student_record_folders(data)
+            elif os.path.abspath(filename) == os.path.abspath(COLLEGES_FILE) and isinstance(data, list):
+                _sync_college_record_folders(data)
         except Exception:
             try: os.unlink(temp_path)
             except OSError: pass
@@ -516,7 +552,9 @@ def _delete_github_file_if_unreferenced(path, deleted_item):
             app.logger.warning("Unable to permanently remove GitHub attachment %s: %s", path, exc)
 
     local_path = None
-    if path.startswith("student_documents/"):
+    if path.startswith("student_records/"):
+        local_path = os.path.join(DATA_DIR, *path.split("/"))
+    elif path.startswith("student_documents/"):
         local_path = os.path.join(STUDENT_DOCUMENTS_DIR, path[len("student_documents/"):])
     elif path.startswith("student/college/"):
         local_path = os.path.join(COLLEGE_DOCUMENTS_DIR, *path.split("/")[2:])
@@ -598,6 +636,17 @@ def log_activity(action_type, details, username=None, role=None, module=None,
             if ip and "," in ip: ip = ip.split(",")[0].strip()
         except RuntimeError:
             ip = ""
+    user_agent = ""
+    browser_info, os_info = "Unknown Browser", "Unknown OS"
+    location = "Local / Unknown"
+    try:
+        user_agent = request.headers.get("User-Agent", "")
+        browser_info, os_info = parse_user_agent_detailed(user_agent)
+        if not ip:
+            ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+        location = get_geolocation(ip)
+    except RuntimeError:
+        pass
     item = {
         "id": activity_id, "activity_id": activity_id,
         "username": uname,
@@ -605,12 +654,18 @@ def log_activity(action_type, details, username=None, role=None, module=None,
         "role": urole, "account_role": urole,
         "date": now.strftime("%Y-%m-%d"), "time": now.strftime("%I:%M:%S %p"),
         "timestamp": now.timestamp(), "ip_address": ip or "",
+        "user_agent": user_agent, "browser": browser_info, "os": os_info,
+        "location": location,
         "module": module or (str(action_type).split(" ")[0] if action_type else "System"),
         "action": action or action_type, "action_type": action_type,
         "details": details, "related_record_id": related_record_id
     }
     history.append(item)
     save_data(HISTORY_FILE, history)
+    try:
+        request.environ["crm_work_history_recorded"] = True
+    except RuntimeError:
+        pass
 
 def log_login_activity(username, role, req, status="Successful"):
     logs = load_data(LOGIN_LOGS_FILE)
@@ -696,23 +751,25 @@ def commit_json_to_github(filepath):
     except Exception as e:
         print("GitHub JSON Commit Error:", e)
 
-def upload_file_to_github(file_storage, student_name, original_filename):
+def upload_file_to_github(file_storage, student_name, original_filename, student_id=None):
     """Store a local persistent copy and retain the legacy GitHub path when configured."""
     try:
         safe_student_name = "".join(c for c in (student_name or "Student") if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_') or "Student"
         target_filename = f"doc_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}_{secure_filename(original_filename)}"
-        relative_path = f"student_documents/{safe_student_name}/{target_filename}"
+        student_folder = f"{safe_student_name}_{student_id}" if student_id not in (None, "") else safe_student_name
+        relative_path = f"student_records/{student_folder}/documents/{target_filename}"
+        github_relative_path = f"student_documents/{safe_student_name}/{target_filename}"
         content = file_storage.read()
         if not content:
             return None
-        local_path = os.path.join(STUDENT_DOCUMENTS_DIR, safe_student_name, target_filename)
+        local_path = os.path.join(STUDENTS_DIR, student_folder, "documents", target_filename)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         with open(local_path, "wb") as f:
             f.write(content)
         if GITHUB_TOKEN and GITHUB_REPO:
             try:
                 encoded_content = base64.b64encode(content).decode('utf-8')
-                url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{relative_path}"
+                url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{github_relative_path}"
                 headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
                 get_res = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=30)
                 sha = get_res.json().get('sha') if get_res.status_code == 200 else None
@@ -721,7 +778,7 @@ def upload_file_to_github(file_storage, student_name, original_filename):
                 if sha: payload["sha"] = sha
                 response = requests.put(url, headers=headers, json=payload, timeout=60)
                 if response.status_code in (201, 200):
-                    return relative_path
+                    return github_relative_path
                 app.logger.warning("GitHub student upload failed (%s); persistent local copy retained.", response.status_code)
             except Exception:
                 app.logger.exception("GitHub student upload failed; persistent local copy retained.")
@@ -787,7 +844,7 @@ def save_college_record_to_github(college):
     upload_college_content_to_github(repo_path, payload, f"Update college record: {college.get('college_name', 'College')}")
     # Keep a local persistent per-college JSON copy inside the centralized data tree.
     local_folder = os.path.join(COLLEGES_DIR, folder)
-    os.makedirs(local_folder, exist_ok=True)
+    os.makedirs(os.path.join(local_folder, "documents"), exist_ok=True)
     local_record_path = os.path.join(local_folder, "college.json")
     save_data(local_record_path, college)
     return repo_path
@@ -808,7 +865,7 @@ def upload_college_document_to_github(upload, college_name, college_id):
     same_name = [c for c in all_colleges if safe_college_folder_name(c.get("college_name")) == folder]
     if any(int(c.get("id", -1)) != int(college_id) for c in same_name): folder = f"{folder}_{college_id}"
     stored_filename = f"college_{uuid.uuid4().hex}{ext}"
-    local_folder = os.path.join(COLLEGE_DOCUMENTS_DIR, folder)
+    local_folder = os.path.join(COLLEGES_DIR, folder, "documents")
     os.makedirs(local_folder, exist_ok=True)
     with open(os.path.join(local_folder, stored_filename), "wb") as f: f.write(content)
     repo_path = f"student/college/{folder}/{stored_filename}"
@@ -819,10 +876,10 @@ def upload_college_document_to_github(upload, college_name, college_id):
             github_path = repo_path
         except Exception:
             app.logger.exception("GitHub college upload failed; persistent local copy retained.")
-            stored_reference = f"college_uploads/{folder}/{stored_filename}"
+            stored_reference = f"college_records/{folder}/documents/{stored_filename}"
             github_path = None
     else:
-        stored_reference = f"college_uploads/{folder}/{stored_filename}"
+        stored_reference = f"college_records/{folder}/documents/{stored_filename}"
         github_path = None
     return {"stored_name": stored_reference, "github_path": github_path,
             "original_name": original_name, "extension": ext}
@@ -855,6 +912,11 @@ def submit_lead():
         contact_number = flat_form.get('contact_number') or flat_form.get('phone') or 'N/A'
         student_email = flat_form.get('student_email') or flat_form.get('email') or 'N/A'
 
+        # Allocate the lead identifier before saving files so the initial record
+        # and its uploaded documents share the same per-student folder.
+        leads = load_data(DATA_FILE)
+        existing_ids = [int(x.get("id", 0)) for x in leads if str(x.get("id", "")).isdigit()]
+        new_lead_id = max(existing_ids, default=0) + 1
         # Handle every uploaded registration attachment, including optional photo/image fields.
         uploaded_files = {}
         attachment_records = []
@@ -871,7 +933,7 @@ def submit_lead():
                         if not content or len(content) > 1_000_000:
                             return jsonify({"status":"error","message":"Passport photograph must be non-empty and no larger than 1 MB."}), 400
                         file.stream.seek(0)
-                    stored_path = upload_file_to_github(file, student_name, file.filename)
+                    stored_path = upload_file_to_github(file, student_name, file.filename, new_lead_id)
                     if f_key not in uploaded_files or not uploaded_files.get(f_key):
                         uploaded_files[f_key] = stored_path
                     if stored_path:
@@ -884,11 +946,10 @@ def submit_lead():
         for f_key in known_file_keys:
             uploaded_files.setdefault(f_key, None)
 
-        leads = load_data(DATA_FILE)
         now = datetime.now()
 
         new_lead = {
-            "id": len(leads) + 1,
+            "id": new_lead_id,
             "student_name": student_name,
             "father_name": flat_form.get('father_name', ''),
             "contact_number": contact_number,
@@ -1081,7 +1142,7 @@ def update_lead():
         if 'id_document' in request.files:
             file = request.files['id_document']
             if file and file.filename != '':
-                doc_path = upload_file_to_github(file, target_lead.get('student_name', 'Student'), file.filename)
+                doc_path = upload_file_to_github(file, target_lead.get('student_name', 'Student'), file.filename, target_lead.get('id'))
                 if doc_path:
                     target_lead['id_document'] = doc_path
                     if isinstance(target_lead.get('form_data'), dict):
@@ -1290,6 +1351,29 @@ def convert_to_student():
     new_student['course_interest'] = new_student.get('course_interest') or new_student.get('course_details') or ''
     new_student['course_details'] = new_student.get('course_details') or new_student.get('course_interest') or ''
     new_student['student_id'] = max([int(s.get('student_id', 0)) for s in students if str(s.get('student_id', '')).isdigit()] or [0]) + 1
+    # Move/copy the registration's local document set into the permanent student-ID folder.
+    old_name = _safe_record_folder_name(new_student.get('student_name'), 'Student')
+    old_folder = f"{old_name}_{target_lead.get('id')}"
+    new_folder = f"{old_name}_{new_student['student_id']}"
+    old_docs = os.path.join(STUDENTS_DIR, old_folder, 'documents')
+    new_docs = os.path.join(STUDENTS_DIR, new_folder, 'documents')
+    if os.path.isdir(old_docs):
+        os.makedirs(new_docs, exist_ok=True)
+        for filename in os.listdir(old_docs):
+            src, dst = os.path.join(old_docs, filename), os.path.join(new_docs, filename)
+            if os.path.isfile(src) and not os.path.exists(dst): shutil.copy2(src, dst)
+        old_prefix = f"student_records/{old_folder}/documents/"
+        new_prefix = f"student_records/{new_folder}/documents/"
+        def _rewrite_student_document_refs(value):
+            if isinstance(value, dict):
+                for key, child in list(value.items()):
+                    if isinstance(child, str) and child.startswith(old_prefix):
+                        value[key] = new_prefix + child[len(old_prefix):]
+                    else:
+                        _rewrite_student_document_refs(child)
+            elif isinstance(value, list):
+                for child in value: _rewrite_student_document_refs(child)
+        _rewrite_student_document_refs(new_student)
     new_student['created_by'] = session.get("username")
     new_student['created_by_id'] = session.get("user_id")
     new_student['created_by_role'] = session.get("role")
@@ -1372,7 +1456,7 @@ def update_student():
         for file_key, upload_list in request.files.lists():
             for upload in upload_list:
                 if upload and upload.filename:
-                    path = upload_file_to_github(upload, target_student.get('student_name', 'Student'), upload.filename)
+                    path = upload_file_to_github(upload, target_student.get('student_name', 'Student'), upload.filename, target_student.get('student_id'))
                     if path:
                         old_path = target_student.get(file_key)
                         target_student['attachments'] = [a for a in target_student.get('attachments', [])
@@ -1851,12 +1935,24 @@ def _get_attachment_bytes(reference,college=False):
         try: return base64.b64decode(path.split(',',1)[1])
         except Exception: return None
     local_candidates = [path, os.path.join(DATA_DIR, path.lstrip("/"))]
+    if path.startswith("student_records/"):
+        local_candidates.append(os.path.join(DATA_DIR, *path.split("/")))
     if path.startswith("student_documents/"):
         local_candidates.append(os.path.join(STUDENT_DOCUMENTS_DIR, path[len("student_documents/"):]))
+        stored_basename = os.path.basename(path)
+        if stored_basename:
+            for root, _dirs, files in os.walk(STUDENTS_DIR):
+                if stored_basename in files and os.path.basename(root) == "documents":
+                    local_candidates.append(os.path.join(root, stored_basename))
+    if path.startswith("college_records/"):
+        local_candidates.append(os.path.join(DATA_DIR, *path.split("/")))
     if path.startswith("college_uploads/"):
         local_candidates.append(os.path.join(COLLEGE_DOCUMENTS_DIR, path[len("college_uploads/"):]))
     if path.startswith("student/college/"):
-        local_candidates.append(os.path.join(COLLEGE_DOCUMENTS_DIR, *path.split("/")[2:]))
+        parts = path.split("/")
+        if len(parts) >= 3:
+            local_candidates.append(os.path.join(COLLEGES_DIR, parts[2], "documents", *parts[3:]))
+        local_candidates.append(os.path.join(COLLEGE_DOCUMENTS_DIR, *parts[2:]))
     for local_path in local_candidates:
         if os.path.isfile(local_path):
             try:
@@ -2113,6 +2209,22 @@ def download_document(filename):
     if '..' in safe_path.split('/'):
         return jsonify({"error": "Invalid document path."}), 400
     original_download_name = os.path.basename(safe_path)
+    if safe_path.startswith(("student_records/", "college_records/")):
+        local_candidate = os.path.join(DATA_DIR, *safe_path.split("/"))
+        if os.path.isfile(local_candidate):
+            return send_file(local_candidate, as_attachment=request.args.get('download') == '1',
+                             download_name=os.path.basename(local_candidate), conditional=True)
+    if safe_path.startswith("student_documents/"):
+        legacy_candidate = os.path.join(STUDENT_DOCUMENTS_DIR, safe_path[len("student_documents/"):])
+        if not os.path.isfile(legacy_candidate):
+            wanted = os.path.basename(safe_path)
+            for root, _dirs, files in os.walk(STUDENTS_DIR):
+                if wanted in files and os.path.basename(root) == "documents":
+                    legacy_candidate = os.path.join(root, wanted)
+                    break
+        if os.path.isfile(legacy_candidate):
+            return send_file(legacy_candidate, as_attachment=request.args.get('download') == '1',
+                             download_name=os.path.basename(legacy_candidate), conditional=True)
     # Recover the user-supplied filename from the owning record's attachment metadata.
     try:
         for record_file in (DATA_FILE, STUDENTS_FILE):
@@ -2280,7 +2392,7 @@ def add_college():
         colleges.append(new_c)
         save_data(COLLEGES_FILE, colleges)  # Keep the existing CRM-wide index for current UI/report compatibility.
         log_activity("College Added", f"Added new college: {name}")
-        return jsonify({"status": "success", "message": "College added and saved to GitHub successfully.", "college": new_c})
+        return jsonify({"status": "success", "message": "Data submitted successfully.", "college": new_c})
     except ValueError as e:
         return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
@@ -2326,7 +2438,7 @@ def update_college(college_id):
         target['github_record_path'] = save_college_record_to_github(target)
         save_data(COLLEGES_FILE, colleges)
         log_activity("College Updated", f"Updated college #{college_id}: {name}")
-        return jsonify({"status": "success", "message": "College updated and saved to GitHub successfully.", "college": target})
+        return jsonify({"status": "success", "message": "Data submitted successfully.", "college": target})
     except ValueError as e:
         return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
@@ -2355,7 +2467,7 @@ def manage_lead_document(lead_id, field):
         upload=request.files.get("file")
         if not upload or not upload.filename:
             return jsonify({"error":"Select a document to upload."}),400
-        new_path=upload_file_to_github(upload,lead.get("student_name","Student"),upload.filename)
+        new_path=upload_file_to_github(upload,lead.get("student_name","Student"),upload.filename,lead.get("id"))
         if not new_path:
             return jsonify({"error":"Unable to upload document."}),502
         new_field="additional_document_"+uuid.uuid4().hex[:10]
@@ -2426,7 +2538,7 @@ def manage_student_document(student_id, field):
         ext=os.path.splitext(secure_filename(upload.filename))[1].lower()
         if ext not in ('.pdf','.jpg','.jpeg','.png'):
             return jsonify({"error":"Only PDF, JPG, JPEG and PNG files are allowed."}),400
-        new_path=upload_file_to_github(upload,student.get('student_name','Student'),upload.filename)
+        new_path=upload_file_to_github(upload,student.get('student_name','Student'),upload.filename,student.get('student_id'))
         if not new_path:
             return jsonify({"error":"Unable to upload document. Check GitHub configuration."}),502
         new_field="additional_document_"+uuid.uuid4().hex[:10]
@@ -2461,7 +2573,7 @@ def manage_student_document(student_id, field):
         ext=os.path.splitext(secure_filename(upload.filename))[1].lower()
         if ext not in ('.pdf','.jpg','.jpeg','.png'):
             return jsonify({"error":"Only PDF, JPG, JPEG and PNG files are allowed."}),400
-        new_path=upload_file_to_github(upload,student.get('student_name','Student'),upload.filename)
+        new_path=upload_file_to_github(upload,student.get('student_name','Student'),upload.filename,student.get('student_id'))
         if not new_path:
             return jsonify({"error":"Unable to upload replacement document. Check GitHub configuration."}),502
         if top_level: student[field]=new_path
@@ -2505,7 +2617,12 @@ def college_file(college_id):
             app.logger.warning("GitHub college file unavailable; checking persistent local copy: %s", e)
 
     # Current centralized local storage, followed by legacy local-storage fallback.
-    if str(stored_name).startswith("college_uploads/"):
+    if str(stored_name).startswith("college_records/"):
+        centralized_path = os.path.join(DATA_DIR, *str(stored_name).split("/"))
+    elif str(stored_name).startswith("student/college/"):
+        parts = str(stored_name).split("/")
+        centralized_path = os.path.join(COLLEGES_DIR, parts[2], "documents", *parts[3:])
+    elif str(stored_name).startswith("college_uploads/"):
         centralized_path = os.path.join(COLLEGE_DOCUMENTS_DIR, str(stored_name)[len("college_uploads/"):])
     elif str(stored_name).startswith("student/college/"):
         centralized_path = os.path.join(COLLEGE_DOCUMENTS_DIR, *str(stored_name).split("/")[2:])
@@ -2662,16 +2779,20 @@ def login():
 @app.after_request
 def capture_authenticated_read_activity(response):
     try:
-        if session.get("logged_in"):
-            endpoint = request.endpoint or "unknown"
-            noisy = {"static", "get_leads_api", "get_students_api", "get_colleges",
-                     "get_history_api", "get_logs_api", "get_trash_api"}
-            should_log = (request.method == "GET" and endpoint not in noisy and endpoint not in ("login", "logout", "home"))
-            should_log = should_log or response.status_code >= 400
-            if should_log:
-                log_activity("Module Access" if response.status_code < 400 else "Failed Operation",
-                             f"{request.method} {request.path} returned HTTP {response.status_code}.",
-                             module=endpoint, action="Access" if response.status_code < 400 else "Failed")
+        endpoint = request.endpoint or "unknown"
+        noisy = {"static", "get_leads_api", "get_students_api", "get_colleges",
+                 "get_history_api", "get_logs_api", "get_trash_api", "get_history_api"}
+        is_public_registration = endpoint in ("submit_registration", "registration_submit", "submit_enquiry") or "registration" in endpoint.lower()
+        is_mutation = request.method in ("POST", "PUT", "PATCH", "DELETE")
+        should_log_read = session.get("logged_in") and request.method == "GET" and endpoint not in noisy and endpoint not in ("login", "logout", "home")
+        should_log = (is_mutation and (session.get("logged_in") or is_public_registration)) or response.status_code >= 400 or should_log_read
+        if should_log and not request.environ.get("crm_work_history_recorded"):
+            actor = session.get("username") or ("System" if is_public_registration else "Anonymous")
+            actor_role = session.get("role") or ("System" if is_public_registration else "Unknown")
+            log_activity("Form Submitted" if is_public_registration and response.status_code < 400 else ("Failed Operation" if response.status_code >= 400 else "System Activity" if is_public_registration else "Request Activity"),
+                         f"{request.method} {request.path} returned HTTP {response.status_code}.",
+                         username=actor, role=actor_role, module=endpoint,
+                         action="Submit" if is_public_registration else request.method)
     except Exception:
         app.logger.exception("Failed to record request in centralized Work History.")
     return response
@@ -5010,6 +5131,47 @@ MAIN_DASHBOARD_HTML = """
 
 initialize_data_directories()
 migrate_legacy_data_once()
+# Backfill the new per-record folder layout from existing master JSON files.
+try:
+    _sync_student_record_folders(load_data(STUDENTS_FILE))
+    _sync_college_record_folders(load_data(COLLEGES_FILE))
+    # Preserve and copy legacy student documents into the matching student's folder.
+    for student in load_data(STUDENTS_FILE):
+        student_name = _safe_record_folder_name(student.get("student_name"), "Student")
+        student_id = student.get("student_id", student.get("id", ""))
+        student_folder = f"{student_name}_{student_id}" if student_id not in (None, "") else student_name
+        legacy_folder = os.path.join(STUDENT_DOCUMENTS_DIR, student_name)
+        new_folder = os.path.join(STUDENTS_DIR, student_folder, "documents")
+        if os.path.isdir(legacy_folder):
+            os.makedirs(new_folder, exist_ok=True)
+            for filename in os.listdir(legacy_folder):
+                src, dst = os.path.join(legacy_folder, filename), os.path.join(new_folder, filename)
+                if os.path.isfile(src) and not os.path.exists(dst): shutil.copy2(src, dst)
+    # Copy legacy college attachments into each college's own data/ folder.
+    for college in load_data(COLLEGES_FILE):
+        college_name = _safe_record_folder_name(college.get("college_name"), "College")
+        college_id = college.get("id", "")
+        college_folder = f"{college_name}_{college_id}" if college_id not in (None, "") else college_name
+        new_folder = os.path.join(COLLEGES_DIR, college_folder, "documents")
+        os.makedirs(new_folder, exist_ok=True)
+        legacy_sources = []
+        document = college.get("document")
+        if isinstance(document, dict):
+            stored = str(document.get("stored_name") or "")
+            if stored.startswith("college_uploads/"):
+                legacy_sources.append(os.path.join(COLLEGE_DOCUMENTS_DIR, stored[len("college_uploads/"):]).rsplit(os.sep, 1)[0])
+            elif stored.startswith("student/college/"):
+                parts = stored.split("/")
+                if len(parts) >= 4:
+                    legacy_sources.append(os.path.join(COLLEGE_DOCUMENTS_DIR, *parts[2:-1]))
+        legacy_sources.append(os.path.join(COLLEGE_DOCUMENTS_DIR, college_name))
+        for legacy_folder in legacy_sources:
+            if os.path.isdir(legacy_folder):
+                for filename in os.listdir(legacy_folder):
+                    src, dst = os.path.join(legacy_folder, filename), os.path.join(new_folder, filename)
+                    if os.path.isfile(src) and not os.path.exists(dst): shutil.copy2(src, dst)
+except Exception:
+    app.logger.exception("Unable to complete per-student/per-college folder migration; legacy data remains intact.")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
