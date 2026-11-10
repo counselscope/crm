@@ -535,5 +535,22 @@
         "action_type": "Module Access",
         "details": "GET /api/users returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "4171bbf1bb4643f387762c8232fd333d",
+        "activity_id": "4171bbf1bb4643f387762c8232fd333d",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-10",
+        "time": "04:39:19 PM",
+        "timestamp": 1794328759.254193,
+        "ip_address": "106.192.53.6",
+        "module": "leads",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened leads module.",
+        "related_record_id": null
     }
 ]
