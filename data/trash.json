@@ -1,35 +1,5 @@
 [
     {
-        "trash_id": "716e50514dd44d79ac54f528e12ff776",
-        "category": "Colleges",
-        "source_file": "/opt/render/project/src/data/colleges.json",
-        "source_id": 1,
-        "record": {
-            "id": 1,
-            "college_name": "kirti",
-            "location": "mahim",
-            "address": "mahim",
-            "phone": "1234567890",
-            "email": "counselscope@gmail.com",
-            "description": "ss",
-            "courses": "",
-            "package": "N/A",
-            "document": {
-                "stored_name": "student/college/kirti/college_47f50a431660428380d4fb719e478138.png",
-                "github_path": "student/college/kirti/college_47f50a431660428380d4fb719e478138.png",
-                "original_name": "logo.png",
-                "extension": ".png"
-            },
-            "created_by": "admin",
-            "created_by_id": "admin",
-            "created_by_role": "Admin",
-            "github_record_path": "student/college/kirti/college.json"
-        },
-        "deleted_date": "2026-11-10",
-        "deleted_at": "10 Nov 2026, 05:06 PM",
-        "deleted_timestamp": 1794330382.723251
-    },
-    {
         "trash_id": "e6a0c06407e74b499e58a66e2eb258f3",
         "category": "Logs",
         "source_file": "/opt/render/project/src/data/login_logs.json",
