@@ -83,7 +83,7 @@
                 "extension": ".png"
             }
         ],
-        "status": "Closed",
+        "status": "Follow Up",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
         "is_deleted": false,
@@ -131,6 +131,6 @@
         "passport_photo": "student_documents/trisha/doc_1794330322_13a71932_logo_1.png",
         "updated_by": "admin",
         "updated_by_id": "admin",
-        "updated_at": "2026-11-10T17:14:10"
+        "updated_at": "2026-11-10T17:14:21"
     }
 ]
