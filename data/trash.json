@@ -1,1 +1,26 @@
-[]
+[
+    {
+        "trash_id": "eebb8ddc37a44aa7925195705bf665df",
+        "category": "Student Documents",
+        "source_file": "student_document",
+        "source_id": "lead:1:id_document:91b5728cfcb6479abbbbc81b70e94c0f",
+        "record": {
+            "stored_name": "student_documents/Mishi/doc_1794332112_62cb793f_Screenshot_20261106_113326_Facebook.jpg",
+            "attachment": {
+                "field": "id_document",
+                "stored_name": "student_documents/Mishi/doc_1794332112_62cb793f_Screenshot_20261106_113326_Facebook.jpg",
+                "original_name": "Screenshot_20261106_113326_Facebook.jpg",
+                "extension": ".jpg"
+            },
+            "original_name": "Screenshot_20261106_113326_Facebook.jpg"
+        },
+        "deleted_date": "2026-11-10",
+        "deleted_at": "10 Nov 2026, 05:35 PM",
+        "deleted_timestamp": 1794332147.798981,
+        "extra": {
+            "parent_type": "lead",
+            "lead_id": 1,
+            "field": "id_document"
+        }
+    }
+]
