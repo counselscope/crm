@@ -1,23 +1,5 @@
 [
     {
-        "id": 3,
-        "username": "admin",
-        "role": "Admin",
-        "ip_address": "42.108.74.130",
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-        "browser": "Google Chrome (156.0.0.0)",
-        "os": "Windows",
-        "login_date": "2026-11-07",
-        "login_time": "07 Nov 2026, 08:11 AM",
-        "login_timestamp": 1794039062.747582,
-        "logout_date": "2026-11-07",
-        "logout_time": "07 Nov 2026, 08:12 AM",
-        "logout_timestamp": 1794039170.510355,
-        "location": "Unknown",
-        "status": "Logged Out",
-        "session_info": "Session ID: 1146421774087250852"
-    },
-    {
         "id": 4,
         "username": "admin",
         "role": "Admin",
@@ -173,28 +155,10 @@
         "login_time": "10 Nov 2026, 04:39 PM",
         "login_timestamp": 1794328744.137231,
         "logout_date": "2026-11-10",
-        "logout_time": "10 Nov 2026, 05:00 PM",
-        "logout_timestamp": 1794330011.281859,
+        "logout_time": "10 Nov 2026, 04:59 PM",
+        "logout_timestamp": 1794329954.8417,
         "location": "Unknown",
         "status": "Logged Out",
         "session_info": "Session ID: 2835558905133536714"
-    },
-    {
-        "id": 11,
-        "username": "admin",
-        "role": "Admin",
-        "ip_address": "106.192.53.6",
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-        "browser": "Google Chrome (156.0.0.0)",
-        "os": "Windows",
-        "login_date": "2026-11-10",
-        "login_time": "10 Nov 2026, 05:00 PM",
-        "login_timestamp": 1794330011.281859,
-        "logout_date": "N/A",
-        "logout_time": "N/A",
-        "logout_timestamp": null,
-        "location": "Unknown",
-        "status": "Active",
-        "session_info": "Session ID: 6859908480386240956"
     }
 ]
