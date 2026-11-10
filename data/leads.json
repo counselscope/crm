@@ -83,7 +83,7 @@
                 "extension": ".png"
             }
         ],
-        "status": "New Lead",
+        "status": "Closed",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
         "is_deleted": false,
@@ -128,6 +128,9 @@
         "created_by": "System",
         "created_by_id": "system",
         "created_by_role": "System",
-        "passport_photo": "student_documents/trisha/doc_1794330322_13a71932_logo_1.png"
+        "passport_photo": "student_documents/trisha/doc_1794330322_13a71932_logo_1.png",
+        "updated_by": "admin",
+        "updated_by_id": "admin",
+        "updated_at": "2026-11-10T17:14:10"
     }
 ]
