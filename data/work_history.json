@@ -2997,5 +2997,26 @@
         "action_type": "Module Access",
         "details": "Opened settings module.",
         "related_record_id": null
+    },
+    {
+        "id": "9391c57834394e169dca065eb9ec1879",
+        "activity_id": "9391c57834394e169dca065eb9ec1879",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "04:12:11 AM",
+        "timestamp": 1794370331.347586,
+        "ip_address": "106.192.59.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "trash",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened trash module.",
+        "related_record_id": null
     }
 ]
