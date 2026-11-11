@@ -3287,5 +3287,26 @@
         "action_type": "Module Access",
         "details": "Opened settings module.",
         "related_record_id": null
+    },
+    {
+        "id": "3d5a73d7f91e4e3bb12d4e0ca92bcbcf",
+        "activity_id": "3d5a73d7f91e4e3bb12d4e0ca92bcbcf",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-11",
+        "time": "12:45:32 PM",
+        "timestamp": 1794401132.596788,
+        "ip_address": "106.192.56.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
