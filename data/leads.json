@@ -77,7 +77,7 @@
                 "extension": ".jpg"
             }
         ],
-        "status": "New Lead",
+        "status": "Follow Up",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
         "is_deleted": false,
@@ -149,7 +149,7 @@
         "passport_photo": "student_documents/Mishi/doc_1794332104_da11167e_Screenshot_20261106_113326_Facebook.jpg",
         "updated_by": "admin",
         "updated_by_id": "admin",
-        "updated_at": "2026-11-10T17:35:48"
+        "updated_at": "2026-11-11T04:12:53"
     },
     {
         "id": 2,
