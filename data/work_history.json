@@ -2804,5 +2804,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/work-history-users returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "bad0f4b29cb746329d9d30f4e148899e",
+        "activity_id": "bad0f4b29cb746329d9d30f4e148899e",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "04:09:44 AM",
+        "timestamp": 1794370184.571465,
+        "ip_address": "106.192.59.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "Delete",
+        "action": "Delete Work History",
+        "action_type": "Delete Work History",
+        "details": "Admin moved 2 selected history record(s) to Trash Bin.",
+        "related_record_id": null
     }
 ]
