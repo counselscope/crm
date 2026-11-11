@@ -366,7 +366,7 @@
                 "extension": ".jpg"
             }
         ],
-        "status": "New Lead",
+        "status": "Follow Up",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
         "is_deleted": false,
@@ -411,6 +411,9 @@
         "created_by": "System",
         "created_by_id": "system",
         "created_by_role": "System",
-        "passport_photo": "student_documents/Sunita/doc_1794367301_2bfde11b_1000349062.jpg"
+        "passport_photo": "student_documents/Sunita/doc_1794367301_2bfde11b_1000349062.jpg",
+        "updated_by": "admin",
+        "updated_by_id": "admin",
+        "updated_at": "2026-11-11T04:12:46"
     }
 ]
