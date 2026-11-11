@@ -148,5 +148,31 @@
         "deleted_date": "2026-11-11",
         "deleted_at": "11 Nov 2026, 04:09 AM",
         "deleted_timestamp": 1794370182.212584
+    },
+    {
+        "trash_id": "f3bc7fc9a65948e18cd356c2c2f7f0e0",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "abe59d49fceb4ea9805547e4c49fbb1b",
+        "record": {
+            "id": "abe59d49fceb4ea9805547e4c49fbb1b",
+            "activity_id": "abe59d49fceb4ea9805547e4c49fbb1b",
+            "username": "System",
+            "user_id": "system",
+            "role": "System",
+            "account_role": "System",
+            "date": "2026-11-10",
+            "time": "04:41:23 PM",
+            "timestamp": 1794328883.713771,
+            "ip_address": "106.192.53.6",
+            "module": "Registration",
+            "action": "Lead Created",
+            "action_type": "Lead Created",
+            "details": "New dynamic enquiry received for priti (9874561230)",
+            "related_record_id": 1
+        },
+        "deleted_date": "2026-11-11",
+        "deleted_at": "11 Nov 2026, 04:10 AM",
+        "deleted_timestamp": 1794370202.206684
     }
 ]
