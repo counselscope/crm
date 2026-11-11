@@ -3518,5 +3518,26 @@
         "action_type": "Request Activity",
         "details": "GET /download-doc/student_documents/rishikesh/doc_1794333800_f1112969_cover.jpg returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "1909be976e0d40d8950e291591410fa0",
+        "activity_id": "1909be976e0d40d8950e291591410fa0",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "03:04:49 PM",
+        "timestamp": 1794409489.323633,
+        "ip_address": "106.192.48.88",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "settings",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened settings module.",
+        "related_record_id": null
     }
 ]
