@@ -2825,5 +2825,26 @@
         "action_type": "Module Access",
         "details": "Opened dashboard module.",
         "related_record_id": null
+    },
+    {
+        "id": "08ad45b7798c4c828058323e470d58e1",
+        "activity_id": "08ad45b7798c4c828058323e470d58e1",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "04:09:28 AM",
+        "timestamp": 1794370168.635979,
+        "ip_address": "106.192.59.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "get_work_history_users",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/work-history-users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
