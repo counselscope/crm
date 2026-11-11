@@ -2993,5 +2993,26 @@
         "action_type": "Failed Operation",
         "details": "GET /favicon.ico returned HTTP 404.",
         "related_record_id": null
+    },
+    {
+        "id": "a58d49ca2046462b93f729cc8d031e5c",
+        "activity_id": "a58d49ca2046462b93f729cc8d031e5c",
+        "username": "System",
+        "user_id": "system",
+        "role": "System",
+        "account_role": "System",
+        "date": "2026-11-11",
+        "time": "11:55:42 AM",
+        "timestamp": 1794398142.681989,
+        "ip_address": "106.192.56.78",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "Registration",
+        "action": "Lead Created",
+        "action_type": "Lead Created",
+        "details": "New dynamic enquiry received for ramesh (9874561230)",
+        "related_record_id": 4
     }
 ]
