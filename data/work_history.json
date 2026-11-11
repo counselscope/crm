@@ -3308,5 +3308,26 @@
         "action_type": "Failed Operation",
         "details": "GET /favicon.ico returned HTTP 404.",
         "related_record_id": null
+    },
+    {
+        "id": "f1d072a51c52426c8430b036b86e2f08",
+        "activity_id": "f1d072a51c52426c8430b036b86e2f08",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-11",
+        "time": "01:16:51 PM",
+        "timestamp": 1794403011.722069,
+        "ip_address": "106.192.53.88",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
