@@ -3119,5 +3119,26 @@
         "action_type": "Request Activity",
         "details": "GET /download-doc/student_documents/ramesh/doc_1794398140_f1fcc0c0_cover.jpg returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "11aaa717f58f46dc9c4019d00644aed1",
+        "activity_id": "11aaa717f58f46dc9c4019d00644aed1",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "11:57:31 AM",
+        "timestamp": 1794398251.487297,
+        "ip_address": "106.192.56.78",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "history",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened history module.",
+        "related_record_id": null
     }
 ]
