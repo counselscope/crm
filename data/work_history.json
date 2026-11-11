@@ -2888,5 +2888,26 @@
         "action_type": "Module Access",
         "details": "Opened dashboard module.",
         "related_record_id": null
+    },
+    {
+        "id": "191913df310f4302ba6e7bf44c4a0011",
+        "activity_id": "191913df310f4302ba6e7bf44c4a0011",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "04:12:48 AM",
+        "timestamp": 1794370368.195649,
+        "ip_address": "106.192.59.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "Leads",
+        "action": "Status Change",
+        "action_type": "Status Change",
+        "details": "Status changed to 'Follow Up' for student Sunita ",
+        "related_record_id": 3
     }
 ]
