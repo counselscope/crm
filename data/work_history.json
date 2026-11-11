@@ -3039,5 +3039,26 @@
         "action_type": "Request Activity",
         "details": "GET /dashboard returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "d03e4dcc0ab2411b85ab10265af4edaa",
+        "activity_id": "d03e4dcc0ab2411b85ab10265af4edaa",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "04:13:03 AM",
+        "timestamp": 1794370383.709966,
+        "ip_address": "106.192.59.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "user_management_list",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
