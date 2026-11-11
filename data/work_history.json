@@ -2934,5 +2934,26 @@
         "action_type": "Delete Login Logs",
         "details": "Admin moved 0 login log record(s) to Trash Bin.",
         "related_record_id": null
+    },
+    {
+        "id": "395cb986d1c14c8abe1a4041d633f256",
+        "activity_id": "395cb986d1c14c8abe1a4041d633f256",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "04:11:59 AM",
+        "timestamp": 1794370319.896202,
+        "ip_address": "106.192.59.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "crm_dashboard",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /dashboard returned HTTP 200.",
+        "related_record_id": null
     }
 ]
