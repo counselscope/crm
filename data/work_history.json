@@ -3455,5 +3455,26 @@
         "action_type": "Module Access",
         "details": "Opened trash module.",
         "related_record_id": null
+    },
+    {
+        "id": "07e2bd564d93475899240605f6814b82",
+        "activity_id": "07e2bd564d93475899240605f6814b82",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "03:03:46 PM",
+        "timestamp": 1794409426.51537,
+        "ip_address": "106.192.48.88",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "leads",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened leads module.",
+        "related_record_id": null
     }
 ]
