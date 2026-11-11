@@ -2741,5 +2741,26 @@
         "action_type": "Lead Created",
         "details": "New dynamic enquiry received for Sunita  (7021889494)",
         "related_record_id": 3
+    },
+    {
+        "id": "473940d883264d6788092ad9ecee49dc",
+        "activity_id": "473940d883264d6788092ad9ecee49dc",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-11",
+        "time": "03:22:06 AM",
+        "timestamp": 1794367326.672587,
+        "ip_address": "106.192.58.78",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "Authentication",
+        "action": "Login",
+        "action_type": "User Login",
+        "details": "admin logged in.",
+        "related_record_id": null
     }
 ]
