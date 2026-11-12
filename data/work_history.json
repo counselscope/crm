@@ -3644,5 +3644,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/users returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "69af0bf04a2647e39b79fbf757dbcb2e",
+        "activity_id": "69af0bf04a2647e39b79fbf757dbcb2e",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-12",
+        "time": "04:24:42 PM",
+        "timestamp": 1794500682.306083,
+        "ip_address": "106.192.60.158",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "get_work_history_users",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/work-history-users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
