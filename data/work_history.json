@@ -3776,15 +3776,15 @@
         "related_record_id": null
     },
     {
-        "id": "4a85df02e2e14c1f88fffb3a4c1b95bd",
-        "activity_id": "4a85df02e2e14c1f88fffb3a4c1b95bd",
+        "id": "3caa3f92f72e47d4be715bebb4bf3a2b",
+        "activity_id": "3caa3f92f72e47d4be715bebb4bf3a2b",
         "username": "admin",
         "user_id": "admin",
         "role": "Admin",
         "account_role": "Admin",
         "date": "2026-11-15",
         "time": "02:23:25 PM",
-        "timestamp": 1794752605.122772,
+        "timestamp": 1794752605.22108,
         "ip_address": "223.228.48.247",
         "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
         "browser": "Google Chrome (156.0.0.0)",
@@ -3793,7 +3793,28 @@
         "module": "Permanent",
         "action": "Permanent Delete",
         "action_type": "Permanent Delete",
-        "details": "Admin permanently deleted 6 Trash Bin record(s).",
+        "details": "Admin permanently deleted 8 Trash Bin record(s).",
+        "related_record_id": null
+    },
+    {
+        "id": "3c67f3bc3ab34a7588624b496a7a8f5f",
+        "activity_id": "3c67f3bc3ab34a7588624b496a7a8f5f",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-15",
+        "time": "02:23:28 PM",
+        "timestamp": 1794752608.416992,
+        "ip_address": "223.228.48.247",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "get_work_history_users",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/work-history-users returned HTTP 200.",
         "related_record_id": null
     }
 ]
