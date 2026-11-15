@@ -1,23 +1,5 @@
 [
     {
-        "id": 3,
-        "username": "admin",
-        "role": "Admin",
-        "ip_address": "106.192.60.158",
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
-        "browser": "Google Chrome (157.0.0.0)",
-        "os": "Windows",
-        "login_date": "2026-11-12",
-        "login_time": "12 Nov 2026, 04:24 PM",
-        "login_timestamp": 1794500669.260285,
-        "logout_date": "2026-11-15",
-        "logout_time": "15 Nov 2026, 02:21 PM",
-        "logout_timestamp": 1794752491.889269,
-        "location": "Unknown",
-        "status": "Logged Out",
-        "session_info": "Session ID: 6451868119784618361"
-    },
-    {
         "id": 4,
         "username": "admin",
         "role": "Admin",
