@@ -1,14 +1,5 @@
 [
     {
-        "id": 3,
-        "username": "admin",
-        "role": "Admin",
-        "date": "2026-11-08",
-        "time": "06:52:31 PM",
-        "action_type": "Moved to Trash",
-        "details": "Moved lead #1 (Vyom) to trash"
-    },
-    {
         "id": "4c0ef8b9dc9d4bab8a9e14ca1a77c71d",
         "activity_id": "4c0ef8b9dc9d4bab8a9e14ca1a77c71d",
         "username": "admin",
