@@ -1,22 +1,5 @@
 [
     {
-        "id": "6e4c31b69ff34fdab4b92dde9dbebff8",
-        "activity_id": "6e4c31b69ff34fdab4b92dde9dbebff8",
-        "username": "admin",
-        "user_id": "admin",
-        "role": "Admin",
-        "account_role": "Admin",
-        "date": "2026-11-08",
-        "time": "07:15:53 PM",
-        "timestamp": 1794165353.551924,
-        "ip_address": "106.192.54.240",
-        "module": "User",
-        "action": "User Logout",
-        "action_type": "User Logout",
-        "details": "User admin logged out.",
-        "related_record_id": null
-    },
-    {
         "id": "1c0dd7d7816d4382a8ac24b8e8439f8f",
         "activity_id": "1c0dd7d7816d4382a8ac24b8e8439f8f",
         "username": "riya",
