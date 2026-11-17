@@ -1,35 +1,5 @@
 [
     {
-        "trash_id": "2ed755937a914993ab1a03379d3917b2",
-        "category": "Work History",
-        "source_file": "/opt/render/project/src/data/work_history.json",
-        "source_id": "a7a97d0c594f4a009b9cd301390c5f2f",
-        "record": {
-            "id": "a7a97d0c594f4a009b9cd301390c5f2f",
-            "activity_id": "a7a97d0c594f4a009b9cd301390c5f2f",
-            "username": "admin",
-            "user_id": "admin",
-            "role": "Admin",
-            "account_role": "Admin",
-            "date": "2026-11-17",
-            "time": "12:50:25 PM",
-            "timestamp": 1794919825.845472,
-            "ip_address": "223.191.91.35",
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
-            "browser": "Google Chrome (157.0.0.0)",
-            "os": "Windows",
-            "location": "Unknown",
-            "module": "settings",
-            "action": "Open Tab",
-            "action_type": "Module Access",
-            "details": "Opened settings module.",
-            "related_record_id": null
-        },
-        "deleted_date": "2026-11-17",
-        "deleted_at": "17 Nov 2026, 12:50 PM",
-        "deleted_timestamp": 1794919841.953633
-    },
-    {
         "trash_id": "ff24b4c8a8074fdd99b0dd312fdd7418",
         "category": "Work History",
         "source_file": "/opt/render/project/src/data/work_history.json",
