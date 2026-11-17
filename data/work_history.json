@@ -4089,5 +4089,26 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "380d140f5d7d4f7d83361e5986f7de0a",
+        "activity_id": "380d140f5d7d4f7d83361e5986f7de0a",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-17",
+        "time": "12:45:10 PM",
+        "timestamp": 1794919510.583669,
+        "ip_address": "223.191.91.35",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "Student",
+        "action": "Student Converted",
+        "action_type": "Student Converted",
+        "details": "Converted lead #4 (ramesh) into a registered Student.",
+        "related_record_id": null
     }
 ]
