@@ -5038,5 +5038,26 @@
         "action_type": "Failed Operation",
         "details": "GET /favicon.ico returned HTTP 404.",
         "related_record_id": null
+    },
+    {
+        "id": "0dcf617226424c21a792f90f29f33249",
+        "activity_id": "0dcf617226424c21a792f90f29f33249",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-17",
+        "time": "08:01:15 PM",
+        "timestamp": 1794945675.407099,
+        "ip_address": "223.191.88.112",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "Authentication",
+        "action": "Login",
+        "action_type": "User Login",
+        "details": "admin logged in.",
+        "related_record_id": null
     }
 ]
