@@ -1,22 +1,5 @@
 [
     {
-        "id": "4c0ef8b9dc9d4bab8a9e14ca1a77c71d",
-        "activity_id": "4c0ef8b9dc9d4bab8a9e14ca1a77c71d",
-        "username": "admin",
-        "user_id": "admin",
-        "role": "Admin",
-        "account_role": "Admin",
-        "date": "2026-11-08",
-        "time": "07:07:51 PM",
-        "timestamp": 1794164871.329138,
-        "ip_address": "106.192.54.240",
-        "module": "dashboard",
-        "action": "Open Tab",
-        "action_type": "Module Access",
-        "details": "Opened dashboard module.",
-        "related_record_id": null
-    },
-    {
         "id": "03b9238c6def4511bb6a1f625e4ab662",
         "activity_id": "03b9238c6def4511bb6a1f625e4ab662",
         "username": "admin",
