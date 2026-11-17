@@ -4404,5 +4404,26 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "cc8debe761ce44b9bca2557f4957b5d3",
+        "activity_id": "cc8debe761ce44b9bca2557f4957b5d3",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-17",
+        "time": "12:46:09 PM",
+        "timestamp": 1794919569.251859,
+        "ip_address": "223.191.91.35",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "Student",
+        "action": "Student Converted",
+        "action_type": "Student Converted",
+        "details": "Converted lead #3 (Sunita ) into a registered Student.",
+        "related_record_id": null
     }
 ]
