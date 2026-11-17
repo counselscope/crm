@@ -476,5 +476,31 @@
         "deleted_date": "2026-11-17",
         "deleted_at": "17 Nov 2026, 05:14 PM",
         "deleted_timestamp": 1794935686.169183
+    },
+    {
+        "trash_id": "26a5b988a97a4997852ef563e1bf21d1",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "30bd87d24b424a06be802097aef5f7e7",
+        "record": {
+            "id": "30bd87d24b424a06be802097aef5f7e7",
+            "activity_id": "30bd87d24b424a06be802097aef5f7e7",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:31:38 PM",
+            "timestamp": 1794328298.205476,
+            "ip_address": "106.192.53.6",
+            "module": "colleges",
+            "action": "Open Tab",
+            "action_type": "Module Access",
+            "details": "Opened colleges module.",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-17",
+        "deleted_at": "17 Nov 2026, 05:14 PM",
+        "deleted_timestamp": 1794935687.358862
     }
 ]
