@@ -28,7 +28,7 @@ app = Flask(__name__)
 app.secret_key = "counselscope_world_class_crm_2026_secret"
 CORS(app)
 
-DEFAULT_NEW_USER_PERMISSIONS = ["call_leads", "update_leads"]
+DEFAULT_NEW_USER_PERMISSIONS = []
 PERMISSION_LABELS = {
     "view_dashboard": "View Dashboard",
     "call_leads": "Call Leads / Contact Customers",
@@ -111,7 +111,7 @@ PERMISSION_ENDPOINTS = {
 }
 
 def is_admin_session():
-    return bool(session.get("logged_in") and session.get("role") == "Admin")
+    return bool(session.get("logged_in") and str(session.get("role") or "").strip().lower() == "admin")
 
 def current_user_permissions():
     if not session.get("logged_in"):
@@ -121,7 +121,7 @@ def current_user_permissions():
     if session.get("role") == "Client":
         return set()
     record = load_users().get(session.get("username"), {})
-    return set(record.get("permissions") or DEFAULT_NEW_USER_PERMISSIONS)
+    return set(record.get("permissions", DEFAULT_NEW_USER_PERMISSIONS) or [])
 
 def has_permission(permission):
     if session.get("role") == "Admin":
@@ -178,7 +178,6 @@ TRASH_FILE = os.path.join(DATA_DIR, "trash.json")
 # GitHub API Configuration from Environment Variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # e.g. "username/repository-name"
-GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 
 def get_default_users():
     return {
@@ -540,13 +539,13 @@ def _delete_github_file_if_unreferenced(path, deleted_item):
         url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
         headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
         try:
-            check = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=20)
+            check = requests.get(url, headers=headers, timeout=20)
             if check.status_code == 200:
                 sha = check.json().get("sha")
                 if sha:
                     requests.delete(url, headers=headers,
                                     json={"message":f"Permanently delete CRM attachment {os.path.basename(path)}",
-                                          "sha":sha,"branch":GITHUB_BRANCH}, timeout=30)
+                                          "sha":sha}, timeout=30)
             elif check.status_code != 404:
                 app.logger.warning("Unable to verify GitHub attachment deletion for %s: HTTP %s", path, check.status_code)
         except Exception as exc:
@@ -743,7 +742,7 @@ def commit_json_to_github(filepath):
         payload = {
             "message": f"Auto-update {repo_filepath} data",
             "content": encoded_content,
-            "branch": GITHUB_BRANCH
+            
         }
         if sha:
             payload["sha"] = sha
@@ -772,10 +771,10 @@ def upload_file_to_github(file_storage, student_name, original_filename, student
                 encoded_content = base64.b64encode(content).decode('utf-8')
                 url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{github_relative_path}"
                 headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
-                get_res = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=30)
+                get_res = requests.get(url, headers=headers, timeout=30)
                 sha = get_res.json().get('sha') if get_res.status_code == 200 else None
                 payload = {"message": f"Upload document for student: {student_name}",
-                           "content": encoded_content, "branch": GITHUB_BRANCH}
+                           "content": encoded_content, }
                 if sha: payload["sha"] = sha
                 response = requests.put(url, headers=headers, json=payload, timeout=60)
                 if response.status_code in (201, 200):
@@ -812,7 +811,7 @@ def upload_college_content_to_github(repo_path, content, commit_message):
     """Create/update a file in the College Manager's own GitHub folder."""
     headers = college_github_headers()
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_path}"
-    check = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=30)
+    check = requests.get(url, headers=headers, timeout=30)
     sha = None
     if check.status_code == 200:
         sha = check.json().get("sha")
@@ -822,7 +821,7 @@ def upload_college_content_to_github(repo_path, content, commit_message):
     payload = {
         "message": commit_message,
         "content": base64.b64encode(content).decode("utf-8"),
-        "branch": GITHUB_BRANCH
+        
     }
     if sha:
         payload["sha"] = sha
@@ -889,7 +888,7 @@ def upload_college_document_to_github(upload, college_name, college_id):
 def get_college_file_from_github(repo_path):
     headers = college_github_headers()
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_path}"
-    response = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=30)
+    response = requests.get(url, headers=headers, timeout=30)
     if response.status_code != 200:
         raise RuntimeError(f"GitHub file retrieval failed: {response.status_code}")
     result = response.json()
@@ -1271,7 +1270,7 @@ def delete_filtered_leads():
 def get_leads_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    records = load_data(DATA_FILE)
+    records = [lead for lead in load_data(DATA_FILE) if not lead.get("is_converted")]
     if session.get("role") == "New User" and not has_permission("view_lead_details"):
         basic = ("id", "student_name", "contact_number", "alternate_number", "student_email",
                  "status", "created_date", "created_at", "created_timestamp",
@@ -1336,7 +1335,7 @@ def convert_to_student():
     leads = load_data(DATA_FILE)
     target_lead = None
     for lead in leads:
-        if lead['id'] == lead_id:
+        if str(lead.get('id')) == str(lead_id):
             target_lead = lead
             break
             
@@ -1346,6 +1345,10 @@ def convert_to_student():
     students = load_data(STUDENTS_FILE)
     for s in students:
         if str(s.get('original_lead_id')) == str(lead_id):
+            target_lead["is_converted"] = True
+            target_lead["converted_student_id"] = s.get("student_id")
+            target_lead["status"] = "Converted to Student"
+            save_data(DATA_FILE, leads)
             return jsonify({"status": "success", "message": "Lead is already converted to student."})
             
     new_student = _enrich_registration_record(dict(target_lead))
@@ -1385,6 +1388,8 @@ def convert_to_student():
     save_data(STUDENTS_FILE, students)
     
     target_lead['status'] = 'Converted to Student'
+    target_lead['is_converted'] = True
+    target_lead['converted_student_id'] = new_student['student_id']
     save_data(DATA_FILE, leads)
     
     log_activity("Student Converted", f"Converted lead #{lead_id} ({target_lead['student_name']}) into a registered Student.")
@@ -1525,7 +1530,7 @@ def delete_selected_colleges():
 
 @app.route('/api/delete-selected-history', methods=['POST'])
 def delete_selected_history():
-    if not session.get('logged_in') or session.get('role') != 'Admin':
+    if not is_admin_session():
         return jsonify({"error":"Unauthorized. Admin access required."}),403
     payload=request.get_json(silent=True) or {}
     raw_ids=payload.get('history_ids',[])
@@ -1991,7 +1996,7 @@ def _get_attachment_bytes(reference,college=False):
     try:
         url=f'https://api.github.com/repos/{GITHUB_REPO}/contents/{path}'
         headers={'Authorization':f'Bearer {GITHUB_TOKEN}','Accept':'application/vnd.github+json'} if GITHUB_TOKEN else {'Accept':'application/vnd.github+json'}
-        response=requests.get(url,headers=headers,params={'ref':GITHUB_BRANCH},timeout=30)
+        response=requests.get(url,headers=headers,timeout=30)
         if response.status_code==200:
             payload=response.json()
             if payload.get('encoding')=='base64' and payload.get('content'): return base64.b64decode(payload['content'])
@@ -2011,8 +2016,12 @@ def _build_report_pdf(title,entities,entity_label,attachment_getter=None):
         from pypdf import PdfReader, PdfWriter
         PYPDF_AVAILABLE = True
     except ImportError:
-        PdfReader = PdfWriter = None
-        PYPDF_AVAILABLE = False
+        try:
+            from PyPDF2 import PdfReader, PdfWriter
+            PYPDF_AVAILABLE = True
+        except ImportError:
+            PdfReader = PdfWriter = None
+            PYPDF_AVAILABLE = False
     styles=getSampleStyleSheet()
     title_style=ParagraphStyle('ReportTitle',parent=styles['Title'],textColor=colors.HexColor('#0f172a'),alignment=TA_CENTER,spaceAfter=12)
     heading=ParagraphStyle('EntityHeading',parent=styles['Heading2'],textColor=colors.HexColor('#1d4ed8'),spaceBefore=8,spaceAfter=8)
@@ -2030,7 +2039,7 @@ def _build_report_pdf(title,entities,entity_label,attachment_getter=None):
         story.append(Paragraph(f'{entity_label} {idx}: {esc(name or "Unnamed")}',heading))
         pairs=[]
         for key,value in entity.items():
-            if key in ('document','attachments','form_data') or value in (None,'',[],{}): continue
+            if key in ('document','attachments','form_data','_pdf_attachment_refs') or value in (None,'',[],{}): continue
             pairs.append([Paragraph('<b>'+esc(str(key).replace('_',' ').title())+'</b>',normal),Paragraph(esc(value),normal)])
         if isinstance(entity.get('form_data'),dict):
             for key,value in entity['form_data'].items():
@@ -2215,16 +2224,69 @@ def export_college_pdf():
 def export_leads_pdf():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted')]
-    html = f"""
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Student Leads Report</title><style>body {{ font-family: Arial, sans-serif; padding: 25px; }} table {{ width: 100%; border-collapse: collapse; font-size: 11px; }} th {{ background: #0f172a; color: white; padding: 8px; text-align: left; }} td {{ padding: 7px; border-bottom: 1px solid #cbd5e1; }}</style></head>
-    <body><h1>CounselScope CRM - Student Leads Report</h1><table><thead><tr><th>ID</th><th>Student Name</th><th>Contact</th><th>Email</th><th>College</th><th>Status</th></tr></thead><tbody>
-    {''.join([f"<tr><td>#{l.get('id')}</td><td><strong>{l.get('student_name')}</strong></td><td>{l.get('contact_number')}</td><td>{l.get('student_email')}</td><td>{l.get('assigned_college','None')}</td><td>{l.get('status')}</td></tr>" for l in leads])}
-    </tbody></table><script>window.onload = function() {{ window.print(); }}</script></body></html>
-    """
-    resp = make_response(html)
-    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-    return resp
+    try:
+        source_leads = [l for l in load_data(DATA_FILE) if not l.get('is_deleted') and not l.get('is_converted')]
+        field_labels = {
+            'id_document': 'ID Card', 'class_10_doc': '10th Marksheet',
+            'class_12_doc': '12th Marksheet', 'aadhar_doc': 'Aadhaar Card',
+            'edu_scorecard': 'Course Scorecard', 'passport_photo': 'Passport Size Photo'
+        }
+        def lead_attachments(lead):
+            refs=[]; seen=set(); metadata={}
+            for item in lead.get('attachments') or []:
+                if isinstance(item, dict) and item.get('stored_name'):
+                    metadata[item['stored_name']]=item
+            def add(field, value):
+                if isinstance(value, list):
+                    for n, sub in enumerate(value, 1): add(f'{field}_{n}', sub)
+                    return
+                if isinstance(value, dict):
+                    marker=value.get('stored_name') or value.get('github_path') or value.get('path')
+                    if marker and str(marker) not in seen:
+                        meta=metadata.get(str(marker), {})
+                        label=field_labels.get(field, str(field).replace('_',' ').strip().title())
+                        refs.append((label, {**meta, **value, 'stored_name': marker}))
+                        seen.add(str(marker))
+                    return
+                if not isinstance(value, str) or not value.strip(): return
+                marker=value.strip()
+                if marker in seen: return
+                meta=metadata.get(marker, {})
+                label=field_labels.get(field, str(field).replace('_',' ').strip().title())
+                item=dict(meta) if isinstance(meta,dict) else {}
+                item.setdefault('stored_name', marker)
+                item.setdefault('original_name', os.path.basename(marker))
+                item.setdefault('extension', os.path.splitext(item['original_name'])[1].lower())
+                refs.append((label,item)); seen.add(marker)
+            for key,value in lead.items():
+                if key != 'attachments' and any(token in str(key).lower() for token in ('photo','image','document','attachment','file','scorecard','marksheet','aadhar')):
+                    add(key,value)
+            if isinstance(lead.get('form_data'),dict):
+                for key,value in lead['form_data'].items():
+                    if any(token in str(key).lower() for token in ('photo','image','document','attachment','file','scorecard','marksheet','aadhar')):
+                        add(key,value)
+            for index,item in enumerate(lead.get('attachments') or []):
+                if isinstance(item,dict) and item.get('stored_name'):
+                    field=item.get('field') or f'attachment_{index+1}'
+                    add(field,item)
+            return refs
+        pdf_leads=[]
+        for lead in source_leads:
+            copy=dict(lead)
+            copy['_pdf_attachment_refs']=lead_attachments(lead)
+            for key in list(copy):
+                if key != '_pdf_attachment_refs' and any(token in str(key).lower() for token in ('photo','image','document','attachment','file','scorecard','marksheet','aadhar')):
+                    copy.pop(key,None)
+            if isinstance(copy.get('form_data'),dict):
+                copy['form_data']={k:v for k,v in copy['form_data'].items() if not any(token in str(k).lower() for token in ('photo','image','document','attachment','file','scorecard','marksheet','aadhar'))}
+            copy.pop('attachments',None)
+            pdf_leads.append(copy)
+        pdf = _build_report_pdf('CounselScope CRM - All Leads With Documents', pdf_leads, 'Lead',
+                                lambda entity: entity.get('_pdf_attachment_refs', []))
+        return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='All_Leads_With_Attachments.pdf')
+    except Exception as e:
+        app.logger.exception('All Leads PDF export failed')
+        return jsonify({'error': f'Unable to generate All Leads PDF: {e}'}), 500
 
 
 @app.route('/download-doc/<path:filename>', methods=['GET'])
@@ -2279,14 +2341,19 @@ def download_document(filename):
                              download_name=original_download_name, conditional=True)
     if not GITHUB_REPO:
         return jsonify({"error": "Document not found in centralized storage and GitHub is not configured."}), 404
-    raw_github_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{safe_path}"
     try:
-        download_headers = {'Authorization': f'Bearer {GITHUB_TOKEN}'} if GITHUB_TOKEN else {}
-        upstream = requests.get(raw_github_url, headers=download_headers, timeout=30, stream=True)
+        if not GITHUB_TOKEN:
+            return jsonify({"error": "GITHUB_TOKEN is required to access the private repository."}), 503
+        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{safe_path}"
+        download_headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+        upstream = requests.get(api_url, headers=download_headers, timeout=30)
         if upstream.status_code != 200:
             return jsonify({"error": f"Document not found in GitHub (HTTP {upstream.status_code})."}), 404
-        content = upstream.content
-        mimetype = upstream.headers.get('Content-Type') or mimetypes.guess_type(safe_path)[0] or 'application/octet-stream'
+        payload = upstream.json()
+        if payload.get("encoding") != "base64" or not payload.get("content"):
+            return jsonify({"error": "GitHub did not return the document content."}), 502
+        content = base64.b64decode(payload["content"])
+        mimetype = mimetypes.guess_type(safe_path)[0] or 'application/octet-stream'
         return send_file(io.BytesIO(content), mimetype=mimetype, as_attachment=request.args.get('download') == '1', download_name=original_download_name)
     except requests.RequestException as e:
         app.logger.exception('GitHub document download failed')
@@ -2695,7 +2762,7 @@ def user_management_list():
             "username": username, "user_id": record.get("user_id", username),
             "role": record.get("role", "New User"),
             "active": record.get("active", True) is not False,
-            "permissions": sorted(set(record.get("permissions") or DEFAULT_NEW_USER_PERMISSIONS)),
+            "permissions": sorted(set(record.get("permissions", DEFAULT_NEW_USER_PERMISSIONS) or [])),
             "created_at": record.get("created_at", "")
         })
     result.sort(key=lambda x: x["username"].lower())
@@ -2724,8 +2791,7 @@ def user_management_create():
     unknown = selected - set(PERMISSION_LABELS)
     if unknown:
         return jsonify({"error":"Invalid permission selected."}), 400
-    # Required defaults are always retained and cannot be removed.
-    selected.update(DEFAULT_NEW_USER_PERMISSIONS)
+    # Permissions are optional and are saved exactly as selected by the administrator.
     active_value = payload.get("active", True)
     if not isinstance(active_value, bool):
         return jsonify({"error":"Account status must be Active or Inactive."}), 400
@@ -2766,7 +2832,7 @@ def user_management_update(username):
         selected = set(raw_permissions)
         if selected - set(PERMISSION_LABELS):
             return jsonify({"error":"Invalid permission selected."}), 400
-        selected.update(DEFAULT_NEW_USER_PERMISSIONS)
+        # Preserve the administrator-selected permissions, including an empty selection.
         record["permissions"] = sorted(selected)
     if "active" in payload:
         if not isinstance(payload["active"], bool):
@@ -3864,7 +3930,6 @@ MAIN_DASHBOARD_HTML = """
                 if(res.ok) {
                     rawLeadsData = await res.json();
                     renderUI(rawLeadsData);
-                    fetchTrashData();
                 }
             } catch(e) { console.error(e); }
         }
@@ -3921,7 +3986,7 @@ MAIN_DASHBOARD_HTML = """
             view_work_history:"View Work History", view_logs:"View Logs", export_reports:"Export Reports",
             access_settings:"Access Settings & Logs", view_trash:"View Trash Bin", restore_trash:"Restore Trash Records"
         };
-        const crmRequiredPermissions = ["call_leads","update_leads"];
+        const crmRequiredPermissions = [];
         function renderNewUserPermissionChoices(selected=[]) {
             const holder=document.getElementById('newCrmPermissionChoices'); if(!holder)return;
             holder.innerHTML=Object.entries(crmPermissionLabels).map(([key,label])=>{
@@ -3930,7 +3995,7 @@ MAIN_DASHBOARD_HTML = """
             }).join('');
         }
         function selectedCrmPermissions(){
-            return [...document.querySelectorAll('.crm-permission-check:checked')].map(x=>x.value).concat(crmRequiredPermissions);
+            return [...document.querySelectorAll('.crm-permission-check:checked')].map(x=>x.value);
         }
         async function createCrmUser(e){
             e.preventDefault();
@@ -4275,7 +4340,6 @@ MAIN_DASHBOARD_HTML = """
         function renderUI(dataList) {
             const activeLeads = dataList.filter(l => !l.is_deleted);
             const trashLeads = dataList.filter(l => l.is_deleted);
-            rawTrashData = trashLeads.slice();
             
             document.getElementById('statTotal').innerText = activeLeads.length;
             document.getElementById('statContacted').innerText = activeLeads.filter(l => l.status === 'Contacted').length;
@@ -4335,7 +4399,6 @@ MAIN_DASHBOARD_HTML = """
                 `;
             });
             
-            applyTrashFilters();
             applyAllLeadsFilters();
             updatePieChart(activeLeads);
             updateTimeFilteredCharts(activeLeads);
@@ -4533,7 +4596,9 @@ MAIN_DASHBOARD_HTML = """
             if(selectedIds.length === 0) return alert('Select at least one history entry.');
             if(confirm(`Delete ${selectedIds.length} history records?`)) {
                 const res = await fetch('/api/delete-selected-history', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({history_ids: selectedIds}) });
-                if(res.ok) { fetchWorkHistory(); fetchTrashData(); } else alert('Unauthorized.');
+                const result=await res.json().catch(()=>({error:'Unable to delete selected Work History records.'}));
+                if(res.ok) { alert(result.message||'Selected history records deleted.'); fetchWorkHistory(); fetchTrashData(); }
+                else alert(result.error||result.message||`Work History delete failed (HTTP ${res.status}).`);
             }
         }
 
@@ -4564,6 +4629,7 @@ MAIN_DASHBOARD_HTML = """
                 if(res.ok) {
                     alert(result.message);
                     fetchLeadsData();
+                    fetchStudentsData();
                 } else {
                     alert('Error: ' + result.message);
                 }
@@ -4682,9 +4748,66 @@ MAIN_DASHBOARD_HTML = """
             modal.style.display = 'flex';
         }
 
+        function renderLeadViewDocumentControls(lead, hostId='studentDocumentControls') {
+            const host=document.getElementById(hostId); if(!host) return;
+            window.currentLeadViewRecord=JSON.parse(JSON.stringify(lead||{}));
+            const docs=[],seen=new Set(),metadata=new Map();
+            (lead.attachments||[]).forEach(a=>{if(a&&a.stored_name)metadata.set(a.stored_name,a);});
+            const add=(field,value)=>{if(typeof value==='string'&&value&&!seen.has(value)){const meta=metadata.get(value)||{};docs.push({field,path:value,title:meta.original_name||field.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase()),original_name:meta.original_name||''});seen.add(value);}};
+            Object.entries(lead||{}).forEach(([field,value])=>{if(field!=='attachments'&&/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(field))add(field,value);});
+            if(lead.form_data&&typeof lead.form_data==='object')Object.entries(lead.form_data).forEach(([field,value])=>{if(/(document|_doc$|scorecard|marksheet|aadhar|photo|image|attachment|file)/i.test(field))add(field,value);});
+            (lead.attachments||[]).forEach((a,i)=>{if(a&&a.stored_name&&!seen.has(a.stored_name)){docs.push({field:a.field||`attachment_${i+1}`,path:a.stored_name,title:a.original_name||`Attachment ${i+1}`,original_name:a.original_name||''});seen.add(a.stored_name);}});
+            const canUpload=userRole==='Admin'||(userRole==='New User'&&(window.crmUserPermissions||[]).includes('upload_student_documents'));
+            const canReplace=canUpload;
+            const canDelete=userRole==='Admin'||(userRole==='New User'&&(window.crmUserPermissions||[]).includes('delete_student_documents'));
+            window.currentLeadViewDocumentFields={};
+            const cards=docs.map((d,i)=>{
+                const token='leadViewDoc_'+i; window.currentLeadViewDocumentFields[token]=d;
+                const url='/download-doc/'+encodeURIComponent(d.path).replace(/%2F/g,'/');
+                return `<div style="border:1px solid #dbeafe;background:#fff;border-radius:8px;padding:10px;min-width:210px;">
+                    <div style="font-weight:700;font-size:12px;margin-bottom:8px;">${d.title}</div><div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="button" onclick="previewDocument('${url}','${String(d.title).replace(/'/g,"&#39;")}')" style="background:#2563eb;color:#fff;border:0;padding:6px 9px;border-radius:6px;">View</button>
+                    <a href="${url}?download=1" download="${String(d.original_name||d.title).replace(/"/g,'&quot;')}" style="background:#16a34a;color:#fff;padding:6px 9px;border-radius:6px;text-decoration:none;">Download</a>
+                    ${canReplace?`<label style="background:#7c3aed;color:#fff;padding:6px 9px;border-radius:6px;cursor:pointer;">Replace<input type="file" id="${token}_file" style="display:none" onchange="replaceLeadViewDocument('${token}')"></label>`:''}
+                    ${canDelete?`<button type="button" onclick="deleteLeadViewDocument('${token}')" style="background:#dc2626;color:#fff;border:0;padding:6px 9px;border-radius:6px;">Delete</button>`:''}
+                    </div></div>`;
+            }).join('');
+            host.innerHTML=(cards||'<span style="color:#64748b;font-size:12px;">No documents uploaded.</span>')+(canUpload?`<div style="width:100%;margin-top:8px;"><input type="file" id="leadViewNewDocumentFile" style="max-width:100%;"><button type="button" onclick="uploadLeadViewDocument()" style="margin-top:6px;background:#2563eb;color:#fff;border:0;padding:7px 10px;border-radius:6px;">Upload Document</button></div>`:'');
+        }
+        async function uploadLeadViewDocument(){
+            const lead=window.currentLeadViewRecord||{};const input=document.getElementById('leadViewNewDocumentFile');
+            if(!lead.id||!input||!input.files.length){alert('Select a document first.');return;}
+            const fd=new FormData();fd.append('action','upload');fd.append('file',input.files[0]);
+            const res=await fetch(`/api/lead-document/${lead.id}/additional_document`,{method:'POST',body:fd});
+            const data=await res.json().catch(()=>({error:'Unable to upload document.'}));
+            if(res.ok){lead[data.document.field]=data.document.stored_name;lead.attachments=lead.attachments||[];lead.attachments.push(data.document);lead.form_data=lead.form_data||{};lead.form_data[data.document.field]=data.document.stored_name;window.currentLeadViewRecord=lead;renderLeadViewDocumentControls(lead);fetchLeadsData();alert(data.message||'Document uploaded.');}
+            else alert(data.error||'Unable to upload document.');
+        }
+        async function replaceLeadViewDocument(token){
+            const lead=window.currentLeadViewRecord||{};const doc=(window.currentLeadViewDocumentFields||{})[token];const input=document.getElementById(token+'_file');
+            if(!lead.id||!doc||!input||!input.files.length)return;
+            const fd=new FormData();fd.append('action','replace');fd.append('field',doc.field);fd.append('stored_name',doc.path);fd.append('file',input.files[0]);
+            const res=await fetch(`/api/lead-document/${lead.id}/${encodeURIComponent(doc.field)}`,{method:'POST',body:fd});
+            const data=await res.json().catch(()=>({error:'Unable to replace document.'}));
+            if(res.ok){if(lead[doc.field]===doc.path)lead[doc.field]=data.document.stored_name;if(lead.form_data&&lead.form_data[doc.field]===doc.path)lead.form_data[doc.field]=data.document.stored_name;lead.attachments=(lead.attachments||[]).filter(a=>a.stored_name!==doc.path);lead.attachments.push(data.document);window.currentLeadViewRecord=lead;renderLeadViewDocumentControls(lead);fetchLeadsData();alert(data.message||'Document replaced.');}
+            else alert(data.error||'Unable to replace document.');
+        }
+        async function deleteLeadViewDocument(token){
+            const lead=window.currentLeadViewRecord||{};const doc=(window.currentLeadViewDocumentFields||{})[token];
+            if(!lead.id||!doc||!confirm('Move this document to Trash Bin?'))return;
+            const res=await fetch(`/api/lead-document/${lead.id}/${encodeURIComponent(doc.field)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',field:doc.field,stored_name:doc.path})});
+            const data=await res.json().catch(()=>({error:'Unable to delete document.'}));
+            if(res.ok){if(lead[doc.field]===doc.path)lead[doc.field]=null;if(lead.form_data&&lead.form_data[doc.field]===doc.path)lead.form_data[doc.field]=null;lead.attachments=(lead.attachments||[]).filter(a=>a.stored_name!==doc.path);window.currentLeadViewRecord=lead;renderLeadViewDocumentControls(lead);fetchLeadsData();fetchTrashData();alert(data.message||'Document moved to Trash Bin.');}
+            else alert(data.error||'Unable to delete document.');
+        }
+
         function renderStudentDocumentControls(student, hostId='studentDocumentControls') {
             const host=document.getElementById(hostId);
             if(!host) return;
+            if(student && student.id !== undefined && student.student_id === undefined) {
+                renderLeadViewDocumentControls(student, hostId);
+                return;
+            }
             const docs=[]; const seen=new Set(); const metadata=new Map();
             (student.attachments||[]).forEach(a=>{if(a&&a.stored_name)metadata.set(a.stored_name,a);});
             Object.entries(student||{}).forEach(([field,value])=>{
@@ -4896,7 +5019,9 @@ MAIN_DASHBOARD_HTML = """
             document.getElementById('edit_state').value = lead.state || '';
             document.getElementById('edit_city').value = lead.city || '';
             document.getElementById('edit_delete_doc').checked = false;
-            
+            const legacyFileInput=document.getElementById('edit_id_document'); if(legacyFileInput) legacyFileInput.value='';
+            renderLeadStructuredFields(lead);
+            renderLeadEditDocuments(lead);
             document.getElementById('editModal').style.display = 'flex';
         }
         function closeEditModal() { document.getElementById('editModal').style.display = 'none'; }
@@ -5207,7 +5332,10 @@ MAIN_DASHBOARD_HTML = """
         if(document.getElementById('crmUsersTbody')){renderNewUserPermissionChoices();fetchCrmUsers();}
         fetchLeadsData();
         fetchColleges();
-        setInterval(fetchLeadsData, 5000);
+        setInterval(()=>{
+            const trashTab=document.getElementById("trash-tab");
+            if(!trashTab || !trashTab.classList.contains("active")) fetchLeadsData();
+        }, 5000);
     </script>
 </body>
 </html>
