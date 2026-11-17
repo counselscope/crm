@@ -4362,5 +4362,26 @@
         "action_type": "Module Access",
         "details": "Opened trash module.",
         "related_record_id": null
+    },
+    {
+        "id": "0075bc2235514d6e9319804fd826a669",
+        "activity_id": "0075bc2235514d6e9319804fd826a669",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-17",
+        "time": "12:51:13 PM",
+        "timestamp": 1794919873.355779,
+        "ip_address": "223.191.91.35",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "get_work_history_users",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/work-history-users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
