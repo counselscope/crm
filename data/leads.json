@@ -366,7 +366,7 @@
                 "extension": ".jpg"
             }
         ],
-        "status": "Follow Up",
+        "status": "Converted to Student",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
         "is_deleted": false,
@@ -500,7 +500,7 @@
                 "extension": ".jpg"
             }
         ],
-        "status": "Converted to Student",
+        "status": "New Lead",
         "score": 80,
         "notes": "Enquiry received via dynamic HTML form submission.",
         "is_deleted": false,
