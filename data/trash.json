@@ -1,31 +1,5 @@
 [
     {
-        "trash_id": "ee73383f547a4882ad5fa4c71aca0350",
-        "category": "Work History",
-        "source_file": "/opt/render/project/src/data/work_history.json",
-        "source_id": "6e4c31b69ff34fdab4b92dde9dbebff8",
-        "record": {
-            "id": "6e4c31b69ff34fdab4b92dde9dbebff8",
-            "activity_id": "6e4c31b69ff34fdab4b92dde9dbebff8",
-            "username": "admin",
-            "user_id": "admin",
-            "role": "Admin",
-            "account_role": "Admin",
-            "date": "2026-11-08",
-            "time": "07:15:53 PM",
-            "timestamp": 1794165353.551924,
-            "ip_address": "106.192.54.240",
-            "module": "User",
-            "action": "User Logout",
-            "action_type": "User Logout",
-            "details": "User admin logged out.",
-            "related_record_id": null
-        },
-        "deleted_date": "2026-11-17",
-        "deleted_at": "17 Nov 2026, 05:14 PM",
-        "deleted_timestamp": 1794935673.259234
-    },
-    {
         "trash_id": "560f1465d08848fcaa13544651dcd24f",
         "category": "Work History",
         "source_file": "/opt/render/project/src/data/work_history.json",
