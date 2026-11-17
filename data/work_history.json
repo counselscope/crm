@@ -4975,5 +4975,26 @@
         "action_type": "Permanent Delete",
         "details": "Admin permanently deleted 1 Trash Bin record(s).",
         "related_record_id": null
+    },
+    {
+        "id": "d1a20819bb554d6f9ac7cf848471da4e",
+        "activity_id": "d1a20819bb554d6f9ac7cf848471da4e",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-17",
+        "time": "05:16:29 PM",
+        "timestamp": 1794935789.3553,
+        "ip_address": "223.191.95.130",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "get_work_history_users",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/work-history-users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
