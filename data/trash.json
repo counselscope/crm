@@ -1,35 +1,5 @@
 [
     {
-        "trash_id": "614841c8cb6b4bd9bfa0fec1c929c21d",
-        "category": "Work History",
-        "source_file": "/opt/render/project/src/data/work_history.json",
-        "source_id": "2e3a831cea614492a48fac255e756977",
-        "record": {
-            "id": "2e3a831cea614492a48fac255e756977",
-            "activity_id": "2e3a831cea614492a48fac255e756977",
-            "username": "admin",
-            "user_id": "admin",
-            "role": "Admin",
-            "account_role": "Admin",
-            "date": "2026-11-17",
-            "time": "12:49:29 PM",
-            "timestamp": 1794919769.579861,
-            "ip_address": "223.191.91.35",
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
-            "browser": "Google Chrome (157.0.0.0)",
-            "os": "Windows",
-            "location": "Unknown",
-            "module": "get_work_history_users",
-            "action": "GET",
-            "action_type": "Request Activity",
-            "details": "GET /api/work-history-users returned HTTP 200.",
-            "related_record_id": null
-        },
-        "deleted_date": "2026-11-17",
-        "deleted_at": "17 Nov 2026, 12:50 PM",
-        "deleted_timestamp": 1794919840.599099
-    },
-    {
         "trash_id": "2ed755937a914993ab1a03379d3917b2",
         "category": "Work History",
         "source_file": "/opt/render/project/src/data/work_history.json",
