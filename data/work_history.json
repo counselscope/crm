@@ -5938,5 +5938,26 @@
         "action_type": "Request Activity",
         "details": "GET /download-doc/student_documents/ramesh/doc_1794398134_5890e4f0_cover.jpg returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "6254eb64d3794d14996b176a1f463b35",
+        "activity_id": "6254eb64d3794d14996b176a1f463b35",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-19",
+        "time": "03:15:18 PM",
+        "timestamp": 1795101318.569882,
+        "ip_address": "103.101.115.238",
+        "user_agent": "Dalvik/2.1.0 (Linux; U; Android 16; CPH2825 Build/BP2A.250605.015)",
+        "browser": "Unknown Browser (Unknown)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
