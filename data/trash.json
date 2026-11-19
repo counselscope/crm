@@ -888,5 +888,57 @@
         "deleted_date": "2026-11-19",
         "deleted_at": "19 Nov 2026, 05:12 PM",
         "deleted_timestamp": 1795108374.662781
+    },
+    {
+        "trash_id": "0259440388fe4bd0965829cf95eac8fb",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "4da3efa4366547fcb48386db1d5f8cad",
+        "record": {
+            "id": "4da3efa4366547fcb48386db1d5f8cad",
+            "activity_id": "4da3efa4366547fcb48386db1d5f8cad",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:42:46 PM",
+            "timestamp": 1794328966.351858,
+            "ip_address": "106.192.53.6",
+            "module": "trash",
+            "action": "Open Tab",
+            "action_type": "Module Access",
+            "details": "Opened trash module.",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-19",
+        "deleted_at": "19 Nov 2026, 05:12 PM",
+        "deleted_timestamp": 1795108376.562532
+    },
+    {
+        "trash_id": "cf661b7c4817486689ff6c11318d86c6",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "294bbb8a00fa4bccb227ee7873fb5ad3",
+        "record": {
+            "id": "294bbb8a00fa4bccb227ee7873fb5ad3",
+            "activity_id": "294bbb8a00fa4bccb227ee7873fb5ad3",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:42:47 PM",
+            "timestamp": 1794328967.918182,
+            "ip_address": "106.192.53.6",
+            "module": "settings",
+            "action": "Open Tab",
+            "action_type": "Module Access",
+            "details": "Opened settings module.",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-19",
+        "deleted_at": "19 Nov 2026, 05:12 PM",
+        "deleted_timestamp": 1795108378.311541
     }
 ]
