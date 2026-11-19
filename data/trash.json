@@ -286,7 +286,7 @@
         "deleted_timestamp": 1794935690.158118
     },
     {
-        "trash_id": "6340fa53ebcd41a0b672023b1350c0c5",
+        "trash_id": "17ecbd955d03478f951877f0681f5f64",
         "category": "Leads",
         "source_file": "/opt/render/project/src/data/leads.json",
         "source_id": 5,
@@ -366,88 +366,33 @@
             }
         },
         "deleted_date": "2026-11-19",
-        "deleted_at": "19 Nov 2026, 05:11 PM",
-        "deleted_timestamp": 1795108266.0996
+        "deleted_at": "19 Nov 2026, 05:10 PM",
+        "deleted_timestamp": 1795108258.330813
     },
     {
-        "trash_id": "d457a71de95b4c039f91c4784a24076d",
-        "category": "Logs",
-        "source_file": "/opt/render/project/src/data/login_logs.json",
-        "source_id": 1,
+        "trash_id": "f15488a4bbe148818c45709242bcaa40",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "83ed81d73dd2404aacaeaf747306a775",
         "record": {
-            "id": 1,
+            "id": "83ed81d73dd2404aacaeaf747306a775",
+            "activity_id": "83ed81d73dd2404aacaeaf747306a775",
             "username": "admin",
+            "user_id": "admin",
             "role": "Admin",
-            "ip_address": "223.228.58.63",
-            "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
-            "browser": "Google Chrome (156.0.0.0)",
-            "os": "Android",
-            "login_date": "2026-11-19",
-            "login_time": "19 Nov 2026, 01:50 PM",
-            "login_timestamp": 1795096239.024186,
-            "logout_date": "2026-11-19",
-            "logout_time": "19 Nov 2026, 01:57 PM",
-            "logout_timestamp": 1795096665.417643,
-            "location": "Unknown",
-            "status": "Logged Out",
-            "session_info": "Session ID: 1194328549628723673"
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:33:21 PM",
+            "timestamp": 1794328401.935723,
+            "ip_address": "106.192.53.6",
+            "module": "dashboard",
+            "action": "Open Tab",
+            "action_type": "Module Access",
+            "details": "Opened dashboard module.",
+            "related_record_id": null
         },
         "deleted_date": "2026-11-19",
-        "deleted_at": "19 Nov 2026, 05:11 PM",
-        "deleted_timestamp": 1795108313.504461
-    },
-    {
-        "trash_id": "6eae8a18c0b84c78925a7dd7319f8099",
-        "category": "Logs",
-        "source_file": "/opt/render/project/src/data/login_logs.json",
-        "source_id": 2,
-        "record": {
-            "id": 2,
-            "username": "admin",
-            "role": "Admin",
-            "ip_address": "103.101.115.238",
-            "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
-            "browser": "Google Chrome (157.0.0.0)",
-            "os": "Linux",
-            "login_date": "2026-11-19",
-            "login_time": "19 Nov 2026, 01:57 PM",
-            "login_timestamp": 1795096665.417643,
-            "logout_date": "2026-11-19",
-            "logout_time": "19 Nov 2026, 01:59 PM",
-            "logout_timestamp": 1795096775.474648,
-            "location": "Unknown",
-            "status": "Logged Out",
-            "session_info": "Session ID: 7299996163775544370"
-        },
-        "deleted_date": "2026-11-19",
-        "deleted_at": "19 Nov 2026, 05:11 PM",
-        "deleted_timestamp": 1795108314.557035
-    },
-    {
-        "trash_id": "386416575da946be9b986a0b6d186566",
-        "category": "Logs",
-        "source_file": "/opt/render/project/src/data/login_logs.json",
-        "source_id": 3,
-        "record": {
-            "id": 3,
-            "username": "admin",
-            "role": "Admin",
-            "ip_address": "223.228.58.63",
-            "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            "browser": "Google Chrome (156.0.0.0)",
-            "os": "Linux",
-            "login_date": "2026-11-19",
-            "login_time": "19 Nov 2026, 01:59 PM",
-            "login_timestamp": 1795096775.474648,
-            "logout_date": "2026-11-19",
-            "logout_time": "19 Nov 2026, 01:59 PM",
-            "logout_timestamp": 1795096779.375133,
-            "location": "Unknown",
-            "status": "Logged Out",
-            "session_info": "Session ID: 3697672517282638538"
-        },
-        "deleted_date": "2026-11-19",
-        "deleted_at": "19 Nov 2026, 05:11 PM",
-        "deleted_timestamp": 1795108316.236284
+        "deleted_at": "19 Nov 2026, 05:12 PM",
+        "deleted_timestamp": 1795108348.405593
     }
 ]
