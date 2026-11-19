@@ -6085,5 +6085,26 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "dd297eddc1454a70b2574bb46d14f86c",
+        "activity_id": "dd297eddc1454a70b2574bb46d14f86c",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-19",
+        "time": "03:46:54 PM",
+        "timestamp": 1795103214.277103,
+        "ip_address": "103.101.115.238",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Linux",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
