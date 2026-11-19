@@ -5770,5 +5770,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/users returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "3570b353c5914b6697a72ba1b36d052e",
+        "activity_id": "3570b353c5914b6697a72ba1b36d052e",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-19",
+        "time": "02:43:23 PM",
+        "timestamp": 1795099403.430716,
+        "ip_address": "223.228.55.63",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "settings",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened settings module.",
+        "related_record_id": null
     }
 ]
