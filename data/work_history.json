@@ -5665,5 +5665,26 @@
         "action_type": "Module Access",
         "details": "Opened students module.",
         "related_record_id": null
+    },
+    {
+        "id": "28440e1a139d443c93ff816b8b28f098",
+        "activity_id": "28440e1a139d443c93ff816b8b28f098",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-19",
+        "time": "02:20:32 PM",
+        "timestamp": 1795098032.900572,
+        "ip_address": "223.228.57.63",
+        "user_agent": "Dalvik/2.1.0 (Linux; U; Android 15; SM-A366E Build/AP3A.240905.015.A2)",
+        "browser": "Unknown Browser (Unknown)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
