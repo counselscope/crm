@@ -940,5 +940,31 @@
         "deleted_date": "2026-11-19",
         "deleted_at": "19 Nov 2026, 05:12 PM",
         "deleted_timestamp": 1795108378.311541
+    },
+    {
+        "trash_id": "98efda1448c94266905c28465c41824b",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "8b924ca7331d49de98f1a47593b68585",
+        "record": {
+            "id": "8b924ca7331d49de98f1a47593b68585",
+            "activity_id": "8b924ca7331d49de98f1a47593b68585",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:42:49 PM",
+            "timestamp": 1794328969.065427,
+            "ip_address": "106.192.53.6",
+            "module": "trash",
+            "action": "Open Tab",
+            "action_type": "Module Access",
+            "details": "Opened trash module.",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-19",
+        "deleted_at": "19 Nov 2026, 05:12 PM",
+        "deleted_timestamp": 1795108379.725749
     }
 ]
