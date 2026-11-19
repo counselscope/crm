@@ -5854,5 +5854,26 @@
         "action_type": "Module Access",
         "details": "Opened colleges module.",
         "related_record_id": null
+    },
+    {
+        "id": "2110ec728b0a419da39aca31ba1f9bcd",
+        "activity_id": "2110ec728b0a419da39aca31ba1f9bcd",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-19",
+        "time": "02:43:35 PM",
+        "timestamp": 1795099415.676025,
+        "ip_address": "223.228.55.63",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "students",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened students module.",
+        "related_record_id": null
     }
 ]
