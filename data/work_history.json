@@ -7093,5 +7093,26 @@
         "action_type": "User Login",
         "details": "client logged in.",
         "related_record_id": null
+    },
+    {
+        "id": "8e9e347de4904031a3b4911d9ed7c24e",
+        "activity_id": "8e9e347de4904031a3b4911d9ed7c24e",
+        "username": "client",
+        "user_id": "client",
+        "role": "Client",
+        "account_role": "Client",
+        "date": "2026-11-19",
+        "time": "05:14:10 PM",
+        "timestamp": 1795108450.313702,
+        "ip_address": "223.228.51.63",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "crm_dashboard",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /dashboard returned HTTP 200.",
+        "related_record_id": null
     }
 ]
