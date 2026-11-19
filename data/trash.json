@@ -602,5 +602,57 @@
         "deleted_date": "2026-11-19",
         "deleted_at": "19 Nov 2026, 05:12 PM",
         "deleted_timestamp": 1795108359.333001
+    },
+    {
+        "trash_id": "cf9d997caf754050986971235032d288",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "e1d0641b78aa456499f473b4fae64a5a",
+        "record": {
+            "id": "e1d0641b78aa456499f473b4fae64a5a",
+            "activity_id": "e1d0641b78aa456499f473b4fae64a5a",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:39:06 PM",
+            "timestamp": 1794328746.318332,
+            "ip_address": "106.192.53.6",
+            "module": "Authentication",
+            "action": "Login",
+            "action_type": "User Login",
+            "details": "admin logged in.",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-19",
+        "deleted_at": "19 Nov 2026, 05:12 PM",
+        "deleted_timestamp": 1795108360.660735
+    },
+    {
+        "trash_id": "4812531a60ec4adba9c9352dbf49d288",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "51f3633b732a4e75ad3b868e6b27a70b",
+        "record": {
+            "id": "51f3633b732a4e75ad3b868e6b27a70b",
+            "activity_id": "51f3633b732a4e75ad3b868e6b27a70b",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:39:09 PM",
+            "timestamp": 1794328749.838149,
+            "ip_address": "106.192.53.6",
+            "module": "crm_dashboard",
+            "action": "Access",
+            "action_type": "Module Access",
+            "details": "GET /dashboard returned HTTP 200.",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-19",
+        "deleted_at": "19 Nov 2026, 05:12 PM",
+        "deleted_timestamp": 1795108361.923866
     }
 ]
