@@ -6631,5 +6631,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/lead-management/stats returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "3ad433c88e0242629ae6dd6255907ef9",
+        "activity_id": "3ad433c88e0242629ae6dd6255907ef9",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-19",
+        "time": "05:11:45 PM",
+        "timestamp": 1795108305.911009,
+        "ip_address": "223.228.51.63",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "trash",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened trash module.",
+        "related_record_id": null
     }
 ]
