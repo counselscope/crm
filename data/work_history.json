@@ -7072,5 +7072,26 @@
         "action_type": "User Logout",
         "details": "User admin logged out.",
         "related_record_id": null
+    },
+    {
+        "id": "475ba4682f704509885f04a71ab3cbff",
+        "activity_id": "475ba4682f704509885f04a71ab3cbff",
+        "username": "client",
+        "user_id": "client",
+        "role": "Client",
+        "account_role": "Client",
+        "date": "2026-11-19",
+        "time": "05:14:07 PM",
+        "timestamp": 1795108447.981467,
+        "ip_address": "223.228.51.63",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "Authentication",
+        "action": "Login",
+        "action_type": "User Login",
+        "details": "client logged in.",
+        "related_record_id": null
     }
 ]
