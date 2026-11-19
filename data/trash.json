@@ -810,5 +810,31 @@
         "deleted_date": "2026-11-19",
         "deleted_at": "19 Nov 2026, 05:12 PM",
         "deleted_timestamp": 1795108370.261932
+    },
+    {
+        "trash_id": "947d445728194956957f5aedbee55efa",
+        "category": "Work History",
+        "source_file": "/opt/render/project/src/data/work_history.json",
+        "source_id": "72aca065a974444ca488e20263fda56d",
+        "record": {
+            "id": "72aca065a974444ca488e20263fda56d",
+            "activity_id": "72aca065a974444ca488e20263fda56d",
+            "username": "admin",
+            "user_id": "admin",
+            "role": "Admin",
+            "account_role": "Admin",
+            "date": "2026-11-10",
+            "time": "04:41:30 PM",
+            "timestamp": 1794328890.873938,
+            "ip_address": "106.192.53.6",
+            "module": "download_document",
+            "action": "Access",
+            "action_type": "Module Access",
+            "details": "GET /download-doc/student_documents/priti/doc_1794328873_767344bd_logo.png returned HTTP 200.",
+            "related_record_id": null
+        },
+        "deleted_date": "2026-11-19",
+        "deleted_at": "19 Nov 2026, 05:12 PM",
+        "deleted_timestamp": 1795108372.026079
     }
 ]
