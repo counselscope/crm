@@ -28,6 +28,42 @@ app = Flask(__name__)
 app.secret_key = "counselscope_world_class_crm_2026_secret"
 CORS(app)
 
+
+class FlexibleMountPathMiddleware:
+    """Mount Flask at root or beneath a URL prefix such as /console or /folder/console.
+
+    An explicitly supplied SCRIPT_NAME is authoritative. Otherwise a prefix ending
+    in /console is detected and stripped from PATH_INFO. Root deployments are unchanged.
+    """
+    def __init__(self, application):
+        self.application = application
+
+    def __call__(self, environ, start_response):
+        if environ.get("SCRIPT_NAME"):
+            return self.application(environ, start_response)
+        path = environ.get("PATH_INFO", "") or "/"
+        parts = [part for part in path.split("/") if part]
+        try:
+            console_index = parts.index("console")
+        except ValueError:
+            console_index = -1
+        if console_index >= 0:
+            prefix_parts = parts[:console_index + 1]
+            remainder = parts[console_index + 1:]
+            # Only interpret /.../console as a mount point when the remainder is
+            # empty or looks like one of this application's route/static paths.
+            known_roots = {
+                "api", "login", "logout", "dashboard", "download-doc",
+                "static", "favicon.ico"
+            }
+            if not remainder or remainder[0] in known_roots:
+                prefix = "/" + "/".join(prefix_parts)
+                environ["SCRIPT_NAME"] = prefix
+                environ["PATH_INFO"] = "/" + "/".join(remainder) if remainder else "/"
+        return self.application(environ, start_response)
+
+app.wsgi_app = FlexibleMountPathMiddleware(app.wsgi_app)
+
 DEFAULT_NEW_USER_PERMISSIONS = []
 PERMISSION_LABELS = {
     "view_dashboard": "View Dashboard",
@@ -61,6 +97,12 @@ PERMISSION_LABELS = {
     "restore_trash": "Restore Trash Records",
 }
 PERMISSION_ENDPOINTS = {
+    "manual_leads_api": ("__lead_manager__",),
+    "manual_lead_create": ("__lead_manager__",),
+    "manual_lead_detail": ("__lead_manager__",),
+    "manual_lead_update": ("__lead_manager__",),
+    "manual_lead_delete": ("__lead_manager__",),
+    "manual_lead_summary": ("__lead_manager__",),
     "get_leads_api": ("call_leads", "view_leads"),
     "update_lead": ("update_leads", "add_followup", "change_lead_status"),
     "update_status": ("update_leads", "change_lead_status"),
@@ -143,6 +185,18 @@ def enforce_new_user_route_permissions():
     endpoint = request.endpoint or ""
     if endpoint in ("login", "home", "logout", "crm_dashboard", "static"):
         return None
+    if endpoint in {"manual_leads_api", "manual_lead_create", "manual_lead_detail",
+                    "manual_lead_update", "manual_lead_delete", "manual_lead_summary"}:
+        return None
+    # Legacy bulk/export/document routes expose global lead data; keep them Admin-only.
+    # Normal users use the owner-scoped manual Leads API and their existing single-lead updates.
+    admin_only_lead_routes = {
+        "export_filtered_leads_csv", "delete_filtered_leads", "delete_selected_leads",
+        "export_leads_pdf", "export_full_excel", "export_full_pdf", "export_filtered_trash_pdf",
+        "convert_to_student", "restore_lead", "manage_lead_document"
+    }
+    if endpoint in admin_only_lead_routes:
+        return jsonify({"error": "Admin access required for this operation."}), 403
     required = PERMISSION_ENDPOINTS.get(endpoint)
     if required is None:
         return jsonify({"error": "Access denied. This feature is not authorized for your account."}), 403
@@ -151,6 +205,61 @@ def enforce_new_user_route_permissions():
     if not any(has_permission(p) for p in required):
         return jsonify({"error": "Permission denied for this operation."}), 403
     return None
+
+
+def _lead_owner_matches_session(lead):
+    """True only when a lead has a reliable owner matching the authenticated account."""
+    username = str(session.get("username") or "")
+    user_id = str(session.get("user_id") or username)
+    owner_id = str(lead.get("created_by_id") or lead.get("creator_user_id") or "")
+    owner_name = str(lead.get("created_by") or lead.get("created_by_username") or "")
+    # A stored stable User ID is authoritative; use username only for legacy records
+    # that predate User IDs. This prevents a deleted/recreated username inheriting old leads.
+    return owner_id == user_id if owner_id else bool(owner_name and owner_name == username)
+
+
+def _visible_leads_for_session(records=None, include_deleted=False):
+    records = load_data(DATA_FILE) if records is None else records
+    if is_admin_session():
+        return [x for x in records if include_deleted or not x.get("is_deleted")]
+    if not session.get("logged_in") or session.get("role") != "New User":
+        return []
+    return [x for x in records if _lead_owner_matches_session(x)
+            and (include_deleted or not x.get("is_deleted"))]
+
+
+def _stamp_lead_update(lead):
+    now = datetime.now()
+    lead["last_updated_date"] = now.strftime("%Y-%m-%d")
+    lead["last_updated_time"] = now.strftime("%H:%M:%S")
+    lead["updated_at"] = now.isoformat(timespec="seconds")
+    lead["updated_by"] = session.get("username", "System")
+    lead["updated_by_id"] = session.get("user_id", session.get("username", "system"))
+
+
+def _lead_created_date(lead):
+    value = lead.get("created_date")
+    if value:
+        return str(value)[:10]
+    stamp = lead.get("created_timestamp")
+    if stamp:
+        try:
+            return datetime.fromtimestamp(float(stamp)).strftime("%Y-%m-%d")
+        except (TypeError, ValueError, OSError):
+            pass
+    return ""
+
+
+def _lead_field_value(lead, *keys):
+    for key in keys:
+        value = lead.get(key)
+        if value not in (None, ""):
+            return value
+        form = lead.get("form_data")
+        if isinstance(form, dict) and form.get(key) not in (None, ""):
+            return form.get(key)
+    return ""
+
 
 # Centralized persistent CRM storage. Set RENDER_DATA_DIR to the mount path of
 # an attached Render persistent disk when deploying.
@@ -896,6 +1005,287 @@ def get_college_file_from_github(repo_path):
         raise RuntimeError("GitHub did not return the file content in base64 format.")
     return base64.b64decode(result["content"])
 
+
+# --- MANUAL LEAD MANAGEMENT (uses the existing leads.json store) ---
+MANUAL_LEAD_FIELDS = {
+    "customer_name": ("customer_name", "student_name"),
+    "mobile_number": ("mobile_number", "contact_number"),
+    "whatsapp_number": ("whatsapp_number",),
+    "alternate_number": ("alternate_number",),
+    "email_address": ("email_address", "student_email"),
+    "company_name": ("company_name",),
+    "full_address": ("full_address", "address"),
+    "city": ("city",), "state": ("state",),
+    "lead_source": ("lead_source", "hear_about"),
+    "product_service": ("product_service", "course_interest"),
+    "interested_in": ("interested_in", "course_details"),
+    "estimated_budget": ("estimated_budget", "annual_budget", "budget"),
+    "status": ("status",), "followup_date": ("followup_date", "follow_up_date"),
+    "followup_time": ("followup_time",), "remarks": ("remarks", "notes")
+}
+
+
+def _manual_lead_payload(payload):
+    result = {}
+    for target, aliases in MANUAL_LEAD_FIELDS.items():
+        value = ""
+        for key in aliases:
+            if key in payload:
+                value = payload.get(key)
+                break
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, ensure_ascii=False)
+        result[target] = str(value or "").strip()
+    # Keep the legacy CRM fields synchronized for compatibility with existing views.
+    result["student_name"] = result["customer_name"]
+    result["contact_number"] = result["mobile_number"]
+    result["student_email"] = result["email_address"]
+    result["course_interest"] = result["product_service"] or result["interested_in"]
+    result["course_details"] = result["interested_in"] or result["product_service"]
+    result["annual_budget"] = result["estimated_budget"]
+    result["budget"] = result["estimated_budget"]
+    result["hear_about"] = result["lead_source"]
+    result["notes"] = result["remarks"]
+    result["follow_up_date"] = result["followup_date"]
+    return result
+
+
+def _validate_optional_lead_fields(data):
+    email = data.get("email_address", "")
+    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return "Please enter a valid email address."
+    for field in ("mobile_number", "whatsapp_number", "alternate_number"):
+        value = data.get(field, "")
+        if value and not re.fullmatch(r"[+()\-\s0-9]{5,25}", value):
+            return f"Please enter a valid {field.replace('_', ' ')}."
+    return None
+
+
+def _manual_lead_record(lead):
+    record = dict(lead)
+    record["created_date"] = _lead_created_date(record)
+    record["created_by"] = record.get("created_by") or "Legacy / Unknown"
+    record["lead_entry_type"] = record.get("lead_entry_type") or (
+        "Manual" if record.get("manual_entry") else "Existing Incoming Source")
+    record["customer_name"] = _lead_field_value(record, "customer_name", "student_name")
+    record["mobile_number"] = _lead_field_value(record, "mobile_number", "contact_number")
+    record["email_address"] = _lead_field_value(record, "email_address", "student_email")
+    record["lead_source"] = _lead_field_value(record, "lead_source", "hear_about")
+    record["product_service"] = _lead_field_value(record, "product_service", "course_interest", "course_details")
+    record["estimated_budget"] = _lead_field_value(record, "estimated_budget", "annual_budget", "budget")
+    record["remarks"] = _lead_field_value(record, "remarks", "notes")
+    return record
+
+
+@app.route("/api/manual-leads", methods=["GET"])
+def manual_leads_api():
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    records = [_manual_lead_record(x) for x in _visible_leads_for_session()]
+    q = str(request.args.get("q") or "").strip().lower()
+    status = str(request.args.get("status") or "").strip()
+    source = str(request.args.get("source") or "").strip()
+    username = str(request.args.get("username") or "").strip()
+    period = str(request.args.get("period") or "").strip()
+    start = str(request.args.get("start") or "").strip()
+    end = str(request.args.get("end") or "").strip()
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    week_start = today - timedelta(days=6)
+    month_start = today.replace(day=1)
+    previous_month_end = month_start - timedelta(days=1)
+    previous_month_start = previous_month_end.replace(day=1)
+    filtered = []
+    for lead in records:
+        created = _lead_created_date(lead)
+        try:
+            day = datetime.strptime(created, "%Y-%m-%d").date()
+        except ValueError:
+            day = None
+        if username and (not is_admin_session() or str(lead.get("created_by") or "") != username):
+            continue
+        if status and str(lead.get("status") or "") != status:
+            continue
+        if source and str(lead.get("lead_source") or lead.get("hear_about") or "") != source:
+            continue
+        if period == "today" and day != today: continue
+        if period == "yesterday" and day != yesterday: continue
+        if period == "7days" and (not day or not week_start <= day <= today): continue
+        if period == "month" and (not day or not month_start <= day <= today): continue
+        if period == "previous_month" and (not day or not previous_month_start <= day <= previous_month_end): continue
+        if start and (not day or day < datetime.strptime(start, "%Y-%m-%d").date()): continue
+        if end and (not day or day > datetime.strptime(end, "%Y-%m-%d").date()): continue
+        if q and q not in " ".join(str(lead.get(k) or "") for k in
+            ("id","customer_name","mobile_number","email_address","company_name","lead_source","remarks","created_by")).lower():
+            continue
+        filtered.append(lead)
+    return jsonify(filtered)
+
+
+@app.route("/api/manual-leads", methods=["POST"])
+def manual_lead_create():
+    if not session.get("logged_in") or session.get("role") not in ("Admin", "New User"):
+        return jsonify({"error": "Authentication required."}), 401
+    if session.get("role") == "New User":
+        account = load_users().get(session.get("username"), {})
+        if not account or account.get("active", True) is False:
+            return jsonify({"error": "Inactive account."}), 403
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    idem = str(payload.get("submission_key") or "").strip()
+    leads = load_data(DATA_FILE)
+    if idem:
+        duplicate = next((x for x in leads if x.get("submission_key") == idem and
+                          _lead_owner_matches_session(x)), None)
+        if duplicate:
+            return jsonify({"status":"success","message":"Lead already saved.","lead":_manual_lead_record(duplicate)}), 200
+    fields = _manual_lead_payload(payload)
+    invalid = _validate_optional_lead_fields(fields)
+    if invalid:
+        return jsonify({"error": invalid}), 400
+    now = datetime.now()
+    numeric_ids = [int(x.get("id")) for x in leads if str(x.get("id","")).isdigit()]
+    lead_id = max(numeric_ids, default=0) + 1
+    username = str(session.get("username") or "")
+    user_id = str(session.get("user_id") or username)
+    record = {
+        "id": lead_id, **fields,
+        "status": fields.get("status") or "New Lead",
+        "created_by": username, "created_by_username": username,
+        "created_by_id": user_id, "creator_user_id": user_id,
+        "created_by_role": session.get("role"),
+        "created_date": now.strftime("%Y-%m-%d"),
+        "created_at": now.strftime("%d %b %Y, %I:%M %p"),
+        "created_time": now.strftime("%H:%M:%S"),
+        "created_timestamp": now.timestamp(),
+        "last_updated_date": now.strftime("%Y-%m-%d"),
+        "last_updated_time": now.strftime("%H:%M:%S"),
+        "lead_entry_type": "Manual", "manual_entry": True,
+        "submission_key": idem or uuid.uuid4().hex,
+        "is_deleted": False, "is_converted": False,
+        "form_data": dict(fields)
+    }
+    # Protect the read/allocate/write sequence against concurrent requests in this process.
+    with _DATA_LOCK:
+        current = load_data(DATA_FILE)
+        numeric_ids = [int(x.get("id")) for x in current if str(x.get("id","")).isdigit()]
+        record["id"] = max(numeric_ids, default=0) + 1
+        if idem and any(x.get("submission_key") == idem and _lead_owner_matches_session(x) for x in current):
+            existing = next(x for x in current if x.get("submission_key") == idem and _lead_owner_matches_session(x))
+            return jsonify({"status":"success","message":"Lead already saved.","lead":_manual_lead_record(existing)}), 200
+        current.append(record)
+        save_data(DATA_FILE, current)
+    log_activity("Manual Lead Created", f"{username} manually added lead #{record['id']}.",
+                 module="Leads", related_record_id=record["id"])
+    return jsonify({"status":"success","message":"Lead saved successfully.","lead":_manual_lead_record(record)}), 201
+
+
+@app.route("/api/manual-leads/<int:lead_id>", methods=["GET"])
+def manual_lead_detail(lead_id):
+    if not session.get("logged_in"): return jsonify({"error":"Unauthorized"}), 401
+    lead = next((x for x in _visible_leads_for_session() if str(x.get("id")) == str(lead_id)), None)
+    if not lead: return jsonify({"error":"Lead not found"}), 404
+    return jsonify(_manual_lead_record(lead))
+
+
+@app.route("/api/manual-leads/<int:lead_id>", methods=["PUT"])
+def manual_lead_update(lead_id):
+    if not session.get("logged_in"): return jsonify({"error":"Unauthorized"}), 401
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    with _DATA_LOCK:
+        leads = load_data(DATA_FILE)
+        lead = next((x for x in leads if str(x.get("id")) == str(lead_id) and not x.get("is_deleted")), None)
+        if not lead or (not is_admin_session() and not _lead_owner_matches_session(lead)):
+            return jsonify({"error":"Lead not found"}), 404
+        fields = _manual_lead_payload(payload)
+        invalid = _validate_optional_lead_fields(fields)
+        if invalid: return jsonify({"error":invalid}), 400
+        protected = {"id","created_by","created_by_username","created_by_id","creator_user_id",
+                     "created_by_role","created_date","created_at","created_time","created_timestamp",
+                     "lead_entry_type","manual_entry","submission_key"}
+        for key, value in fields.items():
+            if key not in protected:
+                lead[key] = value
+        lead["form_data"] = {**(lead.get("form_data") if isinstance(lead.get("form_data"),dict) else {}), **fields}
+        _stamp_lead_update(lead)
+        save_data(DATA_FILE, leads)
+    log_activity("Manual Lead Updated", f"{session.get('username')} updated lead #{lead_id}.",
+                 module="Leads", related_record_id=lead_id)
+    return jsonify({"status":"success","message":"Lead updated successfully.","lead":_manual_lead_record(lead)})
+
+
+@app.route("/api/manual-leads/<int:lead_id>", methods=["DELETE"])
+def manual_lead_delete(lead_id):
+    if not session.get("logged_in"): return jsonify({"error":"Unauthorized"}), 401
+    with _DATA_LOCK:
+        leads = load_data(DATA_FILE)
+        lead = next((x for x in leads if str(x.get("id")) == str(lead_id) and not x.get("is_deleted")), None)
+        if not lead or (not is_admin_session() and not _lead_owner_matches_session(lead)):
+            return jsonify({"error":"Lead not found"}), 404
+        _archive_record(DATA_FILE, lead, lead.get("id"), "Leads")
+        lead["is_deleted"] = True
+        lead["deleted_date"] = datetime.now().strftime("%Y-%m-%d")
+        save_data(DATA_FILE, leads)
+    log_activity("Manual Lead Deleted", f"{session.get('username')} deleted lead #{lead_id}.",
+                 module="Leads", related_record_id=lead_id)
+    return jsonify({"status":"success","message":"Lead moved to Trash Bin."})
+
+
+@app.route("/api/manual-leads/summary", methods=["GET"])
+def manual_lead_summary():
+    if not session.get("logged_in"): return jsonify({"error":"Unauthorized"}), 401
+    records = _visible_leads_for_session()
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    week_start = today - timedelta(days=6)
+    month_start = today.replace(day=1)
+    def on_day(lead):
+        try: return datetime.strptime(_lead_created_date(lead), "%Y-%m-%d").date()
+        except ValueError: return None
+    def count(predicate): return sum(1 for x in records if predicate(x, on_day(x)))
+    converted = lambda x: bool(x.get("is_converted")) or str(x.get("status") or "").lower() in ("converted","converted to student","closed won")
+    pending = lambda x: str(x.get("status") or "").lower() not in ("converted","converted to student","closed won","rejected","closed lost")
+    summary = {
+        "total":len(records),
+        "today":count(lambda x,d:d==today),
+        "yesterday":count(lambda x,d:d==yesterday),
+        "last7":count(lambda x,d:d is not None and week_start<=d<=today),
+        "month":count(lambda x,d:d is not None and month_start<=d<=today),
+        "converted":sum(1 for x in records if converted(x)),
+        "pending":sum(1 for x in records if pending(x))
+    }
+    if is_admin_session():
+        users = load_users()
+        performance = []
+        for uname, account in users.items():
+            if account.get("role") in ("Admin","New User") and (account.get("role")=="Admin" or account.get("active",True)):
+                uid = str(account.get("user_id") or uname)
+                own = [x for x in records if (
+                str(x.get("created_by_id") or x.get("creator_user_id") or "") == uid
+                if (x.get("created_by_id") or x.get("creator_user_id"))
+                else str(x.get("created_by") or "") == uname)]
+                dates = [on_day(x) for x in own]
+                performance.append({
+                    "username":uname,"total":len(own),
+                    "today":sum(1 for d in dates if d==today),
+                    "yesterday":sum(1 for d in dates if d==yesterday),
+                    "last7":sum(1 for d in dates if d and week_start<=d<=today),
+                    "month":sum(1 for d in dates if d and month_start<=d<=today),
+                    "converted":sum(1 for x in own if converted(x)),
+                    "last_lead_date":max((_lead_created_date(x) for x in own), default="")
+                })
+        summary["performance"] = performance
+        known_owner_ids = {str(account.get("user_id") or uname) for uname, account in users.items()}
+        known_owner_names = set(users)
+        summary["unassigned_legacy"] = sum(1 for x in load_data(DATA_FILE)
+            if not x.get("is_deleted") and (
+                not (x.get("created_by_id") or x.get("creator_user_id") or x.get("created_by"))
+                or str(x.get("created_by_role") or "").lower() == "system"
+                or str(x.get("created_by_id") or x.get("creator_user_id") or "") not in known_owner_ids
+                   and str(x.get("created_by") or "") not in known_owner_names))
+    return jsonify(summary)
+
+
+
 # --- API ENDPOINTS ---
 
 @app.route('/api/submit-lead', methods=['POST'])
@@ -1002,7 +1392,8 @@ def submit_lead():
             "form_data": flat_form,
             "created_by": "System",
             "created_by_id": "system",
-            "created_by_role": "System"
+            "created_by_role": "System",
+            "lead_entry_type": "Existing Incoming Source"
         }
         
         for upload_key, stored_path in uploaded_files.items():
@@ -1049,7 +1440,7 @@ def update_lead():
                 target_lead = lead
                 break
         
-        if not target_lead:
+        if not target_lead or (session.get("role") == "New User" and not _lead_owner_matches_session(target_lead)):
             return jsonify({"status": "error", "message": "Lead not found"}), 404
 
         # Merge the complete submitted registration record, preserving identifiers,
@@ -1087,7 +1478,7 @@ def update_lead():
                 return jsonify({"status":"error","message":"No permitted lead update fields were supplied."}), 400
             target_lead["updated_by"] = session.get("username")
             target_lead["updated_by_id"] = session.get("user_id")
-            target_lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+            _stamp_lead_update(target_lead)
             save_data(DATA_FILE, leads)
             log_activity("Lead Follow-up Updated", f"New user updated {', '.join(changed)} for lead #{lead_id}.",
                          module="Leads", related_record_id=lead_id)
@@ -1151,6 +1542,7 @@ def update_lead():
         target_lead["updated_by"] = session.get("username")
         target_lead["updated_by_id"] = session.get("user_id")
         target_lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        _stamp_lead_update(target_lead)
         save_data(DATA_FILE, leads)
         log_activity("Lead Updated", f"Updated comprehensive information for lead #{lead_id} ({target_lead['student_name']})")
         return jsonify({"status": "success", "message": "Lead updated successfully!"})
@@ -1270,7 +1662,8 @@ def delete_filtered_leads():
 def get_leads_api():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-    records = [lead for lead in load_data(DATA_FILE) if not lead.get("is_converted")]
+    records = [lead for lead in _visible_leads_for_session()
+               if not lead.get("is_converted")]
     if session.get("role") == "New User" and not has_permission("view_lead_details"):
         basic = ("id", "student_name", "contact_number", "alternate_number", "student_email",
                  "status", "created_date", "created_at", "created_timestamp",
@@ -1589,6 +1982,9 @@ def get_trash_api():
         return jsonify({"error":"Unauthorized"}),401
     _migrate_legacy_deleted_leads()
     items=load_data(TRASH_FILE)
+    if session.get("role") == "New User":
+        items = [item for item in items if item.get("category") != "Leads"
+                 or (isinstance(item.get("record"), dict) and _lead_owner_matches_session(item["record"]))]
     items.sort(key=lambda x:x.get('deleted_timestamp',0),reverse=True)
     return jsonify(items)
 
@@ -1599,7 +1995,8 @@ def trash_restore():
         return jsonify({"error":"Unauthorized"}),401
     trash_id=str((request.json or {}).get('trash_id') or '')
     item=next((x for x in load_data(TRASH_FILE) if str(x.get('trash_id'))==trash_id),None)
-    if not item:
+    if not item or (session.get("role") == "New User" and item.get("category") == "Leads"
+                    and (not isinstance(item.get("record"), dict) or not _lead_owner_matches_session(item["record"]))):
         return jsonify({"status":"error","message":"Trash record not found."}),404
     try:
         _restore_trash_item(item)
@@ -1648,6 +2045,9 @@ def trash_download():
     trash_ids = {str(x) for x in data.get('trash_ids', data.get('lead_ids', []))}
     _migrate_legacy_deleted_leads()
     selected_trash = [x for x in load_data(TRASH_FILE) if str(x.get('trash_id')) in trash_ids]
+    if session.get("role") == "New User":
+        selected_trash = [x for x in selected_trash if x.get("category") != "Leads"
+                          or (isinstance(x.get("record"), dict) and _lead_owner_matches_session(x["record"]))]
     
     html = f"""
     <!DOCTYPE html>
@@ -2297,6 +2697,17 @@ def download_document(filename):
     if '..' in safe_path.split('/'):
         return jsonify({"error": "Invalid document path."}), 400
     original_download_name = os.path.basename(safe_path)
+    if session.get("role") == "New User":
+        for lead in load_data(DATA_FILE):
+            references = set()
+            for value in lead.values():
+                if isinstance(value, str):
+                    references.add(value)
+            for attachment in lead.get("attachments", []) if isinstance(lead.get("attachments"), list) else []:
+                if isinstance(attachment, dict) and attachment.get("stored_name"):
+                    references.add(str(attachment.get("stored_name")))
+            if safe_path in references and not _lead_owner_matches_session(lead):
+                return jsonify({"error":"Document not found."}),404
     if safe_path.startswith(("student_records/", "college_records/")):
         local_candidate = os.path.join(DATA_DIR, *safe_path.split("/"))
         if os.path.isfile(local_candidate):
@@ -2380,8 +2791,10 @@ def update_status():
             student_name = lead.get('student_name', '')
             target = lead
             break
-    if target is None:
+    if target is None or (session.get("role") == "New User" and not _lead_owner_matches_session(target)):
         return jsonify({"status":"error","message":"Lead not found."}),404
+    if target is not None:
+        _stamp_lead_update(target)
     save_data(DATA_FILE, leads)
     log_activity("Status Change", f"Status changed to '{new_status}' for student {student_name}",
                  module="Leads", related_record_id=lead_id)
@@ -2395,7 +2808,7 @@ def delete_lead():
     lead_id=(request.json or {}).get('lead_id')
     records=load_data(DATA_FILE)
     target=next((x for x in records if str(x.get('id'))==str(lead_id)),None)
-    if not target: return jsonify({"status":"error","message":"Lead not found."}),404
+    if not target or (session.get("role") == "New User" and not _lead_owner_matches_session(target)): return jsonify({"status":"error","message":"Lead not found."}),404
     _archive_record(DATA_FILE,target,target.get('id'),"Leads")
     save_data(DATA_FILE,[x for x in records if str(x.get('id'))!=str(lead_id)])
     log_activity("Moved to Trash",f"Moved lead #{lead_id} ({target.get('student_name','')}) to trash")
@@ -3153,14 +3566,15 @@ MAIN_DASHBOARD_HTML = """
       window.crmUserPermissions = {{ permissions|tojson }};
       document.addEventListener('DOMContentLoaded',()=>{
         const p=new Set(window.crmUserPermissions||[]);
-        const allowed={ 'dashboard-tab':'view_dashboard', 'leads-tab':'call_leads',
+        const allowed={ 'dashboard-tab':'view_dashboard', 'leads-tab':'call_leads', 'manual-leads-tab':'call_leads',
           'students-tab':'view_students', 'colleges-tab':'view_colleges',
           'history-tab':'view_work_history', 'trash-tab':'view_trash', 'settings-tab':'access_settings' };
         document.querySelectorAll('.nav-menu .nav-item').forEach(item=>{
           const onclick=item.getAttribute('onclick')||''; const match=onclick.match(/switchTab\\('([^']+)'/);
-          if(match){const perm=allowed[match[1]];if(perm&&!p.has(perm)&&!(match[1]==='leads-tab'&&(p.has('view_leads')||p.has('call_leads')))&&!(match[1]==='settings-tab'&&p.has('view_logs')))item.style.display='none';}
+          if(match){if(match[1]==='manual-leads-tab')return;const perm=allowed[match[1]];if(perm&&!p.has(perm)&&!(match[1]==='leads-tab'&&(p.has('view_leads')||p.has('call_leads')))&&!(match[1]==='settings-tab'&&p.has('view_logs')))item.style.display='none';}
         });
         Object.entries(allowed).forEach(([tab,perm])=>{
+          if(tab==='manual-leads-tab')return;
           if(!p.has(perm)&&!(tab==='leads-tab'&&(p.has('view_leads')||p.has('call_leads')))&&!(tab==='settings-tab'&&p.has('view_logs'))){const el=document.getElementById(tab);if(el)el.style.display='none';}
         });
         if(!p.has('view_dashboard')){
@@ -3190,6 +3604,7 @@ MAIN_DASHBOARD_HTML = """
             <ul class="nav-menu">
                 <li class="nav-item active" onclick="switchTab('dashboard-tab', this)"><button><i class="fa-solid fa-chart-pie"></i> Dashboard</button></li>
                 <li class="nav-item" onclick="switchTab('leads-tab', this)"><button><i class="fa-solid fa-users"></i> All Leads</button></li>
+                <li class="nav-item" onclick="switchTab('manual-leads-tab', this); loadManualLeads();"><button><i class="fa-solid fa-address-book"></i> Leads</button></li>
                 <li class="nav-item" onclick="switchTab('students-tab', this)"><button><i class="fa-solid fa-user-graduate"></i> Students Tab</button></li>
                 <li class="nav-item" onclick="switchTab('colleges-tab', this)"><button><i class="fa-solid fa-building-columns"></i> Colleges Manager</button></li>
                 <li class="nav-item" onclick="switchTab('history-tab', this)"><button><i class="fa-solid fa-clock-rotate-left"></i> Work History</button></li>
@@ -3383,6 +3798,66 @@ MAIN_DASHBOARD_HTML = """
                             <tbody id="allLeadsTbody"></tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+
+
+            <!-- NEW MANUAL LEADS MANAGEMENT TAB -->
+            <div id="manual-leads-tab" class="tab-section">
+                <div class="card" style="margin-bottom:18px;">
+                    <div class="card-header" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                        <h3><i class="fa-solid fa-address-book"></i> Leads Management</h3>
+                        <button type="button" onclick="openManualLeadForm()" style="background:#2563eb;color:white;border:0;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;">+ Add New Lead</button>
+                    </div>
+                    <div id="manualLeadStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;"></div>
+                </div>
+                {% if role == 'Admin' %}
+                <div class="card" style="margin-bottom:18px;">
+                    <div class="card-header"><h3>User-Wise Lead Performance</h3></div>
+                    <div style="overflow-x:auto;"><table><thead><tr><th>Username</th><th>Total</th><th>Today</th><th>Yesterday</th><th>Last 7 Days</th><th>This Month</th><th>Converted</th><th>Last Lead Added</th><th>Action</th></tr></thead><tbody id="manualLeadPerformance"></tbody></table></div>
+                    <small id="manualLegacyNote" style="color:#64748b;"></small>
+                </div>
+                {% endif %}
+                <div class="card" style="margin-bottom:18px;">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+                        <label style="flex:1;min-width:180px;">Search<input id="manualLeadSearch" class="form-control" placeholder="Name, mobile, lead ID..." oninput="loadManualLeads()"></label>
+                        {% if role == 'Admin' %}<label style="min-width:150px;">Created By<select id="manualLeadUser" class="form-control" onchange="loadManualLeads()"><option value="">All Users</option></select></label>{% endif %}
+                        <label style="min-width:145px;">Period<select id="manualLeadPeriod" class="form-control" onchange="loadManualLeads()"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7days">Last 7 Days</option><option value="month">This Month</option><option value="previous_month">Previous Month</option></select></label>
+                        <label style="min-width:140px;">Status<select id="manualLeadStatus" class="form-control" onchange="loadManualLeads()"><option value="">All Statuses</option><option>New Lead</option><option>Contacted</option><option>Follow Up</option><option>Converted</option><option>Converted to Student</option><option>Rejected</option><option>Closed</option></select></label>
+                        <label style="min-width:140px;">Source<input id="manualLeadSource" class="form-control" placeholder="Lead source" oninput="loadManualLeads()"></label>
+                        <label style="min-width:140px;">From<input id="manualLeadStart" type="date" class="form-control" onchange="loadManualLeads()"></label>
+                        <label style="min-width:140px;">To<input id="manualLeadEnd" type="date" class="form-control" onchange="loadManualLeads()"></label>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3>Lead Records</h3><span id="manualLeadCount"></span></div>
+                    <div style="overflow-x:auto;"><table><thead><tr><th>Lead ID</th><th>Customer</th><th>Mobile</th><th>Source</th><th>Status</th><th>Created By</th><th>Created Date</th><th>Actions</th></tr></thead><tbody id="manualLeadRows"></tbody></table></div>
+                </div>
+            </div>
+            <div id="manualLeadModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:10050;align-items:center;justify-content:center;padding:14px;">
+                <div style="background:white;width:min(900px,98vw);max-height:92vh;overflow:auto;border-radius:14px;padding:20px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;"><h3 id="manualLeadModalTitle">Add New Lead</h3><button type="button" onclick="closeManualLeadForm()" style="width:auto;background:#e2e8f0;color:#0f172a;padding:7px 12px;">✕</button></div>
+                    <form id="manualLeadForm" onsubmit="saveManualLead(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;">
+                        <input type="hidden" id="manualLeadId">
+                        <label>Customer Name<input id="ml_customer_name" class="form-control"></label>
+                        <label>Mobile Number<input id="ml_mobile_number" class="form-control"></label>
+                        <label>WhatsApp Number<input id="ml_whatsapp_number" class="form-control"></label>
+                        <label>Alternate Number<input id="ml_alternate_number" class="form-control"></label>
+                        <label>Email Address<input id="ml_email_address" type="email" class="form-control"></label>
+                        <label>Company / Business Name<input id="ml_company_name" class="form-control"></label>
+                        <label style="grid-column:1/-1;">Full Address<textarea id="ml_full_address" class="form-control"></textarea></label>
+                        <label>City<input id="ml_city" class="form-control"></label>
+                        <label>State<input id="ml_state" class="form-control"></label>
+                        <label>Lead Source<input id="ml_lead_source" class="form-control"></label>
+                        <label>Product / Service<input id="ml_product_service" class="form-control"></label>
+                        <label>Interested In<input id="ml_interested_in" class="form-control"></label>
+                        <label>Estimated Budget<input id="ml_estimated_budget" class="form-control"></label>
+                        <label>Lead Status<select id="ml_status" class="form-control"><option value="">New Lead</option><option>New Lead</option><option>Contacted</option><option>Follow Up</option><option>Converted</option><option>Converted to Student</option><option>Rejected</option><option>Closed</option></select></label>
+                        <label>Follow-up Date<input id="ml_followup_date" type="date" class="form-control"></label>
+                        <label>Follow-up Time<input id="ml_followup_time" type="time" class="form-control"></label>
+                        <label style="grid-column:1/-1;">Remarks / Notes<textarea id="ml_remarks" class="form-control" rows="3"></textarea></label>
+                        <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;"><button type="button" onclick="closeManualLeadForm()" style="width:auto;background:#64748b;padding:10px 18px;">Cancel</button><button type="submit" style="width:auto;background:#16a34a;padding:10px 18px;">Save Lead</button></div>
+                    </form>
                 </div>
             </div>
 
@@ -3843,6 +4318,120 @@ MAIN_DASHBOARD_HTML = """
         </div>
     </div>
 
+    <script>
+        window.APP_BASE_PATH = {{ request.script_root|tojson }};
+        (function(){
+            const base = window.APP_BASE_PATH || '';
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = function(input, init){
+                if(typeof input === 'string' && input.startsWith('/') && !input.startsWith('//')) input = base + input;
+                else if(input instanceof Request && input.url.startsWith(window.location.origin + '/') && base){
+                    input = new Request(base + input.url.slice(window.location.origin.length), input);
+                }
+                return nativeFetch(input, init);
+            };
+            const nativeOpen = window.open.bind(window);
+            window.open = function(url, ...args){
+                if(typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) url = base + url;
+                return nativeOpen(url, ...args);
+            };
+            document.addEventListener('DOMContentLoaded',()=>{
+                document.querySelectorAll('a[href^="/"],form[action^="/"],img[src^="/"]').forEach(el=>{
+                    const attr=el.tagName==='FORM'?'action':(el.tagName==='IMG'?'src':'href');
+                    const value=el.getAttribute(attr);
+                    if(value && !value.startsWith('//')) el.setAttribute(attr,base+value);
+                });
+            });
+        })();
+
+        const manualLeadKeys = ['customer_name','mobile_number','whatsapp_number','alternate_number','email_address',
+            'company_name','full_address','city','state','lead_source','product_service','interested_in',
+            'estimated_budget','status','followup_date','followup_time','remarks'];
+        let manualLeadRecords = [];
+        let manualLeadSubmissionKey = null;
+        function escapeHtml(value){
+            return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
+        function manualLeadQuery(){
+            const params=new URLSearchParams();
+            const get=id=>document.getElementById(id)?.value||'';
+            [['q','manualLeadSearch'],['username','manualLeadUser'],['period','manualLeadPeriod'],
+             ['status','manualLeadStatus'],['source','manualLeadSource'],['start','manualLeadStart'],['end','manualLeadEnd']]
+             .forEach(([k,id])=>{const v=get(id);if(v)params.set(k,v);});
+            return params.toString();
+        }
+        async function loadManualLeads(){
+            const tbody=document.getElementById('manualLeadRows'); if(!tbody)return;
+            try{
+                const [listRes,summaryRes]=await Promise.all([
+                    fetch('/api/manual-leads?'+manualLeadQuery()),fetch('/api/manual-leads/summary')
+                ]);
+                if(!listRes.ok||!summaryRes.ok)throw new Error('Unable to load Leads.');
+                manualLeadRecords=await listRes.json(); const summary=await summaryRes.json();
+                renderManualLeadStats(summary);
+                tbody.innerHTML=manualLeadRecords.length?manualLeadRecords.map(l=>`<tr>
+                    <td>${escapeHtml(String(l.id??''))}</td><td>${escapeHtml(l.customer_name||'—')}</td>
+                    <td>${escapeHtml(l.mobile_number||'—')}</td><td>${escapeHtml(l.lead_source||'—')}</td>
+                    <td>${escapeHtml(l.status||'New Lead')}</td><td>${escapeHtml(l.created_by||'Legacy / Unknown')}</td>
+                    <td>${escapeHtml(l.created_date||'—')}</td><td>
+                    <button type="button" onclick="viewManualLead(${Number(l.id)})" style="width:auto;padding:5px 8px;background:#64748b;">View</button>
+                    <button type="button" onclick="editManualLead(${Number(l.id)})" style="width:auto;padding:5px 8px;background:#2563eb;">Edit</button>
+                    <button type="button" onclick="deleteManualLead(${Number(l.id)})" style="width:auto;padding:5px 8px;background:#dc2626;">Delete</button></td></tr>`).join('')
+                    :'<tr><td colspan="8" style="text-align:center;color:#64748b;">No leads found.</td></tr>';
+                document.getElementById('manualLeadCount').textContent=manualLeadRecords.length+' records';
+                if(summary.performance)renderManualPerformance(summary.performance,summary.unassigned_legacy||0);
+            }catch(e){tbody.innerHTML='<tr><td colspan="8" style="color:#dc2626;">'+escapeHtml(e.message)+'</td></tr>';}
+        }
+        function renderManualLeadStats(s){
+            const labels=[['Total Leads',s.total],["Today's Leads",s.today],["Yesterday's Leads",s.yesterday],
+                ['Last 7 Days',s.last7],['This Month',s.month],['Converted',s.converted],['Pending',s.pending]];
+            document.getElementById('manualLeadStats').innerHTML=labels.map(([label,value])=>
+                `<div style="border:1px solid var(--border-color);border-radius:10px;padding:13px;background:#f8fafc;">
+                <div style="font-size:12px;color:#64748b;">${label}</div><strong style="font-size:24px;">${Number(value||0)}</strong></div>`).join('');
+        }
+        function renderManualPerformance(rows,unassigned){
+            const body=document.getElementById('manualLeadPerformance');if(!body)return;
+            body.innerHTML=rows.map(r=>`<tr><td>${escapeHtml(r.username)}</td><td>${r.total}</td><td>${r.today}</td>
+                <td>${r.yesterday}</td><td>${r.last7}</td><td>${r.month}</td><td>${r.converted}</td>
+                <td>${escapeHtml(r.last_lead_date||'—')}</td><td><button type="button" style="width:auto;padding:5px 8px;"
+                onclick="document.getElementById('manualLeadUser').value=${JSON.stringify(r.username)};loadManualLeads();">View Leads</button></td></tr>`).join('');
+            const userSelect=document.getElementById('manualLeadUser');
+            if(userSelect){const current=userSelect.value;userSelect.innerHTML='<option value="">All Users</option>'+rows.map(r=>
+                `<option value="${escapeHtml(r.username)}">${escapeHtml(r.username)}</option>`).join('');userSelect.value=current;}
+            const note=document.getElementById('manualLegacyNote');
+            if(note)note.textContent=unassigned?`${unassigned} legacy lead(s) have no reliable owner and remain visible to Admin only.`:'';
+        }
+        function openManualLeadForm(record){
+            const form=document.getElementById('manualLeadForm');form.reset();
+            document.getElementById('manualLeadId').value=record?.id||'';
+            document.getElementById('manualLeadModalTitle').textContent=record?'Edit Lead':'Add New Lead';
+            manualLeadSubmissionKey=record?null:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random());
+            manualLeadKeys.forEach(k=>{const el=document.getElementById('ml_'+k);if(el)el.value=record?.[k]||'';});
+            document.getElementById('manualLeadModal').style.display='flex';
+        }
+        function closeManualLeadForm(){document.getElementById('manualLeadModal').style.display='none';}
+        async function saveManualLead(event){
+            event.preventDefault();
+            const id=document.getElementById('manualLeadId').value;
+            const payload={};manualLeadKeys.forEach(k=>payload[k]=document.getElementById('ml_'+k).value||'');
+            if(!id)payload.submission_key=manualLeadSubmissionKey;
+            const res=await fetch(id?'/api/manual-leads/'+id:'/api/manual-leads',{
+                method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+            const data=await res.json();alert(data.message||data.error||'Request completed.');
+            if(res.ok){closeManualLeadForm();loadManualLeads();}
+        }
+        function viewManualLead(id){
+            const l=manualLeadRecords.find(x=>Number(x.id)===Number(id));if(!l)return;
+            alert(manualLeadKeys.map(k=>k.replaceAll('_',' ')+': '+(l[k]||'—')).join('\\n')+
+                '\\nCreated By: '+(l.created_by||'Legacy / Unknown')+'\\nCreated: '+(l.created_at||l.created_date||'—'));
+        }
+        function editManualLead(id){const l=manualLeadRecords.find(x=>Number(x.id)===Number(id));if(l)openManualLeadForm(l);}
+        async function deleteManualLead(id){
+            if(!confirm('Move this lead to Trash Bin?'))return;
+            const res=await fetch('/api/manual-leads/'+id,{method:'DELETE'});const data=await res.json();
+            alert(data.message||data.error||'Request completed.');if(res.ok)loadManualLeads();
+        }
+    </script>
     <script>
         let rawLeadsData = [];
         let rawStudentsData = [];
@@ -4308,7 +4897,7 @@ MAIN_DASHBOARD_HTML = """
             filters.statuses.forEach(status => params.append('status', status));
             if (filters.start_date) params.set('start_date', filters.start_date);
             if (filters.end_date) params.set('end_date', filters.end_date);
-            window.location.href = `/api/all-leads/export-csv?${params.toString()}`;
+            window.location.href = (window.APP_BASE_PATH || '') + `/api/all-leads/export-csv?${params.toString()}`;
         }
 
         async function deleteFilteredLeads() {
