@@ -5308,5 +5308,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/users returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "eb5ee9d093bc41b99f22a2a4d5839666",
+        "activity_id": "eb5ee9d093bc41b99f22a2a4d5839666",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-19",
+        "time": "01:56:18 PM",
+        "timestamp": 1795096578.49248,
+        "ip_address": "103.101.115.238",
+        "user_agent": "Dalvik/2.1.0 (Linux; U; Android 16; CPH2825 Build/BP2A.250605.015)",
+        "browser": "Unknown Browser (Unknown)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
