@@ -395,5 +395,32 @@
         "deleted_date": "2026-11-19",
         "deleted_at": "19 Nov 2026, 05:11 PM",
         "deleted_timestamp": 1795108313.504461
+    },
+    {
+        "trash_id": "6eae8a18c0b84c78925a7dd7319f8099",
+        "category": "Logs",
+        "source_file": "/opt/render/project/src/data/login_logs.json",
+        "source_id": 2,
+        "record": {
+            "id": 2,
+            "username": "admin",
+            "role": "Admin",
+            "ip_address": "103.101.115.238",
+            "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+            "browser": "Google Chrome (157.0.0.0)",
+            "os": "Linux",
+            "login_date": "2026-11-19",
+            "login_time": "19 Nov 2026, 01:57 PM",
+            "login_timestamp": 1795096665.417643,
+            "logout_date": "2026-11-19",
+            "logout_time": "19 Nov 2026, 01:59 PM",
+            "logout_timestamp": 1795096775.474648,
+            "location": "Unknown",
+            "status": "Logged Out",
+            "session_info": "Session ID: 7299996163775544370"
+        },
+        "deleted_date": "2026-11-19",
+        "deleted_at": "19 Nov 2026, 05:11 PM",
+        "deleted_timestamp": 1795108314.557035
     }
 ]
