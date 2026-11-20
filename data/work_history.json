@@ -7254,5 +7254,26 @@
         "action_type": "User Created",
         "details": "Admin created CRM account 'anonymous'.",
         "related_record_id": "e34b011e08d24c36bbf9b9fefcb5170a"
+    },
+    {
+        "id": "652f1de63ad347a1b435329835acabed",
+        "activity_id": "652f1de63ad347a1b435329835acabed",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-20",
+        "time": "07:38:59 AM",
+        "timestamp": 1795160339.282939,
+        "ip_address": "106.194.246.155",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "user_management_list",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
