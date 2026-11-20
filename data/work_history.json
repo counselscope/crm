@@ -7506,5 +7506,26 @@
         "action_type": "Module Access",
         "details": "Opened history module.",
         "related_record_id": null
+    },
+    {
+        "id": "3724f289e9bf43588a2e6cb5016cf41e",
+        "activity_id": "3724f289e9bf43588a2e6cb5016cf41e",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-20",
+        "time": "07:40:29 AM",
+        "timestamp": 1795160429.088101,
+        "ip_address": "106.194.246.155",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "get_work_history_users",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/work-history-users returned HTTP 200.",
+        "related_record_id": null
     }
 ]
