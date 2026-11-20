@@ -1139,5 +1139,26 @@
         "action_type": "Module Access",
         "details": "Opened trash module.",
         "related_record_id": null
+    },
+    {
+        "id": "ef78b3f97ce74778b3c5b12b54407a00",
+        "activity_id": "ef78b3f97ce74778b3c5b12b54407a00",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-20",
+        "time": "07:36:59 AM",
+        "timestamp": 1795160219.828952,
+        "ip_address": "106.194.246.155",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "colleges",
+        "action": "Open Tab",
+        "action_type": "Module Access",
+        "details": "Opened colleges module.",
+        "related_record_id": null
     }
 ]
