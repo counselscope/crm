@@ -7233,5 +7233,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/lead-management/stats returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "b67f05caaf0d4cc99043ed93eb913d45",
+        "activity_id": "b67f05caaf0d4cc99043ed93eb913d45",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-20",
+        "time": "07:38:56 AM",
+        "timestamp": 1795160336.785764,
+        "ip_address": "106.194.246.155",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "User Management",
+        "action": "User Created",
+        "action_type": "User Created",
+        "details": "Admin created CRM account 'anonymous'.",
+        "related_record_id": "e34b011e08d24c36bbf9b9fefcb5170a"
     }
 ]
