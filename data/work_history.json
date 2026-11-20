@@ -1538,5 +1538,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/lead-management/stats returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "0dac934d75c4432987a306d24fe105fd",
+        "activity_id": "0dac934d75c4432987a306d24fe105fd",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-20",
+        "time": "07:41:01 AM",
+        "timestamp": 1795160461.570705,
+        "ip_address": "106.194.246.155",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Windows",
+        "location": "Unknown",
+        "module": "User",
+        "action": "User Logout",
+        "action_type": "User Logout",
+        "details": "User admin logged out.",
+        "related_record_id": null
     }
 ]
