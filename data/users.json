@@ -6,5 +6,24 @@
     "client": {
         "password": "scrypt:32768:8:1$BD2aIjk0mDMxlzej$dd65ba48074289c389cc690027f1738c92b9a1296729135cc9067b64a7afd0099af58d7b37da03e56a8ce38a9eeb7b0b79c476a8bc6a64512f25f5fbbe1b8caa",
         "role": "Client"
+    },
+    "anonymous": {
+        "password": "scrypt:32768:8:1$9khmHvjjSWFIGbWq$6789433c61c139c716d7204d300784b0cc2ab84275a66a6a29b575d75b166ca87360c0bb1619c1979119da931cdd189ea3c9d535de601b89c140d13b57c363a5",
+        "role": "New User",
+        "user_id": "e34b011e08d24c36bbf9b9fefcb5170a",
+        "active": true,
+        "permissions": [
+            "add_followup",
+            "call_leads",
+            "change_lead_status",
+            "lead_filters",
+            "update_leads",
+            "view_dashboard",
+            "view_lead_details",
+            "view_leads",
+            "view_student_details",
+            "view_students"
+        ],
+        "created_at": "2026-11-20T07:38:56"
     }
 }
