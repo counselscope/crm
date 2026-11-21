@@ -8262,5 +8262,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/lead-management/stats returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "f6487731da75430f9ec7d15b733dc89e",
+        "activity_id": "f6487731da75430f9ec7d15b733dc89e",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-21",
+        "time": "12:03:02 PM",
+        "timestamp": 1795262582.126325,
+        "ip_address": "223.191.94.168",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "download_document",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /download-doc/student_documents/ramesh/doc_1794398138_3c6c8dba_cover.jpg returned HTTP 200.",
+        "related_record_id": null
     }
 ]
