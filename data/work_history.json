@@ -9795,5 +9795,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/lead-management/stats returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "36ff29be1db24a049ed1142d3e4bc5fa",
+        "activity_id": "36ff29be1db24a049ed1142d3e4bc5fa",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-21",
+        "time": "06:22:39 PM",
+        "timestamp": 1795285359.385376,
+        "ip_address": "43.166.245.120",
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+        "browser": "Apple Safari (13.0.3)",
+        "os": "macOS",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /api/submit-lead returned HTTP 405.",
+        "related_record_id": null
     }
 ]
