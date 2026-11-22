@@ -32,7 +32,7 @@ except ImportError:
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", 64 * 1024 * 1024))
-app.secret_key = "counselscope_world_class_crm_2026_secret"
+app.secret_key = "xyz_world_class_crm_2026_secret"
 CORS(app)
 
 DEFAULT_NEW_USER_PERMISSIONS = []
@@ -1525,7 +1525,7 @@ def export_lead_performance_pdf():
                 "converted_leads": sum(1 for x in own if x.get("is_converted") or str(x.get("status") or "").lower() in ("converted", "converted to student")),
                 "pending_leads": sum(1 for x in own if str(x.get("status") or "").lower() not in ("closed", "rejected", "converted", "converted to student")),
                 "followups_completed": sum(1 for h in activity_records if str(h.get("username") or "").lower() == username.lower() and str(h.get("action_type") or "").lower() == "follow-up completed" and (not start_obj or (_parse_flexible_date(h.get("date")) and _parse_flexible_date(h.get("date")) >= start_obj)) and (not end_obj or (_parse_flexible_date(h.get("date")) and _parse_flexible_date(h.get("date")) <= end_obj)))})
-        pdf = _build_report_pdf("CounselScope CRM - User-wise Lead Performance", rows, "User Performance")
+        pdf = _build_report_pdf("xyz CRM - User-wise Lead Performance", rows, "User Performance")
         return send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name="Lead_User_Performance.pdf")
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -1547,7 +1547,7 @@ def export_lead_activity_pdf():
         if username != "all users":
             history = [x for x in history if str(x.get("username") or "").lower() == username]
         history = _filter_date_range(history, start, end, _history_record_date)
-        pdf = _build_report_pdf("CounselScope CRM - Lead Activity / Work History", history, "Lead Activity")
+        pdf = _build_report_pdf("xyz CRM - Lead Activity / Work History", history, "Lead Activity")
         return send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name="Lead_Activity_History.pdf")
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -2168,7 +2168,7 @@ def trash_download():
         </style>
     </head>
     <body>
-        <h1>CounselScope CRM - Trash Bin Export Report</h1>
+        <h1>xyz CRM - Trash Bin Export Report</h1>
         <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
         <table>
             <thead>
@@ -2232,7 +2232,7 @@ def export_full_excel():
     colleges = load_data(COLLEGES_FILE)
 
     dash_data = [
-        ["CounselScope CRM Executive Summary", ""],
+        ["xyz CRM Executive Summary", ""],
         ["Generated On", datetime.now().strftime('%d %b %Y, %I:%M %p')],
         ["Metric", "Value"],
         ["Total Active Leads", len(active_leads)],
@@ -2320,7 +2320,7 @@ def export_full_excel():
     wb.save(output)
     output.seek(0)
 
-    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='CounselScope_Complete_CRM_Export.xlsx')
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='xyz_Complete_CRM_Export.xlsx')
 
 
 @app.route('/api/export-full-pdf', methods=['GET'])
@@ -2340,7 +2340,7 @@ def export_full_pdf():
     <html>
     <head>
         <meta charset="utf-8">
-        <title>CounselScope Full CRM Executive PDF Report</title>
+        <title>xyz Full CRM Executive PDF Report</title>
         <style>
             body {{ font-family: Arial, sans-serif; color: #1e293b; padding: 25px; line-height: 1.4; }}
             h1 {{ color: #2563eb; font-size: 24px; border-bottom: 3px solid #2563eb; padding-bottom: 8px; margin-bottom: 5px; }}
@@ -2356,7 +2356,7 @@ def export_full_pdf():
         </style>
     </head>
     <body>
-        <h1>CounselScope CRM - Complete System PDF Report</h1>
+        <h1>xyz CRM - Complete System PDF Report</h1>
         <p style="font-size: 12px; color: #64748b; margin-bottom: 20px;">Generated on: {datetime.now().strftime('%d %b %Y, %I:%M %p')}</p>
 
         <div class="summary-box">
@@ -2403,7 +2403,7 @@ def export_full_pdf():
     </html>
     """
     resp = make_response(html)
-    resp.headers["Content-Disposition"] = "inline; filename=CounselScope_Complete_CRM_Report.html"
+    resp.headers["Content-Disposition"] = "inline; filename=xyz_Complete_CRM_Report.html"
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     return resp
 
@@ -2627,7 +2627,7 @@ def export_filtered_logs_pdf():
                         if not parsed_event_date or (start_obj and parsed_event_date < start_obj) or (end_obj and parsed_event_date > end_obj):
                             continue
                     html_rows.append({'id':l.get('id'),'username':l.get('username'),'role':l.get('role'),'activity':label,'date':date_value,'time':time_value,'ip':l.get('ip_address'),'browser':l.get('browser'),'os':l.get('os'),'location':l.get('location'),'status':l.get('status'),'session_info':l.get('session_info'),'user_agent':l.get('user_agent')})
-        pdf = _build_report_pdf('CounselScope CRM - Filtered Security & Login Logs', html_rows, 'Log')
+        pdf = _build_report_pdf('xyz CRM - Filtered Security & Login Logs', html_rows, 'Log')
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Security_Logs_Filtered.pdf')
     except ValueError as e:
         return jsonify({'error':str(e)}), 400
@@ -2644,7 +2644,7 @@ def export_filtered_history_pdf():
         history_records = load_data(HISTORY_FILE)
         if not is_admin_session(): history_records = [x for x in history_records if str(x.get("username") or "").lower() == str(session.get("username") or "").lower()]
         history = _filter_date_range(history_records, request.args.get('start_date',''), request.args.get('end_date',''), _history_record_date)
-        pdf = _build_report_pdf('CounselScope CRM - Work History', history, 'Work History')
+        pdf = _build_report_pdf('xyz CRM - Work History', history, 'Work History')
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Work_History_Filtered.pdf')
     except ValueError as e:
         return jsonify({'error':str(e)}), 400
@@ -2668,7 +2668,7 @@ def export_filtered_trash_pdf():
             rec.update({'category':item.get('category'),'trash_id':item.get('trash_id'),
                         'source_id':item.get('source_id'),'deleted_at':item.get('deleted_at')})
             export_rows.append(rec)
-        pdf = _build_report_pdf('CounselScope CRM - Trash Bin Report', export_rows, 'Deleted Record')
+        pdf = _build_report_pdf('xyz CRM - Trash Bin Report', export_rows, 'Deleted Record')
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='Trash_Bin_Filtered.pdf')
     except ValueError as e:
         return jsonify({'error':str(e)}), 400
@@ -2707,7 +2707,7 @@ def export_students_consolidated_pdf():
                     if marker not in seen: found.append((key.replace('_',' ').title(),item)); seen.add(marker)
         return found
     try:
-        pdf = _build_report_pdf('CounselScope CRM - Complete Registered Students', students, 'Student', student_attachments)
+        pdf = _build_report_pdf('xyz CRM - Complete Registered Students', students, 'Student', student_attachments)
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='All_Students_With_Attachments.pdf')
     except Exception as e:
         return jsonify({'error':f'Unable to generate student PDF: {e}'}), 500
@@ -2725,7 +2725,7 @@ def export_college_pdf():
         for idx, item in enumerate(college.get('attachments') or []): found.append((f'Attachment {idx+1}',item))
         return found
     try:
-        pdf = _build_report_pdf('CounselScope CRM - Complete College Directory', colleges, 'College', college_attachments)
+        pdf = _build_report_pdf('xyz CRM - Complete College Directory', colleges, 'College', college_attachments)
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='All_Colleges_With_Attachments.pdf')
     except Exception as e:
         return jsonify({'error':f'Unable to generate college PDF: {e}'}), 500
@@ -2810,7 +2810,7 @@ def export_leads_pdf():
                 copy['form_data']={k:v for k,v in copy['form_data'].items() if not any(token in str(k).lower() for token in ('photo','image','document','attachment','file','scorecard','marksheet','aadhar'))}
             copy.pop('attachments',None)
             pdf_leads.append(copy)
-        pdf = _build_report_pdf('CounselScope CRM - All Leads With Documents', pdf_leads, 'Lead',
+        pdf = _build_report_pdf('xyz CRM - All Leads With Documents', pdf_leads, 'Lead',
                                 lambda entity: entity.get('_pdf_attachment_refs', []))
         return send_file(pdf, mimetype='application/pdf', as_attachment=True, download_name='All_Leads_With_Attachments.pdf')
     except Exception as e:
@@ -3549,7 +3549,7 @@ LOGIN_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CounselScope CRM - Login</title>
+    <title>xyz CRM - Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { font-family: 'Plus Jakarta Sans', sans-serif; box-sizing: border-box; }
@@ -3569,8 +3569,8 @@ LOGIN_HTML = """
 </head>
 <body>
     <div class="login-card">
-        <img src="https://www.counselscope.com/logo.png" class="logo-img" alt="CounselScope Logo">
-        <h2>CounselScope CRM</h2>
+        <img src="https://www.xyz.com/logo.png" class="logo-img" alt="xyz Logo">
+        <h2>xyz CRM</h2>
         <p class="subtitle">Enter your credentials to access portal</p>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
         <form method="POST">
@@ -3596,7 +3596,7 @@ MAIN_DASHBOARD_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CounselScope - College Lead CRM</title>
+    <title>xyz - College Lead CRM</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -3786,9 +3786,9 @@ MAIN_DASHBOARD_HTML = """
     <aside class="sidebar" id="sidebarNav">
         <div>
             <div class="sidebar-brand">
-                <img src="https://www.counselscope.com/logo.png" alt="Logo">
+                <img src="https://www.xyz.com/logo.png" alt="Logo">
                 <div class="sidebar-brand-text">
-                    <h3>CounselScope</h3>
+                    <h3>xyz</h3>
                     <p>Role: {{ role }}</p>
                 </div>
             </div>
@@ -3830,7 +3830,7 @@ MAIN_DASHBOARD_HTML = """
                 <div class="hero-banner" style="margin-bottom: 25px;">
                     <div class="hero-text">
                         <h1 id="timeGreeting">Good Morning {{ username | title }}</h1>
-                        <p>Welcome to your CounselScope CRM. Track dynamic leads, converted students, follow-up recalls, and admissions in real-time.</p>
+                        <p>Welcome to your xyz CRM. Track dynamic leads, converted students, follow-up recalls, and admissions in real-time.</p>
                     </div>
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <a href="/api/export-full-excel" style="background:#16a34a; color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; text-decoration:none; font-size:13px; display:inline-flex; align-items:center; gap:8px;"><i class="fa-solid fa-file-excel"></i> Export Complete Excel</a>
