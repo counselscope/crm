@@ -10110,5 +10110,26 @@
         "action_type": "Request Activity",
         "details": "GET /download-doc/student_documents/ramesh/doc_1794398133_5c3b091d_cover.jpg returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "5239622d22a74c4ba73fa4d3805c4767",
+        "activity_id": "5239622d22a74c4ba73fa4d3805c4767",
+        "username": "admin",
+        "user_id": "admin",
+        "role": "Admin",
+        "account_role": "Admin",
+        "date": "2026-11-22",
+        "time": "09:36:57 AM",
+        "timestamp": 1795340217.882305,
+        "ip_address": "223.191.95.136",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (156.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "download_document",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /download-doc/student_documents/ramesh/doc_1794398134_5890e4f0_cover.jpg returned HTTP 200.",
+        "related_record_id": null
     }
 ]
