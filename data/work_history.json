@@ -12462,5 +12462,26 @@
         "action_type": "Module Access",
         "details": "Opened leads module.",
         "related_record_id": null
+    },
+    {
+        "id": "ac2b1fc2f6bc4de789dc7ff2a3ce0d1f",
+        "activity_id": "ac2b1fc2f6bc4de789dc7ff2a3ce0d1f",
+        "username": "client",
+        "user_id": "client",
+        "role": "Client",
+        "account_role": "Client",
+        "date": "2026-11-22",
+        "time": "12:19:58 PM",
+        "timestamp": 1795349998.680088,
+        "ip_address": "47.11.130.157",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "lead_management_stats",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/lead-management/stats returned HTTP 200.",
+        "related_record_id": null
     }
 ]
