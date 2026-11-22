@@ -12525,5 +12525,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/college-file/1 returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "72a96c9bb91d4fd0801c9dd6b701b9ea",
+        "activity_id": "72a96c9bb91d4fd0801c9dd6b701b9ea",
+        "username": "client",
+        "user_id": "client",
+        "role": "Client",
+        "account_role": "Client",
+        "date": "2026-11-22",
+        "time": "12:20:03 PM",
+        "timestamp": 1795350003.726105,
+        "ip_address": "47.11.130.157",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "lead_management_stats",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/lead-management/stats returned HTTP 200.",
+        "related_record_id": null
     }
 ]
