@@ -12504,5 +12504,26 @@
         "action_type": "Module Access",
         "details": "Opened colleges module.",
         "related_record_id": null
+    },
+    {
+        "id": "2a60917ca8b2432280180ddd661e7746",
+        "activity_id": "2a60917ca8b2432280180ddd661e7746",
+        "username": "client",
+        "user_id": "client",
+        "role": "Client",
+        "account_role": "Client",
+        "date": "2026-11-22",
+        "time": "12:20:03 PM",
+        "timestamp": 1795350003.173456,
+        "ip_address": "47.11.130.157",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "college_file",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/college-file/1 returned HTTP 200.",
+        "related_record_id": null
     }
 ]
