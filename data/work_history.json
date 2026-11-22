@@ -12420,5 +12420,26 @@
         "action_type": "Request Activity",
         "details": "GET /api/lead-management/stats returned HTTP 200.",
         "related_record_id": null
+    },
+    {
+        "id": "64e836ff11c2411da02ce10c377905ba",
+        "activity_id": "64e836ff11c2411da02ce10c377905ba",
+        "username": "client",
+        "user_id": "client",
+        "role": "Client",
+        "account_role": "Client",
+        "date": "2026-11-22",
+        "time": "12:19:53 PM",
+        "timestamp": 1795349993.614349,
+        "ip_address": "47.11.130.157",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (157.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "lead_management_stats",
+        "action": "GET",
+        "action_type": "Request Activity",
+        "details": "GET /api/lead-management/stats returned HTTP 200.",
+        "related_record_id": null
     }
 ]
