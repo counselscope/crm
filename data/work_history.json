@@ -13932,5 +13932,26 @@
         "action_type": "User Logout",
         "details": "User admin logged out.",
         "related_record_id": null
+    },
+    {
+        "id": "251632496add458e904aa339d3066b14",
+        "activity_id": "251632496add458e904aa339d3066b14",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-25",
+        "time": "01:34:37 PM",
+        "timestamp": 1795613677.796813,
+        "ip_address": "103.101.112.83",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Mobile Safari/537.36",
+        "browser": "Google Chrome (158.0.0.0)",
+        "os": "Android",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /favicon.ico returned HTTP 404.",
+        "related_record_id": null
     }
 ]
