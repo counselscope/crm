@@ -14961,5 +14961,26 @@
         "action_type": "Failed Operation",
         "details": "GET /favicon.ico returned HTTP 404.",
         "related_record_id": null
+    },
+    {
+        "id": "27c4ff9cdd0c4a60878fbb4359b7e738",
+        "activity_id": "27c4ff9cdd0c4a60878fbb4359b7e738",
+        "username": "Anonymous",
+        "user_id": "Anonymous",
+        "role": "Unknown",
+        "account_role": "Unknown",
+        "date": "2026-11-28",
+        "time": "06:23:57 PM",
+        "timestamp": 1795890237.019154,
+        "ip_address": "43.130.110.130",
+        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+        "browser": "Apple Safari (13.0.3)",
+        "os": "macOS",
+        "location": "Unknown",
+        "module": "unknown",
+        "action": "GET",
+        "action_type": "Failed Operation",
+        "details": "GET /api/submit-lead returned HTTP 405.",
+        "related_record_id": null
     }
 ]
